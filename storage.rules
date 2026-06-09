@@ -1,0 +1,40 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ----------------------------------------------------
+    // GLOBAL CATCH-ALL DEFAULT DENY (Zero Trust Gate)
+    // ----------------------------------------------------
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'n.gujarati25288@gmail.com' ||
+        (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) && (
+          firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
+        ))
+      );
+    }
+
+    // Illustrations, scanned textbooks, diagrams, and OCR results
+    match /illustrations/{imageId} {
+      // Approved authenticated students, teachers or admins can view images
+      allow read: if isSignedIn();
+      
+      // Only authorized media uploads under strict size bounds and Admin privilege
+      allow write: if isAdmin() && (
+        // Must be less than 5MB
+        request.resource.size < 5 * 1024 * 1024 &&
+        // Must be an image MIME type
+        request.resource.contentType.matches('image/.*')
+      );
+    }
+  }
+}

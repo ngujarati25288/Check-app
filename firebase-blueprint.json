@@ -1,0 +1,1040 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account details representing students, admins, and super admins",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique identifier of the user matching Firebase Auth UID"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Student's full name"
+        },
+        "mobile": {
+          "type": "string",
+          "description": "Unique mobile number format"
+        },
+        "school": {
+          "type": "string",
+          "description": "School name"
+        },
+        "standard": {
+          "type": "string",
+          "description": "Standard of class (e.g., '7', '8', '9', '10')"
+        },
+        "village": {
+          "type": "string",
+          "description": "Village or city of residence"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student", "admin", "super_admin"],
+          "description": "Functional role within database"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "blocked"],
+          "description": "Approval status for database access"
+        },
+        "fcmToken": {
+          "type": "string",
+          "description": "FCM cloud registration token for alerts"
+        },
+        "lastTokenUpdate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the client token was refreshed"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of final edit"
+        }
+      },
+      "required": ["uid", "fullName", "mobile", "role", "status", "createdAt"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "Esyllabus subject details",
+      "type": "object",
+      "properties": {
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectName": {
+          "type": "string"
+        },
+        "standard": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["subjectId", "subjectName", "standard", "createdAt"]
+    },
+    "Chapter": {
+      "title": "Chapter",
+      "description": "Chapters under subjects",
+      "type": "object",
+      "properties": {
+        "chapterId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "chapterName": {
+          "type": "string"
+        },
+        "standard": {
+          "type": "string"
+        }
+      },
+      "required": ["chapterId", "subjectId", "chapterName", "standard"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Question bank for daily exams and revisions",
+      "type": "object",
+      "properties": {
+        "questionId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "chapterId": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "optionA": {
+          "type": "string"
+        },
+        "optionB": {
+          "type": "string"
+        },
+        "optionC": {
+          "type": "string"
+        },
+        "optionD": {
+          "type": "string"
+        },
+        "correctAnswer": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["easy", "medium", "hard"]
+        },
+        "illustrationUrl": {
+          "type": "string",
+          "description": "Single diagram or textbook image URL (legacy)"
+        },
+        "illustrationUrls": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Multiple diagrams, image-based MCQs, scanned textbook images, or OCR imports"
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["Textbook", "Navneet", "TeacherCreated", "AIGenerated"],
+          "description": "Tracing type allowing tracing back to original sources"
+        },
+        "sourceName": {
+          "type": "string",
+          "description": "The textbook, standard, or reference book name"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "description": "Page number or scanned coordinate tracer"
+        },
+        "standard": {
+          "type": "string",
+          "description": "The standard of this question"
+        },
+        "questionType": {
+          "type": "string",
+          "enum": ["MCQ", "TrueFalse", "FillBlank", "MatchFollowing"],
+          "description": "Type of the question"
+        },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Options array for MCQ and dynamic question types"
+        },
+        "marks": {
+          "type": "integer",
+          "description": "Marks assigned to the question"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Active status of the question"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["questionId", "subjectId", "chapterId", "question", "correctAnswer", "difficulty"]
+    },
+    "DailyExam": {
+      "title": "Daily Exam",
+      "description": "Daily exam configuration designed by examiners",
+      "type": "object",
+      "properties": {
+        "examId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "chapterId": {
+          "type": "string"
+        },
+        "examinerId": {
+          "type": "string"
+        },
+        "examDate": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "integer"
+        },
+        "totalQuestions": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "closed"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "publishAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the exam should be visible/published"
+        },
+        "startAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the exam becomes active"
+        },
+        "endAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the exam automatically closes"
+        }
+      },
+      "required": ["examId", "subjectId", "chapterId", "examinerId", "examDate", "duration", "totalQuestions", "status", "createdAt"]
+    },
+    "ExamResult": {
+      "title": "Exam Result",
+      "description": "Individual exam score results and answers saved by students",
+      "type": "object",
+      "properties": {
+        "resultId": {
+          "type": "string"
+        },
+        "studentId": {
+          "type": "string"
+        },
+        "examId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "chapter": {
+          "type": "string"
+        },
+        "examDate": {
+          "type": "string"
+        },
+        "examiner": {
+          "type": "string"
+        },
+        "totalQuestions": {
+          "type": "integer"
+        },
+        "correctAnswers": {
+          "type": "integer"
+        },
+        "wrongAnswers": {
+          "type": "integer"
+        },
+        "obtainedMarks": {
+          "type": "integer"
+        },
+        "percentage": {
+          "type": "number"
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["resultId", "studentId", "examId", "subject", "chapter", "examDate", "totalQuestions", "correctAnswers", "wrongAnswers", "obtainedMarks", "percentage", "submittedAt"]
+    },
+    "StudentMistake": {
+      "title": "Student Mistake",
+      "description": "Incorrect exam answers that students must revise",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string"
+        },
+        "examId": {
+          "type": "string"
+        },
+        "questionId": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectName": {
+          "type": "string"
+        },
+        "chapterId": {
+          "type": "string"
+        },
+        "chapterName": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "optionA": {
+          "type": "string"
+        },
+        "optionB": {
+          "type": "string"
+        },
+        "optionC": {
+          "type": "string"
+        },
+        "optionD": {
+          "type": "string"
+        },
+        "selectedAnswer": {
+          "type": "string"
+        },
+        "correctAnswer": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "examDate": {
+          "type": "string"
+        },
+        "revisionCount": {
+          "type": "integer"
+        },
+        "correctRevisionCount": {
+          "type": "integer"
+        },
+        "mastered": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "nextRevisionDate": {
+          "type": "string"
+        },
+        "lastRevisionDate": {
+          "type": "string"
+        },
+        "lastRevisedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "consecutiveCorrectCount": {
+          "type": "integer"
+        },
+        "revisionLevel": {
+          "type": "integer"
+        },
+        "masteredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "illustrationUrl": {
+          "type": "string",
+          "description": "Single diagram or textbook image URL (legacy)"
+        },
+        "illustrationUrls": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Multiple diagrams, image-based MCQs, scanned textbook images, or OCR imports"
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["Textbook", "Navneet", "TeacherCreated", "AIGenerated"],
+          "description": "Tracing type allowing tracing back to original sources"
+        },
+        "sourceName": {
+          "type": "string",
+          "description": "The textbook, standard, or reference book name"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "description": "Page number or scanned coordinate tracer"
+        }
+      },
+      "required": ["studentId", "examId", "questionId", "subjectId", "subjectName", "chapterId", "chapterName", "question", "optionA", "optionB", "optionC", "optionD", "selectedAnswer", "correctAnswer", "examDate", "revisionCount", "correctRevisionCount", "mastered"]
+    },
+    "RevisionAnalytics": {
+      "title": "Revision Analytics",
+      "description": "Cached dashboard statistics and learning accuracy indexes for students",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string"
+        },
+        "totalRevisions": {
+          "type": "integer"
+        },
+        "totalCorrectRevisions": {
+          "type": "integer"
+        },
+        "revisionAccuracy": {
+          "type": "number"
+        },
+        "strongestSubject": {
+          "type": "string"
+        },
+        "weakestSubject": {
+          "type": "string"
+        },
+        "pendingRevisionCount": {
+          "type": "integer"
+        },
+        "masteredQuestionsCount": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentId", "totalRevisions", "totalCorrectRevisions", "revisionAccuracy", "strongestSubject", "weakestSubject", "pendingRevisionCount", "masteredQuestionsCount", "updatedAt"]
+    },
+    "RevisionProgress": {
+      "title": "Revision Progress",
+      "description": "Progress tracking details for students reviewing material",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string"
+        },
+        "questionId": {
+          "type": "string"
+        },
+        "revisionCount": {
+          "type": "integer"
+        },
+        "correctRevisionCount": {
+          "type": "integer"
+        },
+        "mastered": {
+          "type": "boolean"
+        },
+        "lastRevisedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentId", "questionId", "revisionCount", "correctRevisionCount", "mastered", "lastRevisedAt"]
+    },
+    "Achievement": {
+      "title": "Achievement",
+      "description": "Syllabus achievements and daily badges unlocked by the student",
+      "type": "object",
+      "properties": {
+        "achievementId": {
+          "type": "string"
+        },
+        "studentId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "unlockedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["achievementId", "studentId", "title", "description", "unlockedAt"]
+    },
+    "Leaderboard": {
+      "title": "Leaderboard Item",
+      "description": "Rankings of students across the classes",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string"
+        },
+        "studentName": {
+          "type": "string"
+        },
+        "totalMarks": {
+          "type": "integer"
+        },
+        "percentage": {
+          "type": "number"
+        },
+        "rank": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentId", "studentName", "totalMarks", "percentage", "rank", "updatedAt"]
+    },
+    "UserAchievement": {
+      "title": "User Achievement",
+      "description": "Indicates an achievement unlocked by a student",
+      "type": "object",
+      "properties": {
+        "userAchievementId": {
+          "type": "string"
+        },
+        "studentId": {
+          "type": "string"
+        },
+        "achievementId": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "badgeName": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "pointsAwarded": {
+          "type": "integer"
+        },
+        "emoji": {
+          "type": "string"
+        },
+        "unlockedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userAchievementId", "studentId", "achievementId", "title", "description", "pointsAwarded", "unlockedAt"]
+    },
+    "StudentPoints": {
+      "title": "Student Points",
+      "description": "Total points accumulated by a student",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string"
+        },
+        "studentName": {
+          "type": "string"
+        },
+        "totalPoints": {
+          "type": "integer"
+        },
+        "examPoints": {
+          "type": "integer"
+        },
+        "revisionPoints": {
+          "type": "integer"
+        },
+        "masteryPoints": {
+          "type": "integer"
+        },
+         "achievementPoints": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentId", "totalPoints", "updatedAt"]
+    },
+    "LeaderboardRecord": {
+      "title": "Leaderboard Record",
+      "description": "Production-grade leaderboard listing record for Daily, Weekly, Monthly, and All-Time spans",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "standard": { "type": "string" },
+        "school": { "type": "string" },
+        "village": { "type": "string" },
+        "points": { "type": "integer" },
+        "rankingScore": { "type": "number" },
+        "masteredQuestions": { "type": "integer" },
+        "revisionAccuracy": { "type": "number" },
+        "achievementsCount": { "type": "integer" },
+        "rank": { "type": "integer" },
+        "previousRank": { "type": "integer" },
+        "rankChange": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "studentName", "points", "rankingScore", "rank", "updatedAt"]
+    },
+    "SubjectLeaderboardRecord": {
+      "title": "Subject Leaderboard Record",
+      "description": "Pre-calculated real subject leaderboard record",
+      "type": "object",
+      "properties": {
+        "subjectId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "rankingScore": { "type": "number" },
+        "rank": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subjectId", "studentId", "rankingScore", "rank", "updatedAt"]
+    },
+    "TopPerformer": {
+      "title": "Top Performer",
+      "description": "Top student medal details for Gold, Silver, Bronze",
+      "type": "object",
+      "properties": {
+        "medal": { "type": "string", "enum": ["gold", "silver", "bronze"] },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "points": { "type": "integer" },
+        "rankingScore": { "type": "number" },
+        "standard": { "type": "string" },
+        "school": { "type": "string" },
+        "village": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["medal", "studentId", "studentName", "points", "rankingScore", "updatedAt"]
+    },
+    "LeaderboardAuditLog": {
+      "title": "Leaderboard Audit Log",
+      "description": "Audit and logging records for monitoring the server ranking engine",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "generationTime": { "type": "string", "format": "date-time" },
+        "recordsProcessed": { "type": "integer" },
+        "functionDuration": { "type": "integer" },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["id", "generationTime", "recordsProcessed", "functionDuration", "errors"]
+    },
+    "NotificationHistory": {
+      "title": "Notification History Item",
+      "description": "Retention, scheduler, and FCM notification deliveries logged for student transparency",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "opened": { "type": "boolean" }
+      },
+      "required": ["studentId", "type", "title", "message", "sentAt", "opened"]
+    },
+    "StudentAnalytics": {
+      "title": "Student Analytics",
+      "description": "Individual student performance metrics and calculated risk levels",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "school": { "type": "string" },
+        "village": { "type": "string" },
+        "standard": { "type": "string" },
+        "totalExams": { "type": "integer" },
+        "averageScore": { "type": "integer" },
+        "bestSubject": { "type": "string" },
+        "weakestSubject": { "type": "string" },
+        "revisionAccuracy": { "type": "integer" },
+        "masteredQuestions": { "type": "integer" },
+        "pendingRevisions": { "type": "integer" },
+        "achievementCount": { "type": "integer" },
+        "currentRank": { "type": "integer" },
+        "rankTrend": { "type": "string", "enum": ["up", "down", "stable"] },
+        "learningStreak": { "type": "integer" },
+        "performanceScore": { "type": "integer" },
+        "riskLevel": { "type": "string", "enum": ["low", "medium", "high"] },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "studentId", "studentName", "averageScore", "performanceScore", "riskLevel", "calculatedAt"]
+    },
+    "SubjectAnalytics": {
+      "title": "Subject Analytics",
+      "description": "Aggregated analytics for syllabus subjects",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "subjectName": { "type": "string" },
+        "standard": { "type": "string" },
+        "averageScore": { "type": "integer" },
+        "mostDifficultChapter": { "type": "string" },
+        "mostDifficultChapterName": { "type": "string" },
+        "mostFailedQuestionsCount": { "type": "integer" },
+        "revisionSuccessRate": { "type": "integer" },
+        "masteryRate: ": { "type": "integer" },
+        "studentParticipationPercent": { "type": "integer" },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "subjectId", "subjectName", "averageScore", "calculatedAt"]
+    },
+    "ChapterAnalytics": {
+      "title": "Chapter Analytics",
+      "description": "Chapter level risk and difficulty metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "chapterName": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "subjectName": { "type": "string" },
+        "standard": { "type": "string" },
+        "totalAttempts": { "type": "integer" },
+        "averageMarks": { "type": "integer" },
+        "difficultyScore": { "type": "integer" },
+        "revisionSuccessPercent": { "type": "integer" },
+        "masteryPercent": { "type": "integer" },
+        "mostCommonMistakes": { "type": "array", "items": { "type": "string" } },
+        "riskLevel": { "type": "string", "enum": ["low", "medium", "high"] },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "chapterId", "chapterName", "averageMarks", "riskLevel", "calculatedAt"]
+    },
+    "QuestionAnalytics": {
+      "title": "Question Analytics",
+      "description": "Question level fail rates and categorization",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "questionId": { "type": "string" },
+        "questionText": { "type": "string" },
+        "subjectName": { "type": "string" },
+        "chapterName": { "type": "string" },
+        "timesAsked": { "type": "integer" },
+        "correctPercent": { "type": "integer" },
+        "wrongPercent": { "type": "integer" },
+        "skipPercent": { "type": "integer" },
+        "difficultyScore": { "type": "integer" },
+        "revisionSuccessPercent": { "type": "integer" },
+        "category": { "type": "string", "enum": ["difficult", "confusing", "improved", "normal"] },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "questionId", "questionText", "timesAsked", "category", "calculatedAt"]
+    },
+    "SchoolAnalytics": {
+      "title": "School Analytics",
+      "description": "Aggregated academic metrics for registered schools",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "totalStudents": { "type": "integer" },
+        "averageScore": { "type": "integer" },
+        "participationPercent": { "type": "integer" },
+        "revisionCompletionPercent": { "type": "integer" },
+        "achievementCount": { "type": "integer" },
+        "leaderboardPosition": { "type": "integer" },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolName", "totalStudents", "averageScore", "leaderboardPosition", "calculatedAt"]
+    },
+    "VillageAnalytics": {
+      "title": "Village Analytics",
+      "description": "Aggregated indicators for villages/Gram Panchayats",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "villageName": { "type": "string" },
+        "totalStudents": { "type": "integer" },
+        "averagePerformance": { "type": "integer" },
+        "participationRate": { "type": "integer" },
+        "masteryRate": { "type": "integer" },
+        "villageRank": { "type": "integer" },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "villageName", "totalStudents", "averagePerformance", "villageRank", "calculatedAt"]
+    },
+    "StandardAnalytics": {
+      "title": "Standard Analytics",
+      "description": "Standard level progress tracking datasets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "standard": { "type": "string" },
+        "averageMarks": { "type": "integer" },
+        "revisionSuccessRate": { "type": "integer" },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "standard", "averageMarks", "calculatedAt"]
+    },
+    "LearningTrends": {
+      "title": "Learning Trends",
+      "description": "Spaced repetition and score trends over historical windows",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "calculatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "calculatedAt"]
+    },
+    "AnalyticsReport": {
+      "title": "Analytics Report",
+      "description": "Archived periodical educational reports",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "reportType": { "type": "string", "enum": ["daily", "weekly", "monthly"] },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "totalStudentsActive": { "type": "integer" },
+        "globalAvgScore": { "type": "integer" },
+        "topPerformingSchool": { "type": "string" },
+        "topPerformingVillage": { "type": "string" },
+        "weakestSubject": { "type": "string" },
+        "highRiskChaptersCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "jsonPayload": { "type": "string" }
+      },
+      "required": ["id", "reportType", "title", "summary", "createdAt"]
+    },
+    "School": {
+      "title": "School",
+      "description": "Approved school master record",
+      "type": "object",
+      "properties": {
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "village": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["schoolId", "schoolName", "village", "createdAt"]
+    },
+    "Village": {
+      "title": "Village",
+      "description": "Approved village master record",
+      "type": "object",
+      "properties": {
+        "villageId": { "type": "string" },
+        "villageName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["villageId", "villageName", "createdAt"]
+    },
+    "SchoolRequest": {
+      "title": "School Request",
+      "description": "User requested additions to the school master list",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "village": { "type": "string" },
+        "requestedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requestId", "schoolName", "village", "requestedBy", "status", "createdAt"]
+    },
+    "VillageRequest": {
+      "title": "Village Request",
+      "description": "User requested additions to the village master list",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "villageName": { "type": "string" },
+        "requestedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requestId", "villageName", "requestedBy", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles collection"
+    },
+    "/subjects/{subjectId}": {
+      "schema": "Subject",
+      "description": "Subject categories details"
+    },
+    "/chapters/{chapterId}": {
+      "schema": "Chapter",
+      "description": "Syllabus chapters"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Examiner's question bank"
+    },
+    "/exam_templates/{templateId}": {
+      "schema": "ExamTemplate",
+      "description": "Reusable exam templates/blueprints"
+    },
+    "/daily_exams/{examId}": {
+      "schema": "DailyExam",
+      "description": "Daily board exams"
+    },
+    "/exam_results/{resultId}": {
+      "schema": "ExamResult",
+      "description": "Aggregated exam attempts results"
+    },
+    "/student_mistakes/{mistakeId}": {
+      "schema": "StudentMistake",
+      "description": "Student wrong questions log to revise"
+    },
+    "/revision_progress/{progressId}": {
+      "schema": "RevisionProgress",
+      "description": "Revision progress cards state"
+    },
+    "/achievements/{achievementId}": {
+      "schema": "Achievement",
+      "description": "General achievement badges"
+    },
+    "/leaderboard/{leaderboardId}": {
+      "schema": "Leaderboard",
+      "description": "Top learning students rank list"
+    },
+    "/revision_analytics/{studentId}": {
+      "schema": "RevisionAnalytics",
+      "description": "Spaced repetition revision analytics summary"
+    },
+    "/user_achievements/{userAchievementId}": {
+      "schema": "UserAchievement",
+      "description": "Student unlocked achievements log"
+    },
+    "/student_points/{studentId}": {
+      "schema": "StudentPoints",
+      "description": "Student total points details"
+    },
+    "/leaderboard_daily/{recordId}": {
+      "schema": "LeaderboardRecord",
+      "description": "Daily leaderboards"
+    },
+    "/leaderboard_weekly/{recordId}": {
+      "schema": "LeaderboardRecord",
+      "description": "Weekly leaderboards"
+    },
+    "/leaderboard_monthly/{recordId}": {
+      "schema": "LeaderboardRecord",
+      "description": "Monthly leaderboards"
+    },
+    "/leaderboard_alltime/{recordId}": {
+      "schema": "LeaderboardRecord",
+      "description": "All time cumulative leaderboards"
+    },
+    "/subject_leaderboards/{recordId}": {
+      "schema": "SubjectLeaderboardRecord",
+      "description": "True rankings mapped by syllabus topics"
+    },
+    "/topPerformers/{medalId}": {
+      "schema": "TopPerformer",
+      "description": "Top podium records for direct dashboard reads"
+    },
+    "/leaderboard_audit_logs/{logId}": {
+      "schema": "LeaderboardAuditLog",
+      "description": "Internal diagnostics logs of calculations run"
+    },
+    "/notification_history/{recordId}": {
+      "schema": "NotificationHistory",
+      "description": "Historical log of retention and auto engagement notifications"
+    },
+    "/student_analytics/{studentId}": {
+      "schema": "StudentAnalytics",
+      "description": "Student performance indexes and calculated academic risk flags"
+    },
+    "/subject_analytics/{subjectId}": {
+      "schema": "SubjectAnalytics",
+      "description": "Syllabus subject difficulty scores and revision accuracy rates"
+    },
+    "/chapter_analytics/{chapterId}": {
+      "schema": "ChapterAnalytics",
+      "description": "Chapter level fail rates and common misconceptions logged"
+    },
+    "/question_analytics/{questionId}": {
+      "schema": "QuestionAnalytics",
+      "description": "Specific question incorrect percentage tracking to isolate confusing items"
+    },
+    "/school_analytics/{schoolId}": {
+      "schema": "SchoolAnalytics",
+      "description": "School level stats including completion trends and average mark sheets"
+    },
+    "/village_analytics/{villageId}": {
+      "schema": "VillageAnalytics",
+      "description": "Village level participation rate and student leaderboard achievements"
+    },
+    "/standard_analytics/{standardId}": {
+      "schema": "StandardAnalytics",
+      "description": "Standard level learning parameters and highest mark curves"
+    },
+    "/learning_trends/{id}": {
+      "schema": "LearningTrends",
+      "description": "Historical trending indexes including active students and streak counters"
+    },
+    "/analytics_reports/{id}": {
+      "schema": "AnalyticsReport",
+      "description": "Periodical weekly and monthly summaries exported for examiners"
+    },
+    "/schools/{schoolId}": {
+      "schema": "School",
+      "description": "Master list of approved secondary schools"
+    },
+    "/villages/{villageId}": {
+      "schema": "Village",
+      "description": "Master list of approved villages/cities"
+    },
+    "/school_requests/{requestId}": {
+      "schema": "SchoolRequest",
+      "description": "User requests for adding new schools, pending admin approval"
+    },
+    "/village_requests/{requestId}": {
+      "schema": "VillageRequest",
+      "description": "User requests for adding new villages, pending admin approval"
+    }
+  }
+}

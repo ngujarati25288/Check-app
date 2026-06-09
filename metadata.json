@@ -1,0 +1,6 @@
+{
+  "name": "Daily Learning Exam",
+  "description": "Daily exams and mistake-based revision for Gujarat Board students",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

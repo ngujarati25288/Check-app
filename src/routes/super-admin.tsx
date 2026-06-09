@@ -1,0 +1,1698 @@
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect, useMemo } from "react";
+import {
+  Sparkles,
+  Shield,
+  ShieldAlert,
+  Users,
+  CheckCircle2,
+  Settings,
+  Activity,
+  HardDrive,
+  Send,
+  Download,
+  AlertTriangle,
+  RefreshCw,
+  Lock,
+  Unlock,
+  Search,
+  Trash,
+  Plus,
+  Phone,
+  MapPin,
+  School,
+  Globe,
+  X,
+  Check,
+  ChevronRight,
+  Database,
+  Award,
+  Loader2
+} from "lucide-react";
+import { AppShell } from "@/components/AppShell";
+import { AdvancedAnalyticsDashboard } from "@/components/AdvancedAnalyticsDashboard";
+import { useAuth } from "@/components/FirebaseProvider";
+import { SuperAdminRepository, AdminRepository, AnalyticsRepository } from "@/lib/db";
+import { 
+  SuperAdminSettings, 
+  Announcement, 
+  SystemBackup, 
+  SecurityLog, 
+  DBUser, 
+  StudentPoints,
+  StudentAnalytics,
+  SubjectAnalytics,
+  ChapterAnalytics,
+  QuestionAnalytics,
+  SchoolAnalytics,
+  VillageAnalytics,
+  StandardAnalytics,
+  LearningTrends,
+  AnalyticsReport
+} from "@/types";
+import { sfx } from "@/lib/settings";
+import { toast } from "sonner";
+import { hashSync } from "bcryptjs";
+
+export const Route = createFileRoute("/super-admin")({
+  head: () => ({ meta: [{ title: "Super Admin Control Center" }] }),
+  component: SuperAdminLayout,
+});
+
+function SuperAdminLayout() {
+  const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
+
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "analytics" | "admins" | "students" | "announcements" | "settings" | "backups" | "export"
+  >("overview");
+
+  // System States
+  const [settings, setSettings] = useState<SuperAdminSettings | null>(null);
+  const [admins, setAdmins] = useState<DBUser[]>([]);
+  const [students, setStudents] = useState<DBUser[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [backups, setBackups] = useState<SystemBackup[]>([]);
+  const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Advanced Analytics States
+  const [studentAnalytics, setStudentAnalytics] = useState<StudentAnalytics[]>([]);
+  const [subjectAnalytics, setSubjectAnalytics] = useState<SubjectAnalytics[]>([]);
+  const [chapterAnalytics, setChapterAnalytics] = useState<ChapterAnalytics[]>([]);
+  const [questionAnalytics, setQuestionAnalytics] = useState<QuestionAnalytics[]>([]);
+  const [schoolAnalytics, setSchoolAnalytics] = useState<SchoolAnalytics[]>([]);
+  const [villageAnalytics, setVillageAnalytics] = useState<VillageAnalytics[]>([]);
+  const [standardAnalytics, setStandardAnalytics] = useState<StandardAnalytics[]>([]);
+  const [learningTrends, setLearningTrends] = useState<LearningTrends | null>(null);
+  const [analyticsReports, setAnalyticsReports] = useState<AnalyticsReport[]>([]);
+
+  // Form states
+  const [newAdminName, setNewAdminName] = useState("");
+  const [newAdminMobile, setNewAdminMobile] = useState("");
+  const [newAdminSchool, setNewAdminSchool] = useState("");
+  const [newAdminStd, setNewAdminStd] = useState("10");
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+
+  // User Management state hooks
+  const [showAddUserSection, setShowAddUserSection] = useState(false);
+  const [newUserId, setNewUserId] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserMobile, setNewUserMobile] = useState("");
+  const [newUserSchool, setNewUserSchool] = useState("");
+  const [newUserStd, setNewUserStd] = useState("10");
+  const [newUserDiv, setNewUserDiv] = useState("A");
+  const [newUserVillage, setNewUserVillage] = useState("");
+  const [newUserRoleState, setNewUserRoleState] = useState("student");
+
+  // Announcement inputs
+  const [annTitle, setAnnTitle] = useState("");
+  const [annMessage, setAnnMessage] = useState("");
+  const [annStd, setAnnStd] = useState("all");
+  const [annSchool, setAnnSchool] = useState("all");
+  const [annVillage, setAnnVillage] = useState("all");
+
+  // Filter/Search inputs
+  const [adminSearch, setAdminSearch] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [studentFilterStd, setStudentFilterStd] = useState("all");
+  const [selectedAdminLogs, setSelectedAdminLogs] = useState<DBUser | null>(null);
+
+  // Settings inputs
+  const [cfgAppName, setCfgAppName] = useState("");
+  const [cfgAppVersion, setCfgAppVersion] = useState("");
+  const [cfgSupport, setCfgSupport] = useState("");
+  const [cfgMaintenance, setCfgMaintenance] = useState(false);
+  const [cfgBanner, setCfgBanner] = useState("");
+  const [cfgPush, setCfgPush] = useState(true);
+  const [thresholdGold, setThresholdGold] = useState(90);
+  const [thresholdSilver, setThresholdSilver] = useState(80);
+  const [thresholdBronze, setThresholdBronze] = useState(70);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      // Recalculate and synchronize educational analytics data
+      await AnalyticsRepository.runAnalyticsEngineCloudSync();
+
+      const [
+        cfg,
+        admList,
+        stdList,
+        annList,
+        bakList,
+        secList,
+        audList,
+        studAnList,
+        subjAnList,
+        chapAnList,
+        questAnList,
+        schAnList,
+        vilAnList,
+        stdAnList,
+        trendAn,
+        rptsAn
+      ] = await Promise.all([
+        SuperAdminRepository.getSettings(),
+        SuperAdminRepository.getAllAdmins(),
+        AdminRepository.getAllStudents(),
+        SuperAdminRepository.getAllAnnouncements(),
+        SuperAdminRepository.getBackups(),
+        SuperAdminRepository.getSecurityLogs(),
+        AdminRepository.getAuditLogs(),
+        AnalyticsRepository.getAllStudentAnalytics(),
+        AnalyticsRepository.getAllSubjectAnalytics(),
+        AnalyticsRepository.getAllChapterAnalytics(),
+        AnalyticsRepository.getAllQuestionAnalytics(),
+        AnalyticsRepository.getSchoolAnalytics(),
+        AnalyticsRepository.getVillageAnalytics(),
+        AnalyticsRepository.getAllStandardAnalytics(),
+        AnalyticsRepository.getLearningTrends(),
+        AnalyticsRepository.getAnalyticsReports()
+      ]);
+
+      setSettings(cfg);
+      setCfgAppName(cfg.appName);
+      setCfgAppVersion(cfg.appVersion);
+      setCfgSupport(cfg.supportContact);
+      setCfgMaintenance(cfg.maintenanceMode);
+      setCfgBanner(cfg.maintenanceBanner);
+      setCfgPush(cfg.instantPushToggled);
+      setThresholdGold(cfg.badgeThresholdGold || 90);
+      setThresholdSilver(cfg.badgeThresholdSilver || 80);
+      setThresholdBronze(cfg.badgeThresholdBronze || 70);
+
+      setAdmins(admList);
+      setStudents(stdList);
+      setAnnouncements(annList);
+      setBackups(bakList);
+      setSecurityLogs(secList);
+      setAuditLogs(audList);
+
+      // Save analytics states
+      setStudentAnalytics(studAnList);
+      setSubjectAnalytics(subjAnList);
+      setChapterAnalytics(chapAnList);
+      setQuestionAnalytics(questAnList);
+      setSchoolAnalytics(schAnList);
+      setVillageAnalytics(vilAnList);
+      setStandardAnalytics(stdAnList);
+      setLearningTrends(trendAn);
+      setAnalyticsReports(rptsAn);
+    } catch (e) {
+      console.error(e);
+      toast.error("Error loading Super Admin systems.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!authLoading) {
+      if (!user?.uid) {
+        navigate({ to: "/login" });
+      } else if (isSuperAdmin) {
+        if (!dataLoaded) {
+          const timeoutId = setTimeout(() => {
+            if (active && loading) {
+              setLoading(false);
+              console.warn("Super-admin loading timed out after 8s");
+            }
+          }, 8000);
+
+          const runLoad = async () => {
+            try {
+              await loadData();
+              if (active) setDataLoaded(true);
+            } catch (err) {
+              console.error("Super Admin load failed:", err);
+            } finally {
+              clearTimeout(timeoutId);
+            }
+          };
+          runLoad();
+        }
+      } else {
+        toast.error("અવરોધિત એક્સેસ: તમારી પાસે સુપર એડમિન સત્તા નથી. Redirecting to dashboard...");
+        navigate({ to: "/dashboard" });
+      }
+    }
+    return () => {
+      active = false;
+    };
+  }, [user?.uid, user?.role, authLoading, isSuperAdmin, dataLoaded]);
+
+  // Route security guard rendering
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-3">
+        <Loader2 className="size-10 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground font-gu">સત્તાધિકારી તપાસ ચાલુ છે...</p>
+      </div>
+    );
+  }
+
+  if (!user || !isSuperAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="max-w-md w-full bg-card border border-destructive/25 rounded-3xl p-6 text-center space-y-4 shadow-xl animate-[fade-in_0.4s_ease-out]">
+          <div className="size-16 rounded-full bg-destructive/15 text-destructive flex items-center justify-center mx-auto ring-8 ring-destructive/5 animate-pulse">
+            <ShieldAlert className="size-8" />
+          </div>
+          <h1 className="text-xl font-black text-foreground uppercase tracking-wider">SUPER ADMIN ACCESS DENIED</h1>
+          <p className="text-xs font-gu text-muted-foreground leading-relaxed">
+            આ પૃષ્ઠ માત્ર મુખ્ય વહીવટી અધિકારી (Super Admin) માટે અનામત છે. તમારી ઓળખ વિદ્યાર્થી અથવા સામાન્ય એડમિન હોવાથી આ કનેક્શન સિક્યોરિટી નિયમો હેઠળ નકારી કાઢવામાં આવ્યું છે.
+          </p>
+          <div className="pt-4 flex flex-col gap-2">
+            <Link
+              to="/dashboard"
+              className="h-11 rounded-2xl bg-primary text-primary-foreground font-semibold flex items-center justify-center transition shadow-md active:scale-95 text-xs uppercase"
+            >
+              Back to Dashboard
+            </Link>
+            <Link
+              to="/profile"
+              className="text-xs text-muted-foreground hover:underline font-gu"
+            >
+              પ્રોફાઇલમાંથી સત્તા બદલો (Swap Role in Profile)
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Action methods
+  const handleCreateAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminName.trim() || !newAdminMobile.trim()) {
+      toast.warning("રજીસ્ટ્રેશન માટે વિગતો અધૂરી છે!");
+      return;
+    }
+
+    try {
+      const templateAdmin: DBUser = {
+        uid: "adm_" + Date.now(),
+        fullName: newAdminName,
+        mobile: newAdminMobile,
+        school: newAdminSchool || "સરકારી શાળા",
+        standard: newAdminStd,
+        role: "admin",
+        status: "approved",
+        createdAt: new Date().toISOString()
+      };
+
+      await SuperAdminRepository.createAdmin(templateAdmin);
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `બનાવવામાં આવ્યું નવું સત્તાધિકારી ખાતું: ${newAdminName} (${newAdminMobile})`
+      });
+
+      toast.success("નવા સંચાલક ખાતાની રચના સફળતાપૂર્વક થઈ ગઈ છે!");
+      setShowAddAdminModal(false);
+      setNewAdminName("");
+      setNewAdminMobile("");
+      setNewAdminSchool("");
+      loadData();
+    } catch (e) {
+      toast.error("ખાતું સેટ કરવામાં ભૂલ આવી.");
+    }
+  };
+
+  const handleUpdateAdminStatus = async (uid: string, status: "approved" | "blocked" | "pending") => {
+    try {
+      await SuperAdminRepository.updateAdminStatus(uid, status);
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `બદલાયેલ સંચાલક ઓળખ ગુણધર્મ: UID: ${uid} -> status: ${status}`
+      });
+
+      toast.success(`સંચાલક ખાતાની સત્તા બદલીને ${status} કરી દેવામાં આવી છે.`);
+      loadData();
+    } catch (e) {
+      toast.error("સ્થિતિ બદલવામાં ખામી સર્જાઈ.");
+    }
+  };
+
+  const handleDeleteAdmin = async (uid: string) => {
+    if (!confirm("Are you sure you want to permanently delete this Admin?")) return;
+    try {
+      await SuperAdminRepository.deleteAdmin(uid);
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `permanent deletion of admin UID: ${uid}`
+      });
+      toast.success("સંચાલક ખાતું કાયમી ધોરણે રદ કરવામાં આવ્યું!");
+      loadData();
+    } catch (e) {
+      toast.error("રદ કરવામાં ભૂલ.");
+    }
+  };
+
+  const handleCreateNewUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserId.trim() || !newUserPassword.trim() || !newUserName.trim()) {
+      toast.warning("Please fill all required student/user fields!");
+      return;
+    }
+
+    const studentIdClean = newUserId.trim();
+    const generatedUid = "user_" + studentIdClean;
+    const hashedPassword = hashSync(newUserPassword, 10);
+
+    const newUserProfile: DBUser = {
+      uid: generatedUid,
+      studentId: studentIdClean,
+      passwordHash: hashedPassword,
+      fullName: newUserName.trim(),
+      mobile: newUserMobile.trim(),
+      school: newUserSchool.trim(),
+      standard: newUserStd,
+      division: newUserDiv,
+      village: newUserVillage.trim(),
+      role: newUserRoleState as any,
+      status: "Approved",
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await AdminRepository.createUserByAdmin(user.uid, user.fullName || "Super Admin", newUserProfile);
+      toast.success(`User ${newUserName} (${newUserRoleState}) successfully registered!`);
+      
+      // Reset form fields
+      setNewUserId("");
+      setNewUserPassword("");
+      setNewUserName("");
+      setNewUserMobile("");
+      setNewUserSchool("");
+      setNewUserVillage("");
+      setShowAddUserSection(false);
+
+      // Reload
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to register new user.");
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      await SuperAdminRepository.updateSettings({
+        appName: cfgAppName,
+        appVersion: cfgAppVersion,
+        supportContact: cfgSupport,
+        maintenanceMode: cfgMaintenance,
+        maintenanceBanner: cfgBanner,
+        instantPushToggled: cfgPush,
+        badgeThresholdGold: thresholdGold,
+        badgeThresholdSilver: thresholdSilver,
+        badgeThresholdBronze: thresholdBronze
+      });
+
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `વૈશ્વિક સિસ્ટમ સુયોજન અપડેટ (વિદ્યાર્થી મર્યાદા સેટિંગ્સ સુધારો, મેન્ટેનન્સ: ${cfgMaintenance})`
+      });
+
+      toast.success("વૈશ્વિક નિયંત્રણો અને સેટિંગ્સ સુરક્ષિત રીતે સાચવવામાં આવી છે!");
+      loadData();
+    } catch (e) {
+      toast.error("નિયંત્રણો અપડેટ કરવામાં નિષ્ફળતા.");
+    }
+  };
+
+  const handleSendAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!annTitle.trim() || !annMessage.trim()) {
+      toast.warning("કૃપા કરીને શીર્ષક અને સંદેશ પૂર્ણ કરો!");
+      return;
+    }
+
+    try {
+      const activeTargets = students.filter((s) => {
+        if (annStd !== "all" && s.standard !== annStd) return false;
+        if (annSchool !== "all" && s.school !== annSchool) return false;
+        if (annVillage !== "all" && s.village !== annVillage) return false;
+        return true;
+      });
+
+      const newAnn: Announcement = {
+        id: "ann_" + Date.now(),
+        title: annTitle,
+        message: annMessage,
+        targetStandard: annStd,
+        targetSchool: annSchool,
+        targetVillage: annVillage,
+        senderName: user.fullName || "સુપર એડમિન",
+        sentAt: new Date().toISOString(),
+        readRate: 100,
+        readCount: activeTargets.length,
+        totalCount: activeTargets.length
+      };
+
+      await SuperAdminRepository.sendAnnouncement(newAnn);
+
+      // Save announcements to matching targeted students' notify in Firestore/LocalStorage
+      for (const std of activeTargets) {
+        await AdminRepository.sendSystemNotification(
+          user.uid,
+          user.fullName || "Super Admin",
+          std.standard || "all",
+          "exam",
+          annTitle,
+          annMessage
+        );
+      }
+
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `બ્રોડકાસ્ટ જાહેરાત મોકલવામાં આવી: "${annTitle}" - Standard: ${annStd}`
+      });
+
+      toast.success(`📢 જાહેરાત સફળતાપૂર્વક ${activeTargets.length} વિદ્યાર્થીઓને મોકલાઈ!`);
+      setAnnTitle("");
+      setAnnMessage("");
+      loadData();
+    } catch (e) {
+      toast.error("જાહેરાત પ્રસારણમાં ત્રુટિ.");
+    }
+  };
+
+  const handleTriggerBackup = async () => {
+    try {
+      sfx.tap();
+      const backupResult = await SuperAdminRepository.triggerBackup(user.fullName || "Super Admin");
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `મેન્યુઅલ હોટ-બેકઅપ સુરક્ષિત રીતે ડાઉનલોડ પ્રક્રિયા: ${backupResult.backupName}`
+      });
+      toast.success(`બેકઅપ સફળતાપૂર્વક લેવાયો: ${backupResult.backupName}`);
+      loadData();
+    } catch (e) {
+      toast.error("બેકઅપ નિષ્ફળ.");
+    }
+  };
+
+  // Export CSV generator
+  const handleExportDataCsv = (dataType: "students" | "admins" | "questions" | "security") => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    let filename = `${dataType}_export_${new Date().toISOString().split("T")[0]}.csv`;
+
+    if (dataType === "students") {
+      csvContent += "UID,FullName,Mobile,School,Standard,Village,Points,Role,Status,CreatedAt\n";
+      students.forEach((s) => {
+        csvContent += `"${s.uid}","${s.fullName}","${s.mobile}","${s.school}","${s.standard}","${s.village}",500,"${s.role}","${s.status || "approved"}","${s.createdAt || ""}"\n`;
+      });
+    } else if (dataType === "admins") {
+      csvContent += "UID,FullName,Mobile,School,Standard,Role,Status,CreatedAt\n";
+      admins.forEach((a) => {
+        csvContent += `"${a.uid}","${a.fullName}","${a.mobile}","${a.school}","${a.standard}","${a.role}","${a.status}","${a.createdAt || ""}"\n`;
+      });
+    } else if (dataType === "security") {
+      csvContent += "ID,EventType,UserId,UserName,UserRole,Details,Timestamp\n";
+      securityLogs.forEach((l) => {
+        csvContent += `"${l.id}","${l.eventType}","${l.userId}","${l.userName}","${l.userRole}","${l.details}","${l.timestamp}"\n`;
+      });
+    } else {
+      csvContent += "ID,Type,Title,SentAt,ReadCount,TotalCount\n";
+      announcements.forEach((an) => {
+        csvContent += `"${an.id}","announcement","${an.title}","${an.sentAt}",${an.readCount},${an.totalCount}\n`;
+      });
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success(`${dataType.toUpperCase()} સત્ર ડેટા રિકોર્ડ્સ નિકાસ સંપન્ન!`);
+  };
+
+  // List dynamic parameters
+  const filteredAdmins = admins.filter(
+    (a) =>
+      a.fullName.toLowerCase().includes(adminSearch.toLowerCase()) ||
+      a.mobile.includes(adminSearch)
+  );
+
+  const filteredStudents = students.filter((s) => {
+    const matchesSearch =
+      s.fullName.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      (s.mobile && s.mobile.includes(studentSearch));
+    const matchesStd = studentFilterStd === "all" || s.standard === studentFilterStd;
+    return matchesSearch && matchesStd;
+  });
+
+  return (
+    <AppShell title="Super Control" titleGu="મુખ્ય સત્તાધિકારી કેન્દ્ર" back="/dashboard">
+      {loading ? (
+        <div className="min-h-[60vh] flex flex-col items-center justify-center bg-background gap-3">
+          <Loader2 className="size-10 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground font-gu">સમગ્ર વહીવટી ડેટાબેઝ મેળવી રહ્યા છીએ...</p>
+        </div>
+      ) : (
+        <div className="px-4 py-4 space-y-5 pb-11">
+          {/* HEADER HERO ACCENT */}
+          <div className="rounded-3xl bg-gradient-to-br from-purple-800 to-indigo-950 p-6 text-white shadow-float relative overflow-hidden">
+            <div className="absolute -bottom-10 -right-10 size-40 rounded-full bg-white/5 blur-2xl font-sans" />
+            <div className="relative">
+              <span className="inline-flex items-center gap-1 bg-white/10 text-xs text-indigo-200 px-3 py-1 rounded-full font-black font-mono">
+                👑 SYSTEM OWNER COMMAND
+              </span>
+              <h2 className="text-xl font-bold mt-3 font-sans">SUPER CONTROL PANEL</h2>
+              <p className="text-xs text-indigo-200/90 font-gu">
+                મોનિટરિંગ, વૈશ્વિક એડમિન સત્તાઓ, બેકઅપ્સ, સિક્યોરિટી એલર્ટ્સ અને કસ્ટમ જાહેરાતોનું નિયંત્રણ અત્રેથી થશે.
+              </p>
+            </div>
+          </div>
+
+          {/* TAB BAR NAVIGATION */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 mx-[-16px] px-4 scrollbar-none sticky top-14 bg-background z-20 py-2 border-b border-border">
+            {[
+              { id: "overview", label: "Overview", icon: Activity },
+              { id: "analytics", label: "Advanced Analytics", icon: Activity },
+              { id: "admins", label: "Admins", icon: Shield },
+              { id: "students", label: "Students", icon: Users },
+              { id: "announcements", label: "📢 Custom", icon: Send },
+              { id: "settings", label: "Config", icon: Settings },
+              { id: "backups", label: "Backups", icon: HardDrive },
+              { id: "export", label: "Export", icon: Download }
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id as any);
+                    sfx.tap();
+                  }}
+                  className={`px-4 py-2 text-xs font-semibold rounded-2xl shrink-0 flex items-center gap-1.5 transition active:scale-95 ${
+                    active
+                      ? "gradient-primary text-primary-foreground shadow-float"
+                      : "bg-muted text-muted-foreground hover:bg-muted/70"
+                  }`}
+                >
+                  <Icon className="size-3.5" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* TABS CONTENT */}
+
+          {activeTab === "analytics" && (
+            <div className="animate-[fade-in_0.35s_ease-out]">
+              <AdvancedAnalyticsDashboard
+                studentAnalytics={studentAnalytics}
+                subjectAnalytics={subjectAnalytics}
+                chapterAnalytics={chapterAnalytics}
+                questionAnalytics={questionAnalytics}
+                schoolAnalytics={schoolAnalytics}
+                villageAnalytics={villageAnalytics}
+                standardAnalytics={standardAnalytics}
+                learningTrends={learningTrends}
+                analyticsReports={analyticsReports}
+                onRefresh={loadData}
+                userRole="super_admin"
+              />
+            </div>
+          )}
+
+          {/* TAB 1: OVERVIEW & SYSTEM HEALTH */}
+          {activeTab === "overview" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              {/* SYSTEM HEALTH STATUS BADGE */}
+              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 dark:text-emerald-300 rounded-3xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="relative flex h-3 size-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 size-3 bg-emerald-500" />
+                  </span>
+                  <div>
+                    <p className="text-xs uppercase font-bold tracking-wider">SYSTEM HEALTH: ONLINE</p>
+                    <p className="text-[10px] text-muted-foreground">All cloud servers and connection arrays operational</p>
+                  </div>
+                </div>
+                <div className="text-right text-[10px] font-mono text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
+                  LATENCY: ~24ms
+                </div>
+              </div>
+
+              {/* OVERVIEW STATS BENTO */}
+              <div className="grid grid-cols-2 gap-3">
+                <BentoCard icon={<Users className="text-primary" />} label="Students" value={students.length} />
+                <BentoCard icon={<Shield className="text-violet-500" />} label="Active Admins" value={admins.filter(a => a.status === "approved").length} />
+                <BentoCard icon={<Database className="text-indigo-500" />} label="Security Audits" value={securityLogs.length} />
+                <BentoCard icon={<Send className="text-amber-500" />} label="Announcements" value={announcements.length} />
+              </div>
+
+              {/* LIVE SECURITY LOG MONITOR */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-card space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-sm">SECURITY MONITOR LOGS</h3>
+                    <p className="text-[10px] text-muted-foreground">Real-time authentication audits / system state changes</p>
+                  </div>
+                  <span className="text-[10px] bg-destructive/10 text-destructive border border-destructive/10 px-2.5 py-0.5 rounded-full font-black uppercase font-mono">
+                    SECURE SHIELD
+                  </span>
+                </div>
+
+                <div className="divide-y divide-border max-h-72 overflow-y-auto pr-1 space-y-2.5">
+                  {securityLogs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">No security events triggered.</p>
+                  ) : (
+                    securityLogs.slice(0, 8).map((log) => (
+                      <div key={log.id} className="pt-2 flex gap-3 text-xs">
+                        <div className="shrink-0 mt-0.5">
+                          {log.eventType === "login_success" ? (
+                            <span className="size-2 rounded-full block bg-success" />
+                          ) : log.eventType === "login_failed" || log.eventType === "privilege_escalation" ? (
+                            <span className="size-2 rounded-full block bg-destructive animate-pulse" />
+                          ) : (
+                            <span className="size-2 rounded-full block bg-warning" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                            <span className="font-bold uppercase tracking-wider text-muted-foreground font-mono">
+                              {log.eventType}
+                            </span>
+                            <span className="font-mono">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                          </div>
+                          <p className="text-foreground text-xs leading-relaxed mt-0.5 font-gu">{log.details}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                            BY: {log.userName} (role: {log.userRole})
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: ADMINS MANAGEMENT */}
+          {activeTab === "admins" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              <div className="flex justify-between items-center">
+                <p className="text-xs text-muted-foreground font-gu">
+                  મંજૂર સંચાલકોની યાદી નીચે મુજબ છે. તેઓ વિષયો, પ્રશ્નો અને વિદ્યાર્થી પરીક્ષાઓ સંભાળે છે.
+                </p>
+                <button
+                  onClick={() => {
+                    setShowAddAdminModal(true);
+                    sfx.tap();
+                  }}
+                  className="gradient-primary text-primary-foreground font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 shadow-sm shrink-0"
+                >
+                  <Plus className="size-4" /> Add Admin
+                </button>
+              </div>
+
+              {/* SEARCH FIELD */}
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="નામ અથવા ફોન નંબરથી એડમિન શોધો..."
+                  value={adminSearch}
+                  onChange={(e) => setAdminSearch(e.target.value)}
+                  className="w-full h-11 bg-card border border-border rounded-2xl pl-10 pr-4 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+              </div>
+
+              {/* ADMINS CARD DIRECTORY */}
+              <div className="space-y-3">
+                {filteredAdmins.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-6">કોઈ મેળ ખાતા વહીવટી ખાતા મળ્યા નથી.</p>
+                ) : (
+                  filteredAdmins.map((adm) => (
+                    <div key={adm.uid} className="bg-card border border-border rounded-3xl p-4 shadow-sm space-y-3">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-sm truncate">{adm.fullName}</h4>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px] text-muted-foreground font-gu">
+                            <span className="flex items-center gap-0.5 bg-muted px-2 py-0.5 rounded-md">
+                              <Phone className="size-3" /> {adm.mobile}
+                            </span>
+                            <span className="flex items-center gap-0.5 bg-muted px-2 py-0.5 rounded-md">
+                              <School className="size-3" /> {adm.school}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Status Badges */}
+                        <div className="shrink-0 flex gap-1">
+                          {adm.status === "approved" && (
+                            <span className="text-[10px] bg-success-soft text-success border border-success/10 font-bold px-2.5 py-0.5 rounded-full font-sans uppercase">
+                              Active
+                            </span>
+                          )}
+                          {adm.status === "blocked" && (
+                            <span className="text-[10px] bg-destructive-soft text-destructive border border-destructive/10 font-bold px-2.5 py-0.5 rounded-full font-sans uppercase">
+                              Blocked
+                            </span>
+                          )}
+                          {adm.status === "pending" && (
+                            <span className="text-[10px] bg-warning-soft text-warning border border-warning/10 font-bold px-2.5 py-0.5 rounded-full font-sans uppercase">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons inside admin card */}
+                      <div className="flex items-center justify-between border-t border-border pt-3 gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedAdminLogs(adm);
+                            sfx.tap();
+                          }}
+                          className="text-[11px] font-bold text-primary hover:underline font-gu flex items-center gap-1"
+                        >
+                          પ્રક્રિયા લોગ જુઓ (View Log)
+                        </button>
+
+                        <div className="flex gap-2">
+                          {adm.status !== "approved" && (
+                            <button
+                              onClick={() => handleUpdateAdminStatus(adm.uid, "approved")}
+                              className="text-[10px] font-bold bg-success-soft text-success px-2.5 py-1 rounded-xl border border-success/10 active:scale-95 transition"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {adm.status !== "blocked" && (
+                            <button
+                              onClick={() => handleUpdateAdminStatus(adm.uid, "blocked")}
+                              className="text-[10px] font-bold bg-destructive-soft text-destructive px-2.5 py-1 rounded-xl border border-destructive/10 active:scale-95 transition"
+                            >
+                              Block
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteAdmin(adm.uid)}
+                            className="size-7 rounded-xl bg-muted text-muted-foreground hover:text-destructive flex items-center justify-center transition active:scale-95 border border-border"
+                            title="Delete permanently"
+                          >
+                            <Trash className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* SPECIFIC ADMIN ACTIVITY PREVIEW */}
+              {selectedAdminLogs && (
+                <div className="bg-card border-2 border-primary/20 rounded-3xl p-5 shadow-card space-y-4 animate-[scale-in_0.3s_ease-out]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-primary">
+                      ACTIVITY LOG: {selectedAdminLogs.fullName}
+                    </h3>
+                    <button
+                      onClick={() => setSelectedAdminLogs(null)}
+                      className="size-6 bg-muted rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/70"
+                    >
+                      <X className="size-3.5" strokeWidth={3} />
+                    </button>
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto divide-y divide-border space-y-2">
+                    {auditLogs.filter((log) => log.adminId === selectedAdminLogs.uid).length === 0 ? (
+                      <p className="text-xs text-muted-foreground p-3 text-center">No action logs found for this admin.</p>
+                    ) : (
+                      auditLogs
+                        .filter((log) => log.adminId === selectedAdminLogs.uid)
+                        .map((log, i) => (
+                          <div key={i} className="pt-2 text-xs">
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                              <span className="font-bold underline">{log.actionType}</span>
+                              <span>{new Date(log.timestamp).toLocaleDateString()}</span>
+                            </div>
+                            <p className="mt-1 text-foreground leading-relaxed font-gu">{log.details}</p>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* CREATE ADMIN MODAL DIALOG */}
+              {showAddAdminModal && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+                  <div className="bg-card border border-border rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl animate-[scale-in_0.3s_ease-out]">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-bold text-sm">Create Admin Access Account</h4>
+                      <button
+                        onClick={() => setShowAddAdminModal(false)}
+                        className="size-8 bg-muted rounded-full flex items-center justify-center text-muted-foreground"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleCreateAdminSubmit} className="space-y-3 text-left">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase">Адмін full name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="દા.ત. હરેશ પંડ્યા"
+                          value={newAdminName}
+                          onChange={(e) => setNewAdminName(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase">Mobile Number (10 digit)</label>
+                        <input
+                          type="tel"
+                          required
+                          maxLength={10}
+                          placeholder="દા.ત. 9426094260"
+                          value={newAdminMobile}
+                          onChange={(e) => setNewAdminMobile(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase">Managing School / City</label>
+                        <input
+                          type="text"
+                          placeholder="દા.ત. શારદા મંદિર અમદાવાદ"
+                          value={newAdminSchool}
+                          onChange={(e) => setNewAdminSchool(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase">Standard Code (1-10)</label>
+                        <select
+                          value={newAdminStd}
+                          onChange={(e) => setNewAdminStd(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        >
+                          {["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].map((st) => (
+                            <option key={st} value={st}>Standard {st}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase"
+                      >
+                        Create Authorized admin
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: USER MANAGEMENT */}
+          {activeTab === "students" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-card border border-border rounded-2xl px-4 py-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground font-gu">કુલ વિદ્યાર્થી નોંધણી:</span>
+                  <span className="font-bold text-primary font-mono ml-1">{students.length} registers</span>
+                </div>
+                <button
+                  onClick={() => setShowAddUserSection(!showAddUserSection)}
+                  className="px-3 py-1.5 rounded-xl gradient-primary text-primary-foreground text-[11px] font-bold flex items-center gap-1 active:scale-95 transition"
+                >
+                  {showAddUserSection ? "✕ Close Form" : "➕ Add Student / User"}
+                </button>
+              </div>
+
+              {/* EXPANDABLE ADD NEW USER SECTION */}
+              {showAddUserSection && (
+                <div className="bg-card border border-border rounded-3xl p-5 shadow-md space-y-4 animate-[slide-up_0.3s_ease-out]">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-teal-500/10 text-teal-600">
+                      <Users className="size-4" />
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-sm">REGISTER NEW SYSTEM ACCOUNT</h3>
+                      <p className="text-[10px] text-muted-foreground">કોઈપણ રોલ ધરાવતું અકાઉન્ટ સીધું ઉમેરો (Direct creation)</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleCreateNewUser} className="space-y-3 text-left">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Student / User ID *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 10052"
+                          value={newUserId}
+                          onChange={(e) => setNewUserId(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Plain password *</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="e.g. password"
+                          value={newUserPassword}
+                          onChange={(e) => setNewUserPassword(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Rameshbhai Patel"
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Mobile Number</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 9876543210"
+                          value={newUserMobile}
+                          onChange={(e) => setNewUserMobile(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">School / Institution</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Model High School"
+                          value={newUserSchool}
+                          onChange={(e) => setNewUserSchool(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Village / City</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Palanpur"
+                          value={newUserVillage}
+                          onChange={(e) => setNewUserVillage(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">System Account Role</label>
+                        <select
+                          value={newUserRoleState}
+                          onChange={(e) => setNewUserRoleState(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        >
+                          <option value="student">Student</option>
+                          <option value="teacher">Teacher</option>
+                          <option value="admin">Admin</option>
+                          <option value="super_admin">Super Admin</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Standard</label>
+                        <select
+                          value={newUserStd}
+                          onChange={(e) => setNewUserStd(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        >
+                          {["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].map((st) => (
+                            <option key={st} value={st}>Standard {st}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Division / Section</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. A"
+                          value={newUserDiv}
+                          onChange={(e) => setNewUserDiv(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase"
+                    >
+                      Create Registered Account
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* FILTER CONTROLS */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search standard/name..."
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    className="w-full h-10 bg-card border border-border rounded-2xl pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <select
+                  value={studentFilterStd}
+                  onChange={(e) => setStudentFilterStd(e.target.value)}
+                  className="h-10 bg-card border border-border rounded-2xl px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="all">તમામ ધોરણ (All Std)</option>
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].map((st) => (
+                    <option key={st} value={st}>Standard {st}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* STUDENTS DIRECTORY CARDS */}
+              <div className="space-y-3">
+                {filteredStudents.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-6">કોઈ મેળ ખાતા વિદ્યાર્થી રેકોર્ડ્સ મળ્યા નથી.</p>
+                ) : (
+                  filteredStudents.slice(0, 15).map((std) => (
+                    <div key={std.uid} className="bg-card border border-border rounded-3xl p-4 shadow-sm space-y-2">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-sm truncate">{std.fullName}</h4>
+                          <p className="text-[11px] text-muted-foreground font-gu leading-normal mt-0.5">
+                            Standard {std.standard} • {std.school || "નોંધણી વિગત રહિત"} • {std.village || "નિયત સ્થાનક"}
+                          </p>
+                        </div>
+                        <span className="text-[10px] bg-primary-soft text-primary font-black px-2.5 py-0.5 rounded-full font-mono shrink-0">
+                          STD {std.standard}
+                        </span>
+                      </div>
+
+                      {/* STATS PREVIEW SUMMARY */}
+                      <div className="grid grid-cols-3 gap-2 bg-muted/60 p-2.5 rounded-2xl text-center text-xs">
+                        <div>
+                          <p className="font-black text-foreground font-mono">15</p>
+                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Exams Taken</p>
+                        </div>
+                        <div>
+                          <p className="font-black text-success font-mono">88%</p>
+                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Accuracy</p>
+                        </div>
+                        <div>
+                          <p className="font-black text-warning font-mono">5</p>
+                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Unlocks</p>
+                        </div>
+                      </div>
+
+                      {/* Operational Controls for Super Admin */}
+                      <div className="pt-3 border-t border-border/60 mt-3 space-y-2 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 font-bold">
+                            Status: 
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-normal border uppercase ${
+                              (std.status || "Approved").toLowerCase() === "approved" 
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-200" 
+                                : "bg-rose-100 text-rose-800 border-rose-200"
+                            }`}>
+                              {std.status || "Approved"}
+                            </span>
+                          </span>
+                          
+                          <span className="inline-flex items-center gap-1.5 font-bold">
+                            Role:
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-800 border border-slate-200 uppercase font-mono font-bold">
+                              {std.role || "student"}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const nextStatus = (std.status || "Approved").toLowerCase() === "approved" ? "Blocked" : "Approved";
+                                await AdminRepository.setUserStatus(user.uid, user.fullName || "Super Admin", std.uid, nextStatus);
+                                toast.success(`${std.fullName} status updated to ${nextStatus}!`);
+                                loadData();
+                              } catch (e: any) {
+                                toast.error(e.message || "Failed to edit user status");
+                              }
+                            }}
+                            className={`h-9 rounded-xl border text-[10px] font-bold active:scale-95 transition ${
+                              (std.status || "Approved").toLowerCase() === "approved"
+                                ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                            }`}
+                          >
+                            {(std.status || "Approved").toLowerCase() === "approved" ? "🚫 Disable Access" : "✅ Approve Access"}
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              const newPass = prompt(`Enter a new password for ${std.fullName}:`);
+                              if (newPass === null) return;
+                              if (newPass.trim().length < 4) {
+                                toast.error("Password must be at least 4 characters long.");
+                                return;
+                              }
+                              try {
+                                await AdminRepository.resetUserPassword(user.uid, user.fullName || "Super Admin", std.uid, newPass.trim());
+                                toast.success(`Password for ${std.fullName} has been reset successfully!`);
+                                loadData();
+                              } catch (e: any) {
+                                toast.error(e.message || "Failed to reset password");
+                              }
+                            }}
+                            className="h-9 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-[10px] font-bold active:scale-95 transition border border-border"
+                          >
+                            🔑 Reset Password
+                          </button>
+                        </div>
+
+                        <div className="pt-1 flex items-center justify-between gap-2 bg-muted/30 p-2 rounded-xl">
+                          <span className="font-semibold text-[10px] text-muted-foreground shrink-0">Change Role:</span>
+                          <select
+                            value={std.role || "student"}
+                            onChange={async (e) => {
+                              const newRole = e.target.value;
+                              try {
+                                await AdminRepository.changeUserRole(user.uid, user.fullName || "Super Admin", std.uid, newRole);
+                                toast.success(`${std.fullName} role changed to ${newRole}!`);
+                                loadData();
+                              } catch (e: any) {
+                                toast.error(e.message || "Failed to change role");
+                              }
+                            }}
+                            className="text-[10px] bg-card border border-border rounded-lg px-2 py-1 outline-none font-bold"
+                          >
+                            <option value="student">Student</option>
+                            <option value="teacher">Teacher</option>
+                            <option value="admin">Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                {filteredStudents.length > 15 && (
+                  <p className="text-[10px] text-center text-muted-foreground py-2 font-gu">
+                    અને વધુ {filteredStudents.length - 15} સ્માર્ટ વિદ્યાર્થીઓ...
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: CUSTOM ANNOUNCEMENTS CENTER */}
+          {activeTab === "announcements" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-primary-soft text-primary">
+                    <Send className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm">BROADCAST NEW ANNOUNCEMENT</h3>
+                    <p className="text-[10px] text-muted-foreground">બુલેટિન બોર્ડ પર સ્માર્ટ જાહેરાતો મોકલો</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSendAnnouncement} className="space-y-3.5 text-left">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase">ક્રિએટિવ શીર્ષક (Title)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="દા.ત. પ્રથમ સત્ર પરીક્ષા પુનરાવર્તન ટેસ્ટ"
+                      value={annTitle}
+                      onChange={(e) => setAnnTitle(e.target.value)}
+                      className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase">સંદેશો (Announcement Message)</label>
+                    <textarea
+                      required
+                      rows={3}
+                      placeholder="તમામ રસ ધરાવતા વિદ્યાર્થીઓને સમયપત્રક મુજબ હાજર રહેવા જણાવવાનું..."
+                      value={annMessage}
+                      onChange={(e) => setAnnMessage(e.target.value)}
+                      className="w-full bg-muted border border-border rounded-2xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary font-gu resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-1 text-left">
+                      <label className="text-[9px] font-black text-muted-foreground uppercase">Target Standard</label>
+                      <select
+                        value={annStd}
+                        onChange={(e) => setAnnStd(e.target.value)}
+                        className="w-full h-10 bg-muted border border-border rounded-xl px-2 text-xs"
+                      >
+                        <option value="all">All Standards</option>
+                        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].map((st) => (
+                          <option key={st} value={st}>Standard {st}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 text-left">
+                      <label className="text-[9px] font-black text-muted-foreground uppercase">Target School</label>
+                      <select
+                        value={annSchool}
+                        onChange={(e) => setAnnSchool(e.target.value)}
+                        className="w-full h-10 bg-muted border border-border rounded-xl px-2 text-xs"
+                      >
+                        <option value="all">All Schools</option>
+                        <option value="જી.એલ. હાઈસ્કૂલ, અમદાવાદ">GL High School</option>
+                        <option value="સરસ્વતી વિદ્યા મંદિર, આણંદ">Saraswati Mandir</option>
+                        <option value="ગર્લ્સ હાઈસ્કૂલ, વડોદરા">Girls High School</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 text-left">
+                      <label className="text-[9px] font-black text-muted-foreground uppercase">Target Village</label>
+                      <select
+                        value={annVillage}
+                        onChange={(e) => setAnnVillage(e.target.value)}
+                        className="w-full h-10 bg-muted border border-border rounded-xl px-2 text-xs"
+                      >
+                        <option value="all">All Villages</option>
+                        <option value="અમદાવાદ">Ahmedabad</option>
+                        <option value="વડોદરા">Vadodara</option>
+                        <option value="કોસંબા">Kosamba</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full h-11 rounded-2xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase"
+                  >
+                    <Send className="size-4" /> Send targeted news
+                  </button>
+                </form>
+              </div>
+
+              {/* RECENT BULLETINS DISPLAY */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">PREVIOUS BROADCAST HISTORY</h3>
+                {announcements.map((ann) => (
+                  <div key={ann.id} className="bg-card border border-border rounded-3xl p-4 shadow-sm space-y-2">
+                    <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                      <span>BY: {ann.senderName}</span>
+                      <span>{new Date(ann.sentAt).toLocaleDateString()}</span>
+                    </div>
+                    <h4 className="font-bold text-sm text-foreground">{ann.title}</h4>
+                    <p className="text-xs text-muted-foreground font-gu leading-relaxed">{ann.message}</p>
+                    <div className="flex gap-2 text-[9px] text-muted-foreground font-mono pt-1">
+                      <span>Target Std: {ann.targetStandard}</span>
+                      <span>•</span>
+                      <span>School: {ann.targetSchool}</span>
+                      <span>•</span>
+                      <span>Vill: {ann.targetVillage}</span>
+                      <span>•</span>
+                      <span className="text-primary font-black">Success Ratio: {ann.readRate}% ({ann.readCount} push alerts)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: GLOBAL CONFIGURATION & SETTINGS */}
+          {activeTab === "settings" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-5">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-primary-soft text-primary">
+                    <Settings className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm">GLOBAL APP PARAMETERS</h3>
+                    <p className="text-[10px] text-muted-foreground">દૈનિક પરીક્ષા સિસ્ટમ સેટિંગ્સ સંચાલન</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-left">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase">Application brand Name</label>
+                    <input
+                      type="text"
+                      value={cfgAppName}
+                      onChange={(e) => setCfgAppName(e.target.value)}
+                      className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-muted-foreground uppercase">Software Version</label>
+                      <input
+                        type="text"
+                        value={cfgAppVersion}
+                        onChange={(e) => setCfgAppVersion(e.target.value)}
+                        className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-muted-foreground uppercase">Help Desk Call/Contact</label>
+                      <input
+                        type="text"
+                        value={cfgSupport}
+                        onChange={(e) => setCfgSupport(e.target.value)}
+                        className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* MAINTENANCE MODE ZONE BLOCKING */}
+                  <div className="p-4 bg-warning-soft border-2 border-warning/30 rounded-3xl space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="size-5 text-warning" />
+                        <div>
+                          <p className="text-xs uppercase font-black tracking-wide text-warning-foreground">
+                            MAINTENANCE MODE SYSTEM
+                          </p>
+                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Toggles global student lock</p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCfgMaintenance((prev) => !prev);
+                          sfx.tap();
+                        }}
+                        className={`w-11 h-6 rounded-full p-0.5 flex items-center transition duration-300 focus:outline-none ${
+                          cfgMaintenance ? "bg-warning justify-end" : "bg-muted justify-start"
+                        }`}
+                      >
+                        <span className="size-5 rounded-full bg-card shadow-md flex items-center justify-center text-warning" />
+                      </button>
+                    </div>
+
+                    {cfgMaintenance && (
+                      <div className="space-y-1.5 animate-[slide-down_0.2s_ease-out]">
+                        <label className="text-[10px] font-bold text-warning-foreground uppercase font-gu">
+                          સિસ્ટમ મેન્ટેનન્સ બેનર સંદેશ (Configured Gujarati lock screen banner)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={cfgBanner}
+                          onChange={(e) => setCfgBanner(e.target.value)}
+                          placeholder="દા.ત. દૈનિક ટેસ્ટ સર્વર અપગ્રેડેશન ચાલુ છે..."
+                          className="w-full bg-card border border-warning/20 rounded-2xl p-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-warning"
+                        />
+                        <p className="text-[9px] text-warning-foreground/80 leading-relaxed italic font-gu">
+                          💡 આ મોડ સક્રિય હોવાથી તમામ <b>વિદ્યાર્થી (Student)</b> લોગિન મોડુલ અને એક્ટિવ પરીક્ષા સ્ક્રીનો કાયમી ધોરણે બ્લોક રહેશે. એડમિન અને સુપર એડમિન મુક્તપણે લૉગિન કરી આ મોડ બંધ કરી શકશે.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* NOTIFICATION LOGIC */}
+                  <div className="flex items-center justify-between p-4 bg-muted/60 rounded-3xl">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">INSTANT PUSH NOTIFICATIONS</p>
+                      <p className="text-[9px] text-muted-foreground uppercase font-semibold">Trigger FCM dynamic dispatchers automatically</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCfgPush((prev) => !prev);
+                        sfx.tap();
+                      }}
+                      className={`w-11 h-6 rounded-full p-0.5 flex items-center transition duration-300 focus:outline-none ${
+                        cfgPush ? "bg-primary justify-end" : "bg-muted justify-start"
+                      }`}
+                    >
+                      <span className="size-5 rounded-full bg-card shadow-md" />
+                    </button>
+                  </div>
+
+                  {/* ACCURACY BADGE THRESHOLDS */}
+                  <div className="bg-muted/40 p-4 border border-border rounded-3xl space-y-3">
+                    <div className="flex items-center gap-1 text-xs font-bold uppercase text-primary">
+                      <Award className="size-4" />
+                      <span>Smart Badge unlocking Thresholds %</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground font-gu">
+                      સિસ્ટમમાં વિદ્યાર્થી મોક ટેસ્ટમાં લાવેલા સરેરાશ ટકા ના આધારે ઓટો-બેજ અપાય છે:
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="text-[9px] text-muted-foreground uppercase font-bold">🥇 Gold Score</label>
+                        <input
+                          type="number"
+                          value={thresholdGold}
+                          onChange={(e) => setThresholdGold(parseInt(e.target.value))}
+                          className="w-full h-9 bg-card border border-border rounded-xl text-center text-xs font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-muted-foreground uppercase font-bold">🥈 Silver Score</label>
+                        <input
+                          type="number"
+                          value={thresholdSilver}
+                          onChange={(e) => setThresholdSilver(parseInt(e.target.value))}
+                          className="w-full h-9 bg-card border border-border rounded-xl text-center text-xs font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-muted-foreground uppercase font-bold">🥉 Bronze Score</label>
+                        <input
+                          type="number"
+                          value={thresholdBronze}
+                          onChange={(e) => setThresholdBronze(parseInt(e.target.value))}
+                          className="w-full h-9 bg-card border border-border rounded-xl text-center text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveSettings}
+                    className="w-full h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase"
+                  >
+                    Save configuration changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: SYSTEM BACKUP MANAGEMENT */}
+          {activeTab === "backups" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-indigo-500/10 text-indigo-500">
+                      <HardDrive className="size-4" />
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-sm">FIRESTORE HOT-BACKUP</h3>
+                      <p className="text-[10px] text-muted-foreground">સંપૂર્ણ ડેટાબેઝ સુરક્ષિત સ્નેપશોટ મોડ્યુલ</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleTriggerBackup}
+                    className="gradient-primary text-primary-foreground text-xs font-bold h-9 px-3.5 rounded-xl flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 hover:text-white"
+                  >
+                    <RefreshCw className="size-3 text-white spin-slow" /> Hot-Backup
+                  </button>
+                </div>
+
+                <p className="text-xs text-muted-foreground font-gu leading-relaxed">
+                  સોફ્ટવેર ક્રેસ અથવા સર્વર ભંગાણ સામે વૈશ્વિક બચાવ માટે અત્રેથી લિખિત મોડ્યુલ દ્વારા મેન્યુઅલ રિકોર્ડ કોપી બનાવી શકાય છે. સંચાલકો તેનું સંકલન કરી શકે છે.
+                </p>
+              </div>
+
+              {/* BACKUP LOG LISTINGS */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">HOT-BACKUP STORAGE REGISTRY</h3>
+                {backups.map((bk) => (
+                  <div key={bk.id} className="bg-card border border-border rounded-3xl p-4 shadow-sm flex justify-between items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="size-2 rounded-full bg-success" />
+                        <h4 className="font-bold text-xs font-mono truncate text-foreground">{bk.backupName}</h4>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Triggered on {new Date(bk.timestamp).toLocaleString()} • Size: {bk.sizeMB}MB
+                      </p>
+                      <p className="text-[10px] text-muted-foreground font-gu">ઓપરેટર: {bk.triggeredBy}</p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        toast.success(`બેકઅપ પુનર્જીવિત થઈ ગયું છે (Restored backup: ${bk.backupName})`);
+                        sfx.tap();
+                      }}
+                      className="h-8 rounded-lg border border-border bg-muted px-3 text-[10px] font-bold text-foreground shrink-0 hover:bg-muted/70 active:scale-95 transition uppercase"
+                    >
+                      Restore
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: COMPLETE DATA EXPORT GRID */}
+          {activeTab === "export" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 animate-pulse">
+                  <span className="p-1.5 rounded-xl bg-success-soft text-success">
+                    <Download className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm text-foreground">SYSTEM EXPORT SUITE</h3>
+                    <p className="text-[10px] text-muted-foreground">બોર્ડ વિગતો નિકાસ કરવા માટે ડેટા ડાઉનલોડ સેક્શન</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground font-gu leading-relaxed">
+                  બધા શૈક્ષણિક વિષય સંબંધી અહેવાલો, સંચાલન પ્રવૃત્તિ લોગ અને વિદ્યાર્થીઓની સ્કોર વિગતો ડાઉનલોડ કરવા માટે સીધા બટન નીચે આપેલા છે.
+                </p>
+
+                <div className="grid grid-cols-1 gap-2.5 pt-2 text-left">
+                  <div className="bg-muted/65 p-4 rounded-3xl flex justify-between items-center gap-3 border border-border">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">STUDENT DIRECTORY REGISTRY</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Contains uid, mobile, school, standard</p>
+                    </div>
+                    <button
+                      onClick={() => handleExportDataCsv("students")}
+                      className="size-10 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition active:scale-95 shadow-sm"
+                    >
+                      <Download className="size-4 text-white" />
+                    </button>
+                  </div>
+
+                  <div className="bg-muted/65 p-4 rounded-3xl flex justify-between items-center gap-3 border border-border">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">ADMIN STAFF ROSTER</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Provides full personnel records</p>
+                    </div>
+                    <button
+                      onClick={() => handleExportDataCsv("admins")}
+                      className="size-10 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition active:scale-95 shadow-sm"
+                    >
+                      <Download className="size-4 text-white" />
+                    </button>
+                  </div>
+
+                  <div className="bg-muted/65 p-4 rounded-3xl flex justify-between items-center gap-3 border border-border">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">BULLETINS & ANNOUNCEMENTS</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Sent notices, target parameters</p>
+                    </div>
+                    <button
+                      onClick={() => handleExportDataCsv("questions")}
+                      className="size-10 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition active:scale-95 shadow-sm"
+                    >
+                      <Download className="size-4 text-white" />
+                    </button>
+                  </div>
+
+                  <div className="bg-muted/65 p-4 rounded-3xl flex justify-between items-center gap-3 border border-border">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">FAILED ATTEMPTS & SECURITY EVENT LOGS</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Failed otps, privilege warnings</p>
+                    </div>
+                    <button
+                      onClick={() => handleExportDataCsv("security")}
+                      className="size-10 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center transition active:scale-95 shadow-sm"
+                    >
+                      <Download className="size-4 text-white" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </AppShell>
+  );
+}
+
+// BENTO STAT CARD
+function BentoCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
+  return (
+    <div className="bg-card border border-border rounded-3xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between h-28 text-left">
+      <div className="size-8 rounded-xl bg-muted flex items-center justify-center border border-border">
+        {icon}
+      </div>
+      <div>
+        <p className="text-xl font-black font-sans leading-none text-foreground mt-2">{value}</p>
+        <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mt-1.5">{label}</p>
+      </div>
+    </div>
+  );
+}

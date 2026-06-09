@@ -1,0 +1,246 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----------------------------------------------------
+    // REUSABLE SECURITY HELPERS
+    // ----------------------------------------------------
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isStudent() {
+      return isAuthenticated() && getUserData().role == 'student';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'admin';
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && getUserData().role == 'super_admin';
+    }
+
+    function isApproved() {
+      return isAuthenticated() && (getUserData().status == 'approved' || getUserData().role == 'super_admin');
+    }
+
+    // ----------------------------------------------------
+    // COLLECTION LEVEL SECURITY
+    // ----------------------------------------------------
+
+    // 1. Users Profile Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (userId == request.auth.uid || isAdmin() || isSuperAdmin());
+      // Students can create their profile only during registration
+      allow create: if isAuthenticated() && userId == request.auth.uid 
+        && request.resource.data.role == 'student' 
+        && request.resource.data.status == 'approved' 
+        && request.resource.data.uid == request.auth.uid;
+      // RBAC protection: modify profile but block modification of critical RBAC properties (role/status/uid)
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (userId == request.auth.uid && request.resource.data.role == resource.data.role && request.resource.data.status == resource.data.status && request.resource.data.uid == resource.data.uid) ||
+        (isAdmin() && resource.data.role == 'student' && request.resource.data.role == 'student' && request.resource.data.status in ['pending', 'approved', 'blocked'])
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // 2. Syllabus & Subject Collections (Admin & Super Admin can manage, students read-only)
+    match /subjects/{subjectId} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /chapters/{chapterId} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    // 3. Exam Material & Questions (Admin & Super Admin can manage, students read-only)
+    match /questions/{questionId} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /daily_exams/{examId} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    // 4. Secure Exam Progress (Only Cloud Functions/Server Admin SDK can create/modify)
+    match /exam_results/{resultId} {
+      allow read: if isAuthenticated() && isApproved() && (resource.data.studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false; // Only Cloud Functions can create achievements and points
+    }
+
+    // 5. Revision & Mistakes System (Only Cloud Functions/Server Admin SDK can update)
+    match /student_mistakes/{mistakeId} {
+      allow read: if isAuthenticated() && isApproved() && (resource.data.studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false; // Immutable client-side, managed by server functions only
+    }
+
+    match /revision_progress/{progressId} {
+      allow read: if isAuthenticated() && isApproved() && (resource.data.studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false; // Only Cloud Functions/Server can write progress
+    }
+
+    match /revision_analytics/{studentId} {
+      allow read: if isAuthenticated() && isApproved() && (studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false; // Only Cloud Functions can calculate analytics
+    }
+
+    // 6. Achievements Protection (Read only for users, wrote via Cloud Functions)
+    match /achievements/{achievementId} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false; // Managed by server rules only
+    }
+
+    match /user_achievements/{id} {
+      allow read: if isAuthenticated() && isApproved() && (resource.data.studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false;
+    }
+
+    match /student_points/{studentId} {
+      allow read: if isAuthenticated() && isApproved() && (studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false;
+    }
+
+    // 7. Leaderboards & Top Performers Protection (Immutable, computed by Scheduled Functions)
+    match /leaderboard/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    match /leaderboard_daily/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    match /leaderboard_weekly/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    match /leaderboard_monthly/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    match /leaderboard_alltime/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    match /subject_leaderboards/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    match /topPerformers/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if false;
+    }
+
+    // 8. Security Audit, Admin Activity & Backup Logs (Immutable system trails, readable only by Super Admin)
+    match /leaderboard_audit_logs/{id} {
+      allow read: if isSuperAdmin() || isAdmin();
+      allow write: if false;
+    }
+
+    match /admin_audit_logs/{id} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only backend service write
+    }
+
+    match /security_logs/{id} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only background/app check rules write
+    }
+
+    match /system_backups/{id} {
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin(); // Super admin can trigger backup creation
+    }
+
+    // 9. Notification History & Dynamic Notifications (Managed solely by Cloud Functions)
+    match /notifications/{id} {
+      allow read: if isAuthenticated() && isApproved() && (resource.data.studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if false;
+    }
+
+    match /notification_history/{recordId} {
+      allow read: if isAuthenticated() && isApproved() && (resource.data.studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      // Students can only mark their own notifications as opened using a narrow diff update
+      allow update: if isAuthenticated() && isApproved() && resource.data.studentId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['opened']);
+      allow create, delete: if false;
+    }
+
+    // 10. Public Announcements
+    match /announcements/{id} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if isSuperAdmin();
+    }
+
+    // 11. Global Configuration
+    match /system_config/{configId} {
+      allow read: if isAuthenticated() && isApproved();
+      allow write: if isSuperAdmin();
+    }
+
+    // 12. Advanced Educational Analytics
+    match /student_analytics/{studentId} {
+      allow read: if isAuthenticated() && isApproved() && (studentId == request.auth.uid || isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /subject_analytics/{subjectId} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /chapter_analytics/{chapterId} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /question_analytics/{questionId} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /school_analytics/{schoolId} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /village_analytics/{villageId} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /standard_analytics/{standardId} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /learning_trends/{id} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    match /analytics_reports/{id} {
+      allow read: if isAuthenticated() && isApproved() && (isAdmin() || isSuperAdmin());
+      allow write: if isSuperAdmin() || isAdmin();
+    }
+
+    // Default fallback rules
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,278 @@
+{
+  "project_id": "daily-learning-exam-prod",
+  "metadata_backup_timestamp": "2026-06-03T13:00:00Z",
+  "database_type": "Firestore (default)",
+  "collections": [
+    {
+      "collection_id": "users",
+      "description": "User profiles under Role-Based Access Control (RBAC). Roles: student, admin, super_admin.",
+      "security_rule": "Read-only for self/admin/super; write restricts changing roles, status or UID.",
+      "fields": {
+        "uid": "string (matches Request Auth UID)",
+        "name": "string (Student/Admin full name)",
+        "mobile": "string (Unique identifier for login)",
+        "school": "string (Govt school reference)",
+        "village": "string (Gram Panchayat geographical area)",
+        "standard": "string (10th/12th/etc)",
+        "role": "string (student | admin | super_admin)",
+        "status": "string (pending | approved | blocked)",
+        "deviceToken": "string (optional FCM target token)",
+        "points": "integer (gamification score sync)",
+        "coins": "integer (virtual currency reward balance)",
+        "streak": "integer (daily learning consecutive days)",
+        "avatarUrl": "string (IPFS or secure CDN asset)",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "subjects",
+      "description": "Academic subjects in the syllabus curriculum.",
+      "security_rule": "Read-only for approved students; write permissions restricted to admin or super_admin.",
+      "fields": {
+        "subjectId": "string (unique)",
+        "name": "string (Gu/En standard label)",
+        "standard": "string",
+        "color": "string (Hex theme)",
+        "icon": "string (Lucide react icon name)",
+        "chaptersCount": "integer",
+        "questionsCount": "integer",
+        "createdAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "chapters",
+      "description": "Syllabus chapters belonging to specific academic subjects.",
+      "security_rule": "Read-only for approved students; write restricted to admin/super_admin.",
+      "fields": {
+        "chapterId": "string (unique)",
+        "subjectId": "string (foreign reference to subjects)",
+        "name": "string",
+        "standard": "string",
+        "pointsReward": "integer",
+        "createdAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "questions",
+      "description": "Syllabus practice and official evaluation question pool.",
+      "security_rule": "Read-only for approved students; write restricted to admin/super_admin.",
+      "fields": {
+        "questionId": "string",
+        "subjectId": "string",
+        "chapterId": "string",
+        "questionText": "string",
+        "options": "array of strings",
+        "correctIndex": "integer",
+        "explanation": "string (contextual fallback solution guidance)",
+        "difficulty": "string (easy | medium | hard)",
+        "standard": "string",
+        "points": "integer",
+        "createdAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "daily_exams",
+      "description": "Periodic examination slots scheduled by administrators.",
+      "security_rule": "Read-only for approved students; write restricted to admin/super_admin.",
+      "fields": {
+        "examId": "string",
+        "title": "string",
+        "subjectId": "string",
+        "chapterId": "string (optional/full syllabus check)",
+        "standard": "string",
+        "questions": "array of question objects or reference ids",
+        "date": "string (yyyy-mm-dd slot window)",
+        "durationMinutes": "integer",
+        "active": "boolean",
+        "createdAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "exam_results",
+      "description": "Final evaluation metrics logged by students.",
+      "security_rule": "Read-only for self/admin/super; write is forbidden to client (Cloud Functions/Server immutable write).",
+      "fields": {
+        "resultId": "string",
+        "studentId": "string (foreign index)",
+        "studentName": "string",
+        "examId": "string",
+        "examTitle": "string",
+        "subjectId": "string",
+        "score": "integer",
+        "totalQuestions": "integer",
+        "correctCount": "integer",
+        "wrongCount": "integer",
+        "pointsEarned": "integer",
+        "coinsEarned": "integer",
+        "completed": "boolean",
+        "completedAt": "timestamp",
+        "mistakeIdsCompiled": "array of strings"
+      }
+    },
+    {
+      "collection_id": "student_mistakes",
+      "description": "Failed exam questions saved directly to trigger the spaced-repetition logic.",
+      "security_rule": "Read-only for self/admin/super; write is forbidden to client (Cloud Functions Immutable).",
+      "fields": {
+        "mistakeId": "string",
+        "studentId": "string",
+        "questionId": "string",
+        "questionText": "string",
+        "options": "array of strings",
+        "correctIndex": "integer",
+        "wrongIndexGiven": "integer",
+        "explanation": "string",
+        "subjectName": "string",
+        "chapterName": "string",
+        "status": "string (pending | reviewed | mastered)",
+        "revisionCount": "integer",
+        "lastAttemptedAt": "timestamp",
+        "createdAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "revision_progress",
+      "description": "Active state parameters tracking spaced repetition session workflows.",
+      "security_rule": "Read-only for self/admin/super; client modification is completely blocked.",
+      "fields": {
+        "id": "string",
+        "studentId": "string",
+        "totalRevisionsAttempted": "integer",
+        "revisionsUnlocked": "integer",
+        "revisionsPending": "integer",
+        "accuracyRate": "integer",
+        "lastRevisionAt": "timestamp",
+        "intervalDays": "integer"
+      }
+    },
+    {
+      "collection_id": "achievements",
+      "description": "Static master table of digital badges awarded in the gamification layer.",
+      "security_rule": "Read-only for authorized clients; writes blocked.",
+      "fields": {
+        "id": "string",
+        "title": "string (En & Gu formats)",
+        "description": "string",
+        "badgeIcon": "string",
+        "pointsRequired": "integer",
+        "category": "string",
+        "rarity": "string (common | rare | legendary)"
+      }
+    },
+    {
+      "collection_id": "user_achievements",
+      "description": "Unlocked digital badges recorded individually per student.",
+      "security_rule": "Read-only for self/admin/super; writes strictly forbidden.",
+      "fields": {
+        "id": "string",
+        "studentId": "string",
+        "achievementId": "string",
+        "unlockedAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "student_points",
+      "description": "Experience points (XP) balances for gamified student level systems.",
+      "security_rule": "Read for self/admin/super; writes forbidden.",
+      "fields": {
+        "studentId": "string",
+        "studentName": "string",
+        "totalPoints": "integer",
+        "rank": "integer",
+        "school": "string",
+        "village": "string",
+        "lastUpdatedAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "leaderboard_daily",
+      "description": "Daily leaderboards compiled automatically by scheduled Cloud Tasks.",
+      "security_rule": "Read-only for approved clients; writing blocked.",
+      "fields": {
+        "id": "string",
+        "studentId": "string",
+        "studentName": "string",
+        "pointsToday": "integer",
+        "rank": "integer",
+        "school": "string",
+        "village": "string",
+        "calculatedAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "admin_audit_logs",
+      "description": "Record of admin interventions (adding exams, deleting test users, updating statuses).",
+      "security_rule": "Read restricted to super_admin; client writes strictly blocked.",
+      "fields": {
+        "id": "string",
+        "adminId": "string",
+        "adminName": "string",
+        "action": "string",
+        "module": "string",
+        "details": "string",
+        "ipAddress": "string (optional validation audit context)",
+        "createdAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "system_config",
+      "description": "General system constants (e.g. maintenance mode and regulatory status flags).",
+      "security_rule": "Read for all approved; write restricted to super_admin.",
+      "fields": {
+        "configId": "string (default: main)",
+        "maintenanceMode": "boolean",
+        "activePromotion": "boolean",
+        "allowedRegistrationDomains": "array of strings",
+        "appVersionActive": "string",
+        "forceUpdateRequired": "boolean"
+      }
+    },
+    {
+      "collection_id": "student_analytics",
+      "description": "Educational statistics and calculated academic risk trackers.",
+      "security_rule": "Read for self/admin/super; write allowed for admin/super_admin.",
+      "fields": {
+        "id": "string",
+        "studentId": "string",
+        "studentName": "string",
+        "school": "string",
+        "village": "string",
+        "standard": "string",
+        "totalExams": "integer",
+        "averageScore": "integer",
+        "bestSubject": "string",
+        "weakestSubject": "string",
+        "revisionAccuracy": "integer",
+        "masteredQuestions": "integer",
+        "pendingRevisions": "integer",
+        "achievementCount": "integer",
+        "currentRank": "integer",
+        "rankTrend": "string",
+        "learningStreak": "integer",
+        "performanceScore": "integer",
+        "riskLevel": "string",
+        "calculatedAt": "timestamp"
+      }
+    },
+    {
+      "collection_id": "analytics_reports",
+      "description": "Periodical weekly and monthly analytics reports compiled for examiners.",
+      "security_rule": "Read allowed for admin/super_admin; write allowed for admin/super_admin.",
+      "fields": {
+        "id": "string",
+        "reportType": "string",
+        "title": "string",
+        "summary": "string",
+        "totalStudentsActive": "integer",
+        "globalAvgScore": "integer",
+        "topPerformingSchool": "string",
+        "topPerformingVillage": "string",
+        "weakestSubject": "string",
+        "highRiskChaptersCount": "integer",
+        "createdAt": "timestamp",
+        "jsonPayload": "string"
+      }
+    }
+  ]
+}

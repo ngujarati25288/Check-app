@@ -1,0 +1,506 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----------------------------------------------------
+    // GLOBAL CATCH-ALL DEFAULT DENY (Zero Trust Gate)
+    // ----------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ----------------------------------------------------
+    // REUSABLE SECURITY DEFINITIONS & GLOBAL HELPERS
+    // ----------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn();
+    }
+
+    function isCurrentUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Helper to fetch user status and role safely
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isApproved() {
+      return isSignedIn() && (
+        (request.auth.token.email != null && request.auth.token.email == 'n.gujarati25288@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['approved', 'Approved'] ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+        ))
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email != null && request.auth.token.email == 'n.gujarati25288@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
+        ))
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email != null && request.auth.token.email == 'n.gujarati25288@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
+      );
+    }
+
+    // ----------------------------------------------------
+    // VALIDATION BLUEPRINTS
+    // ----------------------------------------------------
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.fullName is string && data.fullName.size() <= 100 &&
+             data.mobile is string && data.mobile.size() <= 20 &&
+             data.role is string && data.role in ['student', 'admin', 'super_admin'] &&
+             data.status is string && data.status in ['pending', 'approved', 'blocked', 'Approved'];
+    }
+
+    function isValidSchoolRequest(data) {
+      return data.keys().hasAll(['requestId', 'schoolName', 'village', 'requestedBy', 'status', 'createdAt']) &&
+             data.keys().size() == 6 &&
+             data.requestId is string && data.requestId.size() <= 128 &&
+             data.schoolName is string && data.schoolName.size() >= 3 && data.schoolName.size() <= 100 &&
+             data.village is string && data.village.size() <= 100 &&
+             data.requestedBy is string && data.requestedBy.size() <= 100 &&
+             data.status is string && data.status == 'pending' &&
+             data.createdAt == request.time;
+    }
+
+    function isValidVillageRequest(data) {
+      return data.keys().hasAll(['requestId', 'villageName', 'requestedBy', 'status', 'createdAt']) &&
+             data.keys().size() == 5 &&
+             data.requestId is string && data.requestId.size() <= 128 &&
+             data.villageName is string && data.villageName.size() >= 3 && data.villageName.size() <= 100 &&
+             data.requestedBy is string && data.requestedBy.size() <= 100 &&
+             data.status is string && data.status == 'pending' &&
+             data.createdAt == request.time;
+    }
+
+    // ----------------------------------------------------
+    // 1. Users Profile Collection (Fully Hardened - ISO-Isolated)
+    // ----------------------------------------------------
+    match /users/{userId} {
+      // Students can ONLY read their own profile. Admins and Super Admins can browse all user profiles.
+      allow get: if isCurrentUser(userId) || isAdmin() || isSuperAdmin();
+      
+      // Allow queries on the users collection for duplicate checks, code generation, and lookup
+      allow list: if true;
+      
+      // Prevent self-registration elevation of privilege, except for authorized Super Admin bootstrap
+      allow create: if (
+        isCurrentUser(userId) && 
+        isValidUser(incoming()) && 
+        (
+          incoming().role == 'student' || 
+          (incoming().role == 'super_admin' && request.auth.token.email == 'n.gujarati25288@gmail.com')
+        ) && 
+        incoming().status in ['pending', 'Approved', 'approved']
+      ) || isAdmin() || isSuperAdmin();
+        
+      // Students can modify their non-identity fields. Admins and Super Admins can update any field.
+      allow update: if isEmailVerified() && (
+        (isCurrentUser(userId) && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'fullName', 'mobile', 'school', 'standard', 'division', 'village', 'fcmToken', 'lastTokenUpdate', 'updatedAt', 'streak', 'lastActiveDate', 'role'
+          ])
+        )) || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+      
+      allow delete: if isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 2. Syllabus Category Systems (Read: Approved, Write: Admin)
+    // ----------------------------------------------------
+    match /subjects/{subjectId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /chapters/{chapterId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 3. Question Bank (Read Protected - Student Cannot Scrape ALL)
+    // ----------------------------------------------------
+    match /questions/{questionId} {
+      // Approved users can fetch individual questions.
+      allow get: if isApproved();
+
+      // Only allow query listing if they fetch active standard questions.
+      // Admins/Super Admins can run unrestricted queries.
+      allow list: if isApproved() && (
+        resource.data.active == true || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 4. Exams & Templates Configurations (Read: Approved, Write: Admin)
+    // ----------------------------------------------------
+    match /daily_exams/{examId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /exam_templates/{templateId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /scheduled_exams/{examId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /system_config/{configId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 5. Exam Results, Revision, & Mistake Systems (Students Own Theirs)
+    // ----------------------------------------------------
+    match /exam_results/{resultId} {
+      allow read: if isApproved() && (
+        resource.data.studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && 
+                    incoming().studentId == request.auth.uid && 
+                    incoming().submittedAt == request.time;
+
+      allow update, delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /student_failures/{failureId} {
+      allow read: if isApproved() && (
+        resource.data.studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create, update: if isApproved() && 
+                            incoming().studentId == request.auth.uid;
+
+      allow delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /student_mistakes/{mistakeId} {
+      allow read: if isApproved() && (
+        resource.data.studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && 
+                    incoming().studentId == request.auth.uid && 
+                    incoming().createdAt == request.time;
+
+      allow update: if isApproved() && (
+        (existing().studentId == request.auth.uid && 
+         incoming().studentId == request.auth.uid &&
+         incoming().diff(existing()).affectedKeys().hasOnly([
+           'revisionCount', 'correctRevisionCount', 'mastered', 'nextRevisionDate', 
+           'lastRevisionDate', 'lastRevisedAt', 'consecutiveCorrectCount', 'revisionLevel', 'masteredAt', 'updatedAt'
+         ]) &&
+         incoming().updatedAt == request.time) ||
+        isAdmin() ||
+        isSuperAdmin()
+      );
+
+      allow delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /revision_progress/{progressId} {
+      allow read: if isApproved() && (
+        resource.data.studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && 
+                    incoming().studentId == request.auth.uid && 
+                    incoming().lastRevisedAt == request.time;
+
+      allow update: if isApproved() && (
+        (existing().studentId == request.auth.uid && 
+         incoming().studentId == request.auth.uid &&
+         incoming().diff(existing()).affectedKeys().hasOnly([
+           'revisionCount', 'correctRevisionCount', 'mastered', 'lastRevisedAt'
+         ]) &&
+         incoming().lastRevisedAt == request.time) || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /revision_analytics/{studentId} {
+      allow read: if isApproved() && (
+        studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && 
+                    studentId == request.auth.uid && 
+                    incoming().updatedAt == request.time;
+
+      allow update: if isApproved() && (
+        (studentId == request.auth.uid && 
+         incoming().updatedAt == request.time &&
+         incoming().diff(existing()).affectedKeys().hasOnly([
+           'totalRevisions', 'totalCorrectRevisions', 'revisionAccuracy', 
+           'strongestSubject', 'weakestSubject', 'pendingRevisionCount', 'masteredQuestionsCount', 'updatedAt'
+         ])) || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /student_points/{studentId} {
+      allow read: if isApproved() && (
+        studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && 
+                    studentId == request.auth.uid && 
+                    incoming().updatedAt == request.time;
+
+      allow update: if isApproved() && (
+        (studentId == request.auth.uid && 
+         incoming().updatedAt == request.time &&
+         incoming().diff(existing()).affectedKeys().hasOnly([
+           'totalPoints', 'examPoints', 'revisionPoints', 'masteryPoints', 'achievementPoints', 'updatedAt'
+         ])) || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /achievements/{achievementId} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /user_achievements/{achievementId} {
+      allow read: if isApproved();
+
+      allow create: if isApproved() && 
+                    incoming().studentId == request.auth.uid && 
+                    incoming().unlockedAt == request.time;
+
+      allow update: if isAdmin() || isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 6. Leaderboard Systems (Direct Dashboard Fast Reads)
+    // ----------------------------------------------------
+    match /leaderboard/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /leaderboard_daily/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /leaderboard_weekly/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /leaderboard_monthly/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /leaderboard_alltime/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /subject_leaderboards/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /topPerformers/{id} {
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 7. Academic Analytics & Performance Reports (Admin Only)
+    // ----------------------------------------------------
+    match /student_analytics/{studentId} {
+      allow read: if isApproved() && (
+        studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /subject_analytics/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /chapter_analytics/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /question_analytics/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /school_analytics/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /village_analytics/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /standard_analytics/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /learning_trends/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /analytics_reports/{id} {
+      allow read, write: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 8. Master Secondary Data Directories & Requests
+    // ----------------------------------------------------
+    match /schools/{schoolId} {
+      // Public autocomplete reads during registration flow
+      allow read: if true;
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /villages/{villageId} {
+      // Public autocomplete reads during registration flow
+      allow read: if true;
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /school_requests/{requestId} {
+      allow read: if isAdmin() || isSuperAdmin();
+      allow create: if isValidId(requestId) && isValidSchoolRequest(incoming());
+      allow update, delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /village_requests/{requestId} {
+      allow read: if isAdmin() || isSuperAdmin();
+      allow create: if isValidId(requestId) && isValidVillageRequest(incoming());
+      allow update, delete: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 9. Diagnostics, Audit Logs, Scheduler History (Privileged)
+    // ----------------------------------------------------
+    match /admin_audit_logs/{id} {
+      allow read: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
+    }
+
+    match /leaderboard_audit_logs/{id} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /security_logs/{id} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /system_backups/{id} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /notifications/{id} {
+      allow read: if isApproved() && (
+        resource.data.studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+      allow write: if isAdmin() || isSuperAdmin();
+    }
+
+    match /notification_history/{recordId} {
+      allow read: if isApproved() && (
+        resource.data.studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && (
+        incoming().studentId == request.auth.uid || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow update: if isApproved() && (
+        (incoming().studentId == request.auth.uid &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['opened']) &&
+         existing().studentId == request.auth.uid) ||
+        isAdmin() ||
+         isSuperAdmin()
+      );
+
+      allow delete: if isAdmin() || isSuperAdmin();
+    }
+  }
+}
