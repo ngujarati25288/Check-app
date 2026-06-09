@@ -1392,27 +1392,14 @@ export const AnalyticsRepository = {
     // fallback simulation data if the user has no exams registered yet
     if (studentsRaw.length === 0) {
       studentsRaw = [
-        { uid: "stud1", studentId: "9876543210", passwordHash: hashSync("123456", 10), fullName: "આરવ મહેતા (Aarav Mehta)", mobile: "9876543210", school: "સરસ્વતી વિદ્યાલય", standard: "10", division: "A", village: "વડતાલ", role: "student", status: "Approved", streak: 5, createdAt: new Date().toISOString() },
-        { uid: "stud2", studentId: "9876543211", passwordHash: hashSync("123456", 10), fullName: "દિયા પટેલ (Diya Patel)", mobile: "9876543211", school: "સરસ્વતી વિદ્યાલય", standard: "10", division: "A", village: "આણંદ", role: "student", status: "Approved", streak: 3, createdAt: new Date().toISOString() },
-        { uid: "stud3", studentId: "9876543212", passwordHash: hashSync("123456", 10), fullName: "માનવ દેસાઈ (Manav Desai)", mobile: "9876543212", school: "જ્ઞાન જ્યોત વિદ્યાલય", standard: "10", division: "B", village: "ગોધરા", role: "student", status: "Approved", streak: 0, createdAt: new Date().toISOString() },
-        { uid: "stud4", studentId: "9876543213", passwordHash: hashSync("123456", 10), fullName: "હેતલ મોરી (Hetal Mori)", mobile: "9876543213", school: "ભાવના હાઈસ્કૂલ", standard: "10", division: "B", village: "મહુવા", role: "student", status: "Approved", streak: 12, createdAt: new Date().toISOString() },
-        { uid: "stud_teacher", studentId: "teacher123", passwordHash: hashSync("teacher123", 10), fullName: "ગુરુજી શ્રી (Guru Teacher)", mobile: "8888888888", school: "સરસ્વતી વિદ્યાલય", standard: "10", division: "A", village: "અમદાવાદ", role: "teacher", status: "Approved", streak: 0, createdAt: new Date().toISOString() },
         { uid: "stud_superadmin", studentId: "8511125288", passwordHash: hashSync("Nayan@25288", 10), fullName: "સુપર એડમિનિસ્ટ્રેટર (Super Admin)", mobile: "8511125288", school: "મુખ્ય વહીવટી મથક", standard: "10", division: "A", village: "અમદાવાદ", role: "super_admin", status: "Approved", streak: 0, createdAt: new Date().toISOString() }
       ];
     }
     if (resultsRaw.length === 0) {
-      resultsRaw = [
-        { resultId: "res1", studentId: "stud1", examId: "ex1", subject: "Science", chapter: "પ્રકરણ ૧: રાસાયણિક પ્રક્રિયાઓ", examDate: "2026-06-01", totalQuestions: 10, correctAnswers: 8, wrongAnswers: 2, obtainedMarks: 8, percentage: 80, submittedAt: new Date().toISOString() },
-        { resultId: "res2", studentId: "stud1", examId: "ex2", subject: "Mathematics", chapter: "પ્રકરણ ૨: બહુપદીઓ", examDate: "2026-06-02", totalQuestions: 10, correctAnswers: 9, wrongAnswers: 1, obtainedMarks: 9, percentage: 90, submittedAt: new Date().toISOString() },
-        { resultId: "res3", studentId: "stud2", examId: "ex1", subject: "Science", chapter: "પ્રકરણ ૧: રાસાયણિક પ્રક્રિયાઓ", examDate: "2026-06-01", totalQuestions: 10, correctAnswers: 6, wrongAnswers: 4, obtainedMarks: 6, percentage: 60, submittedAt: new Date().toISOString() },
-        { resultId: "res4", studentId: "stud3", examId: "ex1", subject: "Science", chapter: "પ્રકરણ ૧: રાસાયણિક પ્રક્રિયાઓ", examDate: "2026-06-01", totalQuestions: 10, correctAnswers: 4, wrongAnswers: 6, obtainedMarks: 4, percentage: 40, submittedAt: new Date().toISOString() }
-      ];
+      resultsRaw = [];
     }
     if (mistakesRaw.length === 0) {
-      mistakesRaw = [
-        { studentId: "stud1", examId: "ex1", questionId: "q1", subjectId: "sub_sci", subjectName: "Science", chapterId: "chap1", chapterName: "પ્રકરણ ૧", question: "લોખંડનું કટાાવું એ કેવી પ્રક્રિયા છે?", optionA: "ભૌતિક", optionB: "રાસાયણિક", optionC: "બંને", optionD: "એક પણ નહીં", selectedAnswer: "A", correctAnswer: "B", revisionCount: 3, correctRevisionCount: 3, mastered: true, examDate: "2026-06-01" },
-        { studentId: "stud2", examId: "ex1", questionId: "q1", subjectId: "sub_sci", subjectName: "Science", chapterId: "chap1", chapterName: "પ્રકરણ ૧", question: "લોખંડનું કટાાવું એ કેવી પ્રક્રિયા છે?", optionA: "ભૌતિક", optionB: "રાસાયણિક", optionC: "બંને", optionD: "એક પણ નહીં", selectedAnswer: "A", correctAnswer: "B", revisionCount: 1, correctRevisionCount: 0, mastered: false, examDate: "2026-06-01" }
-      ];
+      mistakesRaw = [];
     }
 
     const calculatedAt = new Date().toISOString();
@@ -2391,66 +2378,6 @@ export const AdminRepository = {
       if (cached.length === 0) {
         const defaultList: DBUser[] = [
           {
-            uid: "demo-student-123",
-            studentId: "9876543210",
-            passwordHash: hashSync("123456", 10),
-            fullName: "ભાર્ગવ પટેલ",
-            mobile: "9876543210",
-            school: "સરકારી કન્યા શાળા, અમદાવાદ",
-            standard: "10",
-            division: "A",
-            village: "અમદાવાદ",
-            role: "student",
-            status: "Approved",
-            streak: 15,
-            createdAt: "2026-05-15T00:00:00Z"
-          },
-          {
-            uid: "demo-student-456",
-            studentId: "9825098250",
-            passwordHash: hashSync("123456", 10),
-            fullName: "પ્રીતિ શર્મા",
-            mobile: "9825098250",
-            school: "સરસ્વતી વિદ્યાલય, વડોદરા",
-            standard: "11",
-            division: "A",
-            village: "વડોદરા",
-            role: "student",
-            status: "Approved",
-            streak: 8,
-            createdAt: "2026-05-12T00:00:00Z"
-          },
-          {
-            uid: "demo-student-789",
-            studentId: "9904122334",
-            passwordHash: hashSync("123456", 10),
-            fullName: "કરણ મહેતા",
-            mobile: "9904122334",
-            school: "સરકારી હાઈસ્કૂલ, રાજકોટ",
-            standard: "12",
-            division: "B",
-            village: "રાજકોટ",
-            role: "student",
-            status: "Blocked",
-            streak: 0,
-            createdAt: "2026-05-10T00:00:00Z"
-          },
-          {
-            uid: "stud_teacher",
-            studentId: "teacher123",
-            passwordHash: hashSync("teacher123", 10),
-            fullName: "ગુરુજી શ્રી (Guru Teacher)",
-            mobile: "8888888888",
-            school: "સરસ્વતી વિદ્યાલય",
-            standard: "10",
-            division: "A",
-            village: "અમદાવાદ",
-            role: "teacher",
-            status: "Approved",
-            streak: 0,
-            createdAt: new Date().toISOString()
-          },
-          {
             uid: "stud_superadmin",
             studentId: "8511125288",
             passwordHash: hashSync("Nayan@25288", 10),
@@ -3088,22 +3015,7 @@ export const AdminRepository = {
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<ExamResult[]>('exam_results', []);
       if (list.length === 0) {
-        list = [
-          {
-            resultId: "res1",
-            studentId: "demo-student-123",
-            examId: "ex1",
-            subject: "Science",
-            chapter: "Chemical Reactions",
-            examDate: new Date().toISOString().split('T')[0],
-            totalQuestions: 10,
-            correctAnswers: 8,
-            wrongAnswers: 2,
-            obtainedMarks: 8,
-            percentage: 80,
-            submittedAt: new Date().toISOString()
-          }
-        ];
+        list = [];
         setLocalStorageKey('exam_results', list);
       }
       return list;
@@ -3208,47 +3120,7 @@ export const SuperAdminRepository = {
 
   // Admins Management
   async getAllAdmins(): Promise<DBUser[]> {
-    const defaultAdmins: DBUser[] = [
-      {
-        uid: "demo-admin-1",
-        studentId: "9426094260",
-        passwordHash: hashSync("123456", 10),
-        fullName: "હસમુખ પ્રજાપતિ (Hasmukh Prajapati)",
-        mobile: "9426094260",
-        school: "જી.એલ. હાઈસ્કૂલ, અમદાવાદ",
-        standard: "10",
-        division: "A",
-        role: "admin",
-        status: "Approved",
-        createdAt: "2026-05-01T12:00:00Z"
-      },
-      {
-        uid: "demo-admin-2",
-        studentId: "9909999099",
-        passwordHash: hashSync("123456", 10),
-        fullName: "વિજય પુરોહિત (Vijay Purohit)",
-        mobile: "9909999099",
-        school: "સરસ્વતી વિદ્યા મંદિર, આણંદ",
-        standard: "12",
-        division: "A",
-        role: "admin",
-        status: "Pending",
-        createdAt: "2026-06-01T09:30:00Z"
-      },
-      {
-        uid: "demo-admin-3",
-        studentId: "9825198251",
-        passwordHash: hashSync("123456", 10),
-        fullName: "સુષ્મા પટેલ (Sushma Patel)",
-        mobile: "9825198251",
-        school: "ગર્લ્સ હાઈસ્કૂલ, વડોદરા",
-        standard: "10",
-        division: "A",
-        role: "admin",
-        status: "Approved",
-        createdAt: "2026-05-15T15:45:00Z"
-      }
-    ];
+    const defaultAdmins: DBUser[] = [];
 
     if (isFirebasePlaceholder) {
       let current = getLocalStorageKey<DBUser[]>('super_admin_admins', []);
@@ -3461,44 +3333,7 @@ export const SuperAdminRepository = {
 
   // Security Logs
   async getSecurityLogs(): Promise<SecurityLog[]> {
-    const defaultSecurityLogs: SecurityLog[] = [
-      {
-        id: "sec-1",
-        eventType: "login_success",
-        userId: "demo-admin-1",
-        userName: "హసમુખ પ્રજાપતિ",
-        userRole: "admin",
-        details: "નિયમિત એડમિન આઇડેન્ટિટી સફળ લોગિન",
-        timestamp: "2026-06-03T10:15:00Z"
-      },
-      {
-        id: "sec-2",
-        eventType: "privilege_escalation",
-        userId: "demo-student-789",
-        userName: "કરણ મહેતા",
-        userRole: "student",
-        details: "ગેરકાયદેસર /admin/ routes એક્સેસ ઓળખાણ અને રિજેક્શન બ્લોકિંગ",
-        timestamp: "2026-06-02T16:22:12Z"
-      },
-      {
-        id: "sec-3",
-        eventType: "config_change",
-        userId: "demo-super-admin",
-        userName: "સુપર એડમિન",
-        userRole: "super_admin",
-        details: "મેન્ટનન્સ મોડ સંકેતોનો બાયપાસ સેટિંગ્સ સુધારો",
-        timestamp: "2026-06-01T11:00:00Z"
-      },
-      {
-        id: "sec-4",
-        eventType: "login_failed",
-        userId: "unknown_9824098240",
-        userName: "મોબાઈલ 9824098240",
-        userRole: "student",
-        details: "ખોટો ઓટીપી સબમિશન નિષ્ફળ પ્રયત્ન ૧ વખત",
-        timestamp: "2026-05-31T09:12:44Z"
-      }
-    ];
+    const defaultSecurityLogs: SecurityLog[] = [];
 
     if (isFirebasePlaceholder) {
       return getLocalStorageKey<SecurityLog[]>('super_admin_security_logs', defaultSecurityLogs);

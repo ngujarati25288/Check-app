@@ -50,7 +50,7 @@ function Login() {
               <Logo size={56} />
               <div>
                 <h1 className="text-xl font-bold">Daily Learning Exam</h1>
-                <p className="text-sm text-white/85 font-gu">ગુજરાત બોર્ડના ધોરણ ૭ થી ૧૨ માટે</p>
+                <p className="text-sm text-white/85 font-gu">ગુજરાત બોર્ડના ધોરણ ૧ થી ૧૦ માટે</p>
               </div>
             </div>
           </div>
@@ -113,19 +113,6 @@ function Login() {
                 </label>
               </div>
 
-              {/* Demo guidelines box */}
-              <div className="p-3.5 bg-primary-soft text-primary rounded-2xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <ShieldCheck className="size-4 mt-0.5 shrink-0" />
-                <div className="space-y-0.5">
-                  <p className="font-bold uppercase tracking-wider text-[10px]">Demo credentials available:</p>
-                  <ul className="list-disc pl-3.5 space-y-0.5">
-                    <li>Student: ID <b className="font-mono">9876543210</b> / Password <b className="font-mono">123456</b></li>
-                    <li>Teacher: ID <b className="font-mono">teacher123</b> / Password <b className="font-mono">teacher123</b></li>
-                    <li>Super Admin: ID <b className="font-mono">8511125288</b> / Password <b className="font-mono">Nayan@25288</b></li>
-                  </ul>
-                </div>
-              </div>
-
               <button
                 type="submit"
                 disabled={loading}
@@ -146,7 +133,7 @@ function Login() {
         </div>
 
         <p className="text-center text-[11px] text-muted-foreground pt-8 pb-6 font-gu">
-          ગુજરાત બોર્ડના વિદ્યાર્થીઓ માટે
+          ગુજરાત બોર્ડના ધોરણ ૧ થી ૧૦ ના તમામ વિદ્યાર્થીઓ માટે
         </p>
       </div>
 

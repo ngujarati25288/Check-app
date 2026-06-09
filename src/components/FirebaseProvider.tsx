@@ -259,42 +259,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!profileById) {
           const defaultDemoUsers = [
             {
-              studentId: "9876543210",
-              passwordPlain: "123456",
-              fullName: "આરવ મહેતા (Aarav Mehta)",
-              mobile: "9876543210",
-              school: "સરસ્વતી વિદ્યાલય",
-              standard: "10",
-              division: "A",
-              village: "વડતાલ",
-              role: "student",
-              status: "Approved"
-            },
-            {
-              studentId: "9825098250",
-              passwordPlain: "123456",
-              fullName: "પ્રીતિ શર્મા",
-              mobile: "9825098250",
-              school: "સરસ્વતી વિદ્યાલય, વડોદરા",
-              standard: "11",
-              division: "A",
-              village: "વડોદરા",
-              role: "student",
-              status: "Approved"
-            },
-            {
-              studentId: "teacher123",
-              passwordPlain: "teacher123",
-              fullName: "ગુરુજી શ્રી (Guru Teacher)",
-              mobile: "8888888888",
-              school: "સરસ્વતી વિદ્યાલય",
-              standard: "10",
-              division: "A",
-              village: "અમદાવાદ",
-              role: "teacher",
-              status: "Approved"
-            },
-            {
               studentId: "8511125288",
               passwordPlain: "Nayan@25288",
               fullName: "સુપર એડમિનિસ્ટ્રેટર (Super Admin)",
