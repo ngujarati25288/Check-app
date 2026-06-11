@@ -15,6 +15,129 @@ import {
 } from "firebase/firestore";
 import { Question, DailyExam, ExamResult, StudentMistake, RevisionAnalytics, DBUser } from "../../types";
 
+// Helper to get formatted date in Asia/Kolkata (IST) timezone
+export function getKolkataDateString(date = new Date()): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = formatter.formatToParts(date);
+    const yVal = parts.find(p => p.type === 'year')?.value || "";
+    const mVal = parts.find(p => p.type === 'month')?.value || "";
+    const dVal = parts.find(p => p.type === 'day')?.value || "";
+    return `${yVal}-${mVal}-${dVal}`;
+  } catch (err) {
+    return date.toISOString().split('T')[0];
+  }
+}
+
+// Helper to get day difference timezone-safely
+export function getKolkataDaysDifference(dateStr1: string, dateStr2: string): number {
+  if (!dateStr1 || !dateStr2) return Infinity;
+  try {
+    const d1 = new Date(dateStr1);
+    const d2 = new Date(dateStr2);
+    d1.setHours(12, 0, 0, 0);
+    d2.setHours(12, 0, 0, 0);
+    const diffTime = d1.getTime() - d2.getTime();
+    return Math.round(diffTime / (1000 * 60 * 60 * 24));
+  } catch (_) {
+    return Infinity;
+  }
+}
+
+// Common Secure Streak Update Function
+export async function updateStudentStreakSecure(studentId: string, todayStr: string, isPlaceholderMode: boolean) {
+  let streakUpdated = false;
+  let nextStreak = 1;
+  let currentStreak = 0;
+
+  if (isPlaceholderMode) {
+    try {
+      const userProfile = localStorage.getItem("dle:user");
+      const u = userProfile ? (JSON.parse(userProfile) as DBUser) : null;
+      if (u && u.uid === studentId) {
+        currentStreak = u.streak || 0;
+        const lastActiveDateStr = u.lastActiveDate;
+
+        if (lastActiveDateStr === todayStr) {
+          nextStreak = currentStreak || 1;
+        } else if (lastActiveDateStr) {
+          const diffDays = getKolkataDaysDifference(todayStr, lastActiveDateStr);
+          if (diffDays === 1) {
+            nextStreak = (currentStreak || 0) + 1;
+          } else {
+            nextStreak = 1;
+          }
+        } else {
+          nextStreak = 1;
+        }
+
+        const updatedUser = {
+          ...u,
+          streak: nextStreak,
+          lastActiveDate: todayStr
+        };
+        localStorage.setItem("dle:user", JSON.stringify(updatedUser));
+        try {
+          localStorage.setItem("dle:user_session", JSON.stringify(updatedUser));
+        } catch (_) {}
+        streakUpdated = true;
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("dle:user_updated"));
+        }
+      }
+    } catch (e) {
+      console.error("Local user profile streak update failed:", e);
+    }
+  } else {
+    try {
+      const userRef = doc(db, "users", studentId);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as DBUser;
+        currentStreak = userData.streak || 0;
+        const lastActiveDateStr = userData.lastActiveDate;
+
+        if (lastActiveDateStr === todayStr) {
+          nextStreak = currentStreak || 1;
+        } else if (lastActiveDateStr) {
+          const diffDays = getKolkataDaysDifference(todayStr, lastActiveDateStr);
+          if (diffDays === 1) {
+            nextStreak = (currentStreak || 0) + 1;
+          } else {
+            nextStreak = 1;
+          }
+        } else {
+          nextStreak = 1;
+        }
+
+        await updateDoc(userRef, {
+          streak: nextStreak,
+          lastActiveDate: todayStr,
+          updatedAt: serverTimestamp()
+        });
+        streakUpdated = true;
+      }
+    } catch (e) {
+      console.error("User profile streak update failed in Firestore:", e);
+    }
+  }
+
+  if (streakUpdated) {
+    try {
+      await awardPointsAndCheckAchievementsSecure(studentId, "streak", nextStreak);
+    } catch (e) {
+      console.error("Points/Achievements award for streak failed:", e);
+    }
+  }
+
+  return { streakUpdated, nextStreak };
+}
+
 export interface GetQuestionsInput {
   examId: string;
   studentId: string;
@@ -43,168 +166,6 @@ export interface RecordRevisionInput {
   studentId: string;
   questionId: string;
   isCorrect: boolean;
-}
-
-/**
- * Robust learning streak calculations using Asia/Kolkata (Indian Standard Time)
- * to avoid timezone resetting bugs or premature streak endings.
- */
-export function calculateAndVerifyStreak(currentStreak: number, lastActiveDateStr?: string): { streak: number, lastActiveDate: string } {
-  const now = new Date();
-  
-  // Format to standard YYYY-MM-DD in India Standard Time (GMT +5:30)
-  let todayStr = "";
-  try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kolkata',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    const parts = formatter.formatToParts(now);
-    const yVal = parts.find(p => p.type === 'year')?.value || "";
-    const mVal = parts.find(p => p.type === 'month')?.value || "";
-    const dVal = parts.find(p => p.type === 'day')?.value || "";
-    todayStr = `${yVal}-${mVal}-${dVal}`;
-  } catch (err) {
-    todayStr = now.toISOString().split('T')[0];
-  }
-
-  if (!lastActiveDateStr) {
-    return { streak: 1, lastActiveDate: todayStr };
-  }
-
-  if (lastActiveDateStr === todayStr) {
-    // Already did an active training action today. Maintain streak without double incrementing today.
-    return { streak: currentStreak || 1, lastActiveDate: todayStr };
-  }
-
-  try {
-    const todayDate = new Date(todayStr);
-    const lastDate = new Date(lastActiveDateStr);
-    const diffTime = todayDate.getTime() - lastDate.getTime();
-    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 1) {
-      // Consecutive day! Earn +1 streak day.
-      return { streak: (currentStreak || 0) + 1, lastActiveDate: todayStr };
-    } else if (diffDays <= 0) {
-      // Future or overlapping times
-      return { streak: currentStreak || 1, lastActiveDate: todayStr };
-    } else {
-      // Missed at least one whole calendar day, streak resets back to 1.
-      return { streak: 1, lastActiveDate: todayStr };
-    }
-  } catch (err) {
-    return { streak: (currentStreak || 0) + 1, lastActiveDate: todayStr };
-  }
-}
-
-/**
- * Safely aggregates, persists, caches, and signals the updated learner streak.
- */
-export async function updateStudentStreakInternal(studentId: string): Promise<{ streak: number; lastActiveDate: string }> {
-  let currentStreak = 0;
-  let lastActiveDate = "";
-  let userProfile: DBUser | null = null;
-
-  if (isFirebasePlaceholder) {
-    try {
-      const stored = localStorage.getItem("dle:user_session") || localStorage.getItem("dle:user");
-      if (stored) {
-        userProfile = JSON.parse(stored) as DBUser;
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const userRef = doc(db, "users", studentId);
-      const snap = await getDoc(userRef);
-      if (snap.exists()) {
-        userProfile = snap.data() as DBUser;
-      }
-    } catch (e) {
-      console.error("Error fetching user profile for streak update:", e);
-    }
-  }
-
-  // Fallback to active session user if profile not found (safely avoid blanks)
-  if (!userProfile) {
-    try {
-      const stored = localStorage.getItem("dle:user_session") || localStorage.getItem("dle:user");
-      if (stored) {
-        userProfile = JSON.parse(stored) as DBUser;
-      }
-    } catch (_) {}
-  }
-
-  currentStreak = userProfile?.streak || 0;
-  lastActiveDate = userProfile?.lastActiveDate || "";
-
-  const streakResult = calculateAndVerifyStreak(currentStreak, lastActiveDate);
-
-  // Determine if it is a new active day or reset
-  const hasChanges = streakResult.streak !== currentStreak || streakResult.lastActiveDate !== lastActiveDate;
-
-  if (userProfile) {
-    const updatedProfile = {
-      ...userProfile,
-      streak: streakResult.streak,
-      lastActiveDate: streakResult.lastActiveDate,
-      updatedAt: new Date().toISOString()
-    };
-
-    if (isFirebasePlaceholder) {
-      try {
-        localStorage.setItem("dle:user_session", JSON.stringify(updatedProfile));
-        localStorage.setItem("dle:user", JSON.stringify(updatedProfile));
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event("dle:profile_updated"));
-        }
-      } catch (_) {}
-    } else {
-      try {
-        const userRef = doc(db, "users", studentId);
-        await updateDoc(userRef, {
-          streak: streakResult.streak,
-          lastActiveDate: streakResult.lastActiveDate,
-          updatedAt: serverTimestamp()
-        });
-        
-        // Also update local cache copy and trigger event for real-time local display update!
-        localStorage.setItem("dle:user_session", JSON.stringify(updatedProfile));
-        localStorage.setItem("dle:user", JSON.stringify(updatedProfile));
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event("dle:profile_updated"));
-        }
-      } catch (e) {
-        console.error("Failed to update user streak in Firestore:", e);
-      }
-    }
-  } else {
-    // If user profile is missing from database entirely, we'll still update session storage
-    const fallbackProfile: DBUser = {
-      uid: studentId,
-      fullName: "વિદ્યાર્થી",
-      mobile: "",
-      standard: "10",
-      division: "A",
-      village: "ગામ",
-      role: "student",
-      status: "Approved",
-      streak: streakResult.streak,
-      lastActiveDate: streakResult.lastActiveDate,
-      createdAt: new Date().toISOString()
-    };
-    try {
-      localStorage.setItem("dle:user_session", JSON.stringify(fallbackProfile));
-      localStorage.setItem("dle:user", JSON.stringify(fallbackProfile));
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("dle:profile_updated"));
-      }
-    } catch (_) {}
-  }
-
-  return streakResult;
 }
 
 /**
@@ -398,7 +359,7 @@ export async function updateRevisionAnalyticsInternal(studentId: string, isPlace
 export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
   const { examId, studentId, studentName, subjectId, chapterId, answers, deviceInfo } = data;
   const resultDocId = `res_${studentId}_${examId}`;
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getKolkataDateString();
 
   // 1. One Submission Protection (even after logout/login)
   if (!isFirebasePlaceholder) {
@@ -609,15 +570,8 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
   // Recalculate revision analytics
   await updateRevisionAnalyticsInternal(studentId, isFirebasePlaceholder);
 
-  // Update learner streak dynamically on exam submit
-  let finalStreakVal = 0;
-  try {
-    const streakRes = await updateStudentStreakInternal(studentId);
-    finalStreakVal = streakRes.streak;
-    await awardPointsAndCheckAchievementsSecure(studentId, "streak", finalStreakVal);
-  } catch (streakErr) {
-    console.error("Failed to update student streak on exam submission:", streakErr);
-  }
+  // Update student streak on learning action
+  await updateStudentStreakSecure(studentId, todayStr, isFirebasePlaceholder);
 
   // Trigger Points & Achievements Securing
   try {
@@ -647,7 +601,7 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
 export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisionInput }) {
   const { studentId, questionId, isCorrect } = data;
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = getKolkataDateString(now);
 
   let targetMistake: StudentMistake | null = null;
 
@@ -785,15 +739,7 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
   }
 
   // 3. Update student streak on active dynamic action
-  let streakUpdated = false;
-  let currentStreak = 0;
-  try {
-    const streakResult = await updateStudentStreakInternal(studentId);
-    currentStreak = streakResult.streak;
-    streakUpdated = true;
-  } catch (streakErr) {
-    console.error("Failed to update student streak on revision attempt:", streakErr);
-  }
+  await updateStudentStreakSecure(studentId, todayStr, isFirebasePlaceholder);
 
   // 4. Recalculate revision analytics
   await updateRevisionAnalyticsInternal(studentId, isFirebasePlaceholder);
@@ -803,9 +749,6 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
     await awardPointsAndCheckAchievementsSecure(studentId, "revision");
     if (updatedMistake.mastered) {
       await awardPointsAndCheckAchievementsSecure(studentId, "mastery");
-    }
-    if (streakUpdated) {
-      await awardPointsAndCheckAchievementsSecure(studentId, "streak", currentStreak);
     }
   } catch (e) {
     console.error("Points/Achievements triggering failed inside recordRevisionAttemptSecure:", e);

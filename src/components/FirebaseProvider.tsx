@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   auth, 
+  db,
   isFirebasePlaceholder 
 } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { 
   onAuthStateChanged, 
   signOut as firebaseSignOut,
@@ -44,12 +46,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUserRaw] = useState<DBUser | null>(null);
 
-  // Live streak validation and timing checker (prevents stale or cheating streaks)
-  const getLiveStreak = (streak: number, lastActiveDateStr?: string): number => {
-    if (!lastActiveDateStr) return 0;
-    
-    const now = new Date();
-    let todayStr = "";
+  // Helper to get formatted date in Asia/Kolkata timezone on the client-side
+  const getKolkataDateString = (date = new Date()): string => {
     try {
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Kolkata',
@@ -57,30 +55,41 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         month: '2-digit',
         day: '2-digit'
       });
-      const parts = formatter.formatToParts(now);
+      const parts = formatter.formatToParts(date);
       const yVal = parts.find(p => p.type === 'year')?.value || "";
       const mVal = parts.find(p => p.type === 'month')?.value || "";
       const dVal = parts.find(p => p.type === 'day')?.value || "";
-      todayStr = `${yVal}-${mVal}-${dVal}`;
+      return `${yVal}-${mVal}-${dVal}`;
     } catch (err) {
-      todayStr = now.toISOString().split('T')[0];
+      return date.toISOString().split('T')[0];
     }
+  };
 
+  const getKolkataDaysDifference = (dateStr1: string, dateStr2: string): number => {
+    if (!dateStr1 || !dateStr2) return Infinity;
+    try {
+      const d1 = new Date(dateStr1);
+      const d2 = new Date(dateStr2);
+      d1.setHours(12, 0, 0, 0);
+      d2.setHours(12, 0, 0, 0);
+      const diffTime = d1.getTime() - d2.getTime();
+      return Math.round(diffTime / (1000 * 60 * 60 * 24));
+    } catch (_) {
+      return Infinity;
+    }
+  };
+
+  const getLiveStreak = (streak: number, lastActiveDateStr?: string): number => {
+    if (!lastActiveDateStr) return 0;
+    
+    const todayStr = getKolkataDateString();
     if (lastActiveDateStr === todayStr) {
       return streak || 0;
     }
 
-    try {
-      const todayDate = new Date(todayStr);
-      const lastDate = new Date(lastActiveDateStr);
-      const diffTime = todayDate.getTime() - lastDate.getTime();
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 1) {
-        return streak || 0;
-      }
-    } catch (err) {
-      // fallback
+    const diffDays = getKolkataDaysDifference(todayStr, lastActiveDateStr);
+    if (diffDays === 1) {
+      return streak || 0;
     }
 
     return 0;
@@ -90,7 +99,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (profile) {
       const liveStreak = getLiveStreak(profile.streak || 0, profile.lastActiveDate);
       if (liveStreak !== profile.streak) {
-        // Create shallow clone to avoid mutation of references in state
         profile = {
           ...profile,
           streak: liveStreak
@@ -177,9 +185,17 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.error("Local context lookups failed:", e);
     }
 
+    let unsubscribeUserDoc: (() => void) | null = null;
+
     // 2. Firebase auth observer
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       setFirebaseUser(fUser);
+      
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+        unsubscribeUserDoc = null;
+      }
+
       if (fUser) {
         try {
           let profile = await UserRepository.getProfile(fUser.uid);
@@ -202,6 +218,28 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             } else {
               setUser(profile);
               localStorage.setItem('dle:user_session', JSON.stringify(profile));
+
+              // Real-time observer on live Firestore user doc
+              if (!isFirebasePlaceholder) {
+                unsubscribeUserDoc = onSnapshot(doc(db, "users", fUser.uid), (docSnap) => {
+                  if (docSnap.exists()) {
+                    const latestData = docSnap.data() as DBUser;
+                    const curStat = (latestData.status || '').toLowerCase();
+                    if (curStat !== 'approved') {
+                      toast.error("Your account has been disabled.");
+                      setUser(null);
+                      localStorage.removeItem('dle:user_session');
+                      try { firebaseSignOut(auth); } catch {}
+                      navigate({ to: '/login' });
+                    } else {
+                      setUser(latestData);
+                      localStorage.setItem('dle:user_session', JSON.stringify(latestData));
+                    }
+                  }
+                }, (err) => {
+                  console.error("Auth snapshot listener error:", err);
+                });
+              }
             }
           } else {
             // If authenticated in Firebase but no profile exists (e.g. bootstrapper rejected),
@@ -233,25 +271,26 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, []);
-
-  // Listen for manual local profile updates and sync instantly
-  useEffect(() => {
-    const handleLocalProfileUpdate = () => {
+    const handleLocalUserUpdate = (e: Event) => {
       try {
         const savedUser = localStorage.getItem('dle:user_session');
         if (savedUser) {
           const parsed = JSON.parse(savedUser) as DBUser;
-          setUser(parsed);
+          setUserRaw(parsed);
         }
-      } catch (e) {
-        console.error("Local session refresh failed on profile update event:", e);
-      }
+      } catch (_) {}
     };
-    window.addEventListener('dle:profile_updated', handleLocalProfileUpdate);
+
+    window.addEventListener('dle:user_updated', handleLocalUserUpdate);
+    window.addEventListener('storage', handleLocalUserUpdate);
+
     return () => {
-      window.removeEventListener('dle:profile_updated', handleLocalProfileUpdate);
+      unsubscribe();
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+      }
+      window.removeEventListener('dle:user_updated', handleLocalUserUpdate);
+      window.removeEventListener('storage', handleLocalUserUpdate);
     };
   }, []);
 
@@ -295,8 +334,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             freshProfile.standard !== user.standard ||
             freshProfile.division !== user.division ||
             freshProfile.school !== user.school ||
-            freshProfile.village !== user.village ||
-            freshProfile.streak !== user.streak;
+            freshProfile.village !== user.village;
           if (hasChanges) {
             setUser(freshProfile);
             localStorage.setItem('dle:user_session', JSON.stringify(freshProfile));
