@@ -287,32 +287,8 @@ const DEFAULT_EXAMS: DailyExam[] = [
 ];
 
 export async function bootstrapDefaultFirestoreData(): Promise<void> {
-  if (isFirebasePlaceholder) return;
-  try {
-    const snaps = await getDocs(collection(db, 'subjects'));
-    if (!snaps.empty) {
-      console.log("Firestore subjects collection already bootstrapped. Skipping.");
-      return;
-    }
-
-    console.log("Starting Firestore bootstrap/seeding of default collections...");
-
-    const subjectPromises = DEFAULT_SUBJECTS.map(s => setDoc(doc(db, 'subjects', s.subjectId), s));
-    const chapterPromises = DEFAULT_CHAPTERS.map(c => setDoc(doc(db, 'chapters', c.chapterId), c));
-    const questionPromises = DEFAULT_QUESTIONS.map(q => setDoc(doc(db, 'questions', q.questionId), q));
-    const examPromises = DEFAULT_EXAMS.map(e => setDoc(doc(db, 'daily_exams', e.examId), e));
-
-    await Promise.all([
-      ...subjectPromises,
-      ...chapterPromises,
-      ...questionPromises,
-      ...examPromises
-    ]);
-
-    console.log("Firestore bootstrap completed successfully.");
-  } catch (e) {
-    console.error("Firestore bootstrap seeding failed:", e);
-  }
+  // Empty as requested - do not bootstrap dummy data in Firestore
+  return;
 }
 
 // ----------------------------------------------------
@@ -363,7 +339,27 @@ export const UserRepository = {
       console.warn("getProfileByStudentId query failed:", e);
       const cached = getLocalStorageKey<DBUser | null>('user', null);
       if (cached && cached.studentId === studentId) return cached;
+      throw e;
+    }
+  },
+
+  async getProfileByMobile(mobile: string): Promise<DBUser | null> {
+    if (isFirebasePlaceholder) {
+      const list = getLocalStorageKey<DBUser[]>('users', []);
+      const found = list.find((u: DBUser) => u.mobile === mobile);
+      if (found) return found;
       return null;
+    }
+    try {
+      const q = query(collection(db, 'users'), where('mobile', '==', mobile), limit(1));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs[0].data() as DBUser;
+      }
+      return null;
+    } catch (e) {
+      console.warn("getProfileByMobile query failed:", e);
+      throw e;
     }
   },
 
@@ -785,26 +781,24 @@ export const SubjectRepository = {
   async getSubjects(standard: string): Promise<Subject[]> {
     if (isFirebasePlaceholder) {
       const list = getLocalStorageKey<Subject[]>('subjects', []);
-      return list.filter(s => s.standard === standard);
+      return list.filter(s => s.standard === standard && s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
     }
     const path = 'subjects';
     try {
-      const allSnaps = await getDocs(collection(db, 'subjects'));
-      if (allSnaps.empty) {
-        console.log("No subjects found in Firestore on user standard fetch. Bootstrapping...");
-        await bootstrapDefaultFirestoreData();
-      }
       const q = query(collection(db, 'subjects'), where('standard', '==', standard));
       const snaps = await getDocs(q);
       const res: Subject[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as Subject);
+        const s = d.data() as Subject;
+        if (s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3") {
+          res.push(s);
+        }
       });
       return res;
     } catch (e) {
       console.warn("Firestore subjects query failed, using localStorage cache.");
       const list = getLocalStorageKey<Subject[]>('subjects', []);
-      return list.filter(s => s.standard === standard);
+      return list.filter(s => s.standard === standard && s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
     }
   }
 };
@@ -813,7 +807,7 @@ export const ChapterRepository = {
   async getChapters(subjectId: string): Promise<Chapter[]> {
     if (isFirebasePlaceholder) {
       const list = getLocalStorageKey<Chapter[]>('chapters', []);
-      return list.filter(c => c.subjectId === subjectId);
+      return list.filter(c => c.subjectId === subjectId && c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3");
     }
     const path = 'chapters';
     try {
@@ -821,12 +815,15 @@ export const ChapterRepository = {
       const snaps = await getDocs(q);
       const res: Chapter[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as Chapter);
+        const c = d.data() as Chapter;
+        if (c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3") {
+          res.push(c);
+        }
       });
       return res;
     } catch (e) {
       const list = getLocalStorageKey<Chapter[]>('chapters', []);
-      return list.filter(c => c.subjectId === subjectId);
+      return list.filter(c => c.subjectId === subjectId && c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3");
     }
   }
 };
@@ -835,7 +832,7 @@ export const QuestionRepository = {
   async getQuestions(subjectId: string, chapterId: string): Promise<Question[]> {
     if (isFirebasePlaceholder) {
       const list = getLocalStorageKey<Question[]>('questions', []);
-      return list.filter(q => q.subjectId === subjectId && q.chapterId === chapterId);
+      return list.filter(q => q.subjectId === subjectId && q.chapterId === chapterId && q.questionId !== "q1" && q.questionId !== "q2");
     }
     const path = 'questions';
     try {
@@ -847,29 +844,40 @@ export const QuestionRepository = {
       const snaps = await getDocs(q);
       const res: Question[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as Question);
+        const qItem = d.data() as Question;
+        if (qItem.questionId !== "q1" && qItem.questionId !== "q2") {
+          res.push(qItem);
+        }
       });
       return res;
     } catch (e) {
       const list = getLocalStorageKey<Question[]>('questions', []);
-      return list.filter(q => q.subjectId === subjectId && q.chapterId === chapterId);
+      return list.filter(q => q.subjectId === subjectId && q.chapterId === chapterId && q.questionId !== "q1" && q.questionId !== "q2");
     }
   }
 };
 
 export const ExamRepository = {
   async getActiveExams(standard: string): Promise<DailyExam[]> {
-    if (isFirebasePlaceholder) {
+    const isPlaceholder = isFirebasePlaceholder;
+    if (isPlaceholder) {
       const list = getLocalStorageKey<DailyExam[]>('daily_exams', []);
       const now = Date.now();
       return list.filter(e => {
+        if (e.examId === "ex1") return false;
+
+        const examStd = e.standard || "10";
+        if (examStd !== standard) return false;
+
         if (e.status === "closed" || e.status === "archived" || e.status === "cancelled") {
           return false;
         }
-        if (e.startAt) {
-          const start = new Date(e.startAt).getTime();
-          if (now < start) return false;
+
+        // Do not filter out future scheduled exams so they show up as "upcoming" with a countdown timer on the client
+        if (e.status === "scheduled") {
+          // Allowed to pass through
         }
+
         if (e.endAt) {
           const end = new Date(e.endAt).getTime();
           if (now > end) return false;
@@ -884,13 +892,20 @@ export const ExamRepository = {
       const now = Date.now();
       snaps.forEach(d => {
         const e = d.data() as DailyExam;
+        if (e.examId === "ex1") return;
+
+        const examStd = e.standard || "10";
+        if (examStd !== standard) return;
+
         if (e.status === "closed" || e.status === "archived" || e.status === "cancelled") {
           return;
         }
-        if (e.startAt) {
-          const start = e.startAt.seconds ? e.startAt.seconds * 1000 : new Date(e.startAt).getTime();
-          if (now < start) return;
+
+        // Do not filter out future scheduled exams so they show up as "upcoming" with a countdown timer on the client
+        if (e.status === "scheduled") {
+          // Allowed to pass through
         }
+
         if (e.endAt) {
           const end = e.endAt.seconds ? e.endAt.seconds * 1000 : new Date(e.endAt).getTime();
           if (now > end) return;
@@ -904,13 +919,20 @@ export const ExamRepository = {
       const list = getLocalStorageKey<DailyExam[]>('daily_exams', []);
       const now = Date.now();
       return list.filter(e => {
+        if (e.examId === "ex1") return false;
+
+        const examStd = e.standard || "10";
+        if (examStd !== standard) return false;
+
         if (e.status === "closed" || e.status === "archived" || e.status === "cancelled") {
           return false;
         }
-        if (e.startAt) {
-          const start = new Date(e.startAt).getTime();
-          if (now < start) return false;
+
+        // Do not filter out future scheduled exams so they show up as "upcoming" with a countdown timer on the client
+        if (e.status === "scheduled") {
+          // Allowed to pass through
         }
+
         if (e.endAt) {
           const end = new Date(e.endAt).getTime();
           if (now > end) return false;
@@ -1067,24 +1089,15 @@ export const MistakeRepository = {
 
   async getDailyRevisionQuestions(studentId: string): Promise<StudentMistake[]> {
     const list = await this.getUserMistakes(studentId);
-    const todayStr = new Date().toISOString().split('T')[0];
 
-    // Exclude mastered questions
+    // Exclude mastered questions, keeping all pending ones
     const pending = list.filter(m => !m.mastered);
 
-    // Apply strict Spaced repetition filter (FIX 2)
-    // "Daily Revision Engine should only load: nextRevisionDate <= today"
-    let scheduled = pending.filter(m => {
-      if (!m.nextRevisionDate) return false;
-      return m.nextRevisionDate <= todayStr;
-    });
-
-    // Apply strict priority sorting:
+    // Apply priority sorting:
     // 1. Never Revised (revisionCount == 0)
     // 2. Low Revision Count
     // 3. Recently Wrong (latestExamDate desc / updatedAt desc)
-    // 4. Remaining Not Mastered
-    scheduled.sort((a, b) => {
+    pending.sort((a, b) => {
       // Priority 1: Never Revised
       const aNever = (a.revisionCount || 0) === 0;
       const bNever = (b.revisionCount || 0) === 0;
@@ -1104,8 +1117,8 @@ export const MistakeRepository = {
       return bDate.localeCompare(aDate);
     });
 
-    // Select maximum 5 questions per day
-    return scheduled.slice(0, 5);
+    // Return all pending mistakes to offer limitless comprehensive revision
+    return pending;
   }
 };
 
@@ -1885,7 +1898,7 @@ export const PointsRepository = {
     return list;
   },
 
-  async getSpanLeaderboard(span: "daily" | "weekly" | "monthly" | "alltime"): Promise<any[]> {
+  async getSpanLeaderboard(span: "daily" | "weekly" | "monthly" | "alltime", forceRefresh = false): Promise<any[]> {
     const isPlaceholder = isFirebasePlaceholder;
     const collName = `leaderboard_${span}`;
     let list: any[] = [];
@@ -1908,10 +1921,51 @@ export const PointsRepository = {
       }
     }
 
-    // If empty list, auto-recalculate/sync initially as a self-healing fallback!
-    if (list.length === 0) {
-      const { calculateLeaderboardForSpan } = await import("./cloudFunctions");
-      list = await calculateLeaderboardForSpan(span);
+    // Multi-user & self-healing dynamic sync:
+    // If the list is empty, OR forceRefresh is true, OR any element's updatedAt timestamp is older than 5 minutes,
+    // trigger a live recalculation to guarantee up-to-date data.
+    const isStale = forceRefresh || list.length === 0 || list.some(item => {
+      if (!item.updatedAt) return true;
+      let updatedTime: Date;
+      if (item.updatedAt && typeof item.updatedAt.toDate === "function") {
+        updatedTime = item.updatedAt.toDate();
+      } else if (item.updatedAt && typeof item.updatedAt.seconds === "number") {
+        updatedTime = new Date(item.updatedAt.seconds * 1000);
+      } else {
+        updatedTime = new Date(item.updatedAt);
+      }
+      const diffMs = Date.now() - updatedTime.getTime();
+      return isNaN(diffMs) || diffMs > 5 * 60 * 1000; // 5 minutes cache TTL
+    });
+
+    let shouldRecalculate = isStale;
+    if (!isPlaceholder) {
+      let userIsAdmin = false;
+      if (auth.currentUser) {
+        try {
+          const uSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+          if (uSnap.exists()) {
+            const r = uSnap.data()?.role;
+            if (r === "admin" || r === "super_admin") {
+              userIsAdmin = true;
+            }
+          }
+        } catch (err) {
+          console.warn("Failed checking user admin status:", err);
+        }
+      }
+      if (!userIsAdmin) {
+        shouldRecalculate = false;
+      }
+    }
+
+    if (shouldRecalculate) {
+      try {
+        const { calculateLeaderboardForSpan } = await import("./cloudFunctions");
+        list = await calculateLeaderboardForSpan(span);
+      } catch (err) {
+        console.warn(`Failed to recalculate ${collName} on launch, using stale cache:`, err);
+      }
     }
 
     list.sort((a, b) => a.rank - b.rank);
@@ -1927,7 +1981,8 @@ export const PointsRepository = {
     standard?: string,
     school?: string,
     village?: string,
-    span: "daily" | "weekly" | "monthly" | "alltime" = "alltime"
+    span: "daily" | "weekly" | "monthly" | "alltime" = "alltime",
+    forceRefresh = false
   ): Promise<any[]> {
     const isPlaceholder = isFirebasePlaceholder;
 
@@ -1950,14 +2005,18 @@ export const PointsRepository = {
       try {
         const snap = await getDocs(collection(db, "users"));
         snap.forEach(d => {
-          usersList.push(d.data() as DBUser);
+          const item = d.data() as DBUser;
+          usersList.push({
+            ...item,
+            uid: item.uid || d.id
+          });
         });
       } catch (e) {
         console.error("Failed to fetch students for filter:", e);
       }
     }
 
-    const compiledList = await this.getSpanLeaderboard(span);
+    const compiledList = await this.getSpanLeaderboard(span, forceRefresh);
 
     // Filter achievements listing to show earned badges
     let achievementsMap: Record<string, string[]> = {};
@@ -1989,23 +2048,73 @@ export const PointsRepository = {
       const userBadges = achievementsMap[item.studentId] || [];
       return {
         studentId: item.studentId,
-        name: item.studentName,
+        name: item.studentName || uProfile?.fullName || "વિદ્યાર્થી",
         standard: uProfile?.standard || item.standard,
         school: uProfile?.school || item.school,
         village: uProfile?.village || item.village,
-        points: item.points,
-        rankingScore: item.rankingScore,
-        masteredQuestions: item.masteredQuestions,
-        revisionAccuracy: item.revisionAccuracy,
-        achievementsCount: item.achievementsCount,
-        rank: item.rank,
+        points: typeof item.points === "number" ? item.points : (typeof item.totalMarks === "number" ? item.totalMarks : 0),
+        rankingScore: typeof item.rankingScore === "number" ? item.rankingScore : 0,
+        masteredQuestions: item.masteredQuestions || 0,
+        revisionAccuracy: item.revisionAccuracy || 0,
+        achievementsCount: item.achievementsCount || 0,
+        rank: item.rank || 99,
         previousRank: item.previousRank,
-        rankChange: item.rankChange,
+        rankChange: item.rankChange || "flat",
         badges: userBadges
       };
     });
 
+    // Dynamic sort by rankingScore desc, then by points desc
+    compiled.sort((a, b) => {
+      if (b.rankingScore !== a.rankingScore) {
+        return b.rankingScore - a.rankingScore;
+      }
+      return b.points - a.points;
+    });
+
+    // Reassign correct ranks sequentially
+    compiled.forEach((c, idx) => {
+      c.rank = idx + 1;
+    });
+
     return compiled;
+  },
+
+  async syncAllLeaderboards(): Promise<void> {
+    const { triggerAllLeaderboardsSync } = await import("./cloudFunctions");
+    await triggerAllLeaderboardsSync();
+  },
+
+  async getLeaderboardAuditLogs(): Promise<any[]> {
+    if (isFirebasePlaceholder) {
+      try {
+        const stored = localStorage.getItem("dle:leaderboard_audit_logs") || "[]";
+        return JSON.parse(stored).sort((a: any, b: any) => new Date(b.generationTime).getTime() - new Date(a.generationTime).getTime());
+      } catch (_) {
+        return [];
+      }
+    }
+    try {
+      const snap = await getDocs(collection(db, "leaderboard_audit_logs"));
+      const logs: any[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        let genTime = data.generationTime;
+        if (genTime && typeof genTime.toDate === "function") {
+          genTime = genTime.toDate().toISOString();
+        }
+        logs.push({
+          ...data,
+          id: d.id,
+          generationTime: genTime || new Date().toISOString()
+        });
+      });
+      logs.sort((a, b) => new Date(b.generationTime).getTime() - new Date(a.generationTime).getTime());
+      return logs;
+    } catch (e) {
+      console.error("Failed to load leaderboard audit logs:", e);
+      return [];
+    }
   }
 };
 
@@ -2529,29 +2638,16 @@ export const AdminRepository = {
   async getAllSubjects(): Promise<Subject[]> {
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Subject[]>('subjects', []);
-      if (list.length === 0) {
-        list = [
-          { subjectId: "sub1", subjectName: "Science", standard: "10", createdAt: new Date().toISOString(), status: "active" },
-          { subjectId: "sub2", subjectName: "Mathematics", standard: "10", createdAt: new Date().toISOString(), status: "active" },
-          { subjectId: "sub3", subjectName: "Social Science", standard: "10", createdAt: new Date().toISOString(), status: "active" }
-        ];
-        setLocalStorageKey('subjects', list);
-      }
-      return list;
+      return list.filter(s => s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
     }
     try {
       const snaps = await getDocs(collection(db, 'subjects'));
-      if (snaps.empty) {
-        console.log("No subjects found in Firestore. Bootstrapping...");
-        await bootstrapDefaultFirestoreData();
-        const reSnaps = await getDocs(collection(db, 'subjects'));
-        const res: Subject[] = [];
-        reSnaps.forEach(d => res.push(d.data() as Subject));
-        return res;
-      }
       const res: Subject[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as Subject);
+        const s = d.data() as Subject;
+        if (s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3") {
+          res.push(s);
+        }
       });
       return res;
     } catch (e) {
@@ -2619,29 +2715,16 @@ export const AdminRepository = {
   async getAllChapters(): Promise<Chapter[]> {
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Chapter[]>('chapters', []);
-      if (list.length === 0) {
-        list = [
-          { chapterId: "ch1", subjectId: "sub1", chapterName: "Chemical Reactions", standard: "10", status: "active" },
-          { chapterId: "ch2", subjectId: "sub1", chapterName: "Life Processes", standard: "10", status: "active" },
-          { chapterId: "ch3", subjectId: "sub2", chapterName: "Quadratic Equations", standard: "10", status: "active" }
-        ];
-        setLocalStorageKey('chapters', list);
-      }
-      return list;
+      return list.filter(c => c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3");
     }
     try {
       const snaps = await getDocs(collection(db, 'chapters'));
-      if (snaps.empty) {
-        console.log("No chapters found in Firestore. Bootstrapping...");
-        await bootstrapDefaultFirestoreData();
-        const reSnaps = await getDocs(collection(db, 'chapters'));
-        const res: Chapter[] = [];
-        reSnaps.forEach(d => res.push(d.data() as Chapter));
-        return res;
-      }
       const res: Chapter[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as Chapter);
+        const c = d.data() as Chapter;
+        if (c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3") {
+          res.push(c);
+        }
       });
       return res;
     } catch (e) {
@@ -2708,54 +2791,16 @@ export const AdminRepository = {
   async getAllQuestions(): Promise<Question[]> {
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Question[]>('questions', []);
-      if (list.length === 0) {
-        list = [
-          {
-            questionId: "q1",
-            subjectId: "sub1",
-            chapterId: "ch1",
-            question: "કયો વાયુ લોખંડને કટાવવાની પ્રક્રિયા વેગવંત બનાવે છે?",
-            optionA: "ઓક્સિજન",
-            optionB: "નાઇટ્રોજન",
-            optionC: "હાઇડ્રોજન",
-            optionD: "કાર્બન ડાયોક્સાઇડ",
-            correctAnswer: "A",
-            explanation: "ઓક્સિજન અને ભેજ મળીને આયર્ન ઓક્સાઇડ બનાવે છે.",
-            difficulty: "easy",
-            status: "active"
-          },
-          {
-            questionId: "q2",
-            subjectId: "sub1",
-            chapterId: "ch2",
-            question: "મનુષ્યમાં મુખ્ય ઉત્સર્જન અંગ કયું છે?",
-            optionA: "મૂત્રપિંડ (Kidney)",
-            optionB: "ફેફસાં",
-            optionC: "ત્વચા",
-            optionD: "યકૃત",
-            correctAnswer: "A",
-            explanation: "કિડની લોહી ગાળવાનું કાર્ય કરે છે.",
-            difficulty: "medium",
-            status: "active"
-          }
-        ];
-        setLocalStorageKey('questions', list);
-      }
-      return list;
+      return list.filter(q => q.questionId !== "q1" && q.questionId !== "q2");
     }
     try {
       const snaps = await getDocs(collection(db, 'questions'));
-      if (snaps.empty) {
-        console.log("No questions found in Firestore. Bootstrapping...");
-        await bootstrapDefaultFirestoreData();
-        const reSnaps = await getDocs(collection(db, 'questions'));
-        const res: Question[] = [];
-        reSnaps.forEach(d => res.push(d.data() as Question));
-        return res;
-      }
       const res: Question[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as Question);
+        const item = d.data() as Question;
+        if (item.questionId !== "q1" && item.questionId !== "q2") {
+          res.push(item);
+        }
       });
       return res;
     } catch (e) {
@@ -2907,40 +2952,16 @@ export const AdminRepository = {
   async getAllExams(): Promise<DailyExam[]> {
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<DailyExam[]>('daily_exams', []);
-      if (list.length === 0) {
-        list = [
-          {
-            examId: "ex1",
-            subjectId: "sub1",
-            chapterId: "ch1",
-            examinerId: "demo-admin",
-            examDate: new Date().toISOString().split('T')[0],
-            duration: 15,
-            totalQuestions: 10,
-            status: "active",
-            createdAt: new Date().toISOString(),
-            publishAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            startAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-            endAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-          }
-        ];
-        setLocalStorageKey('daily_exams', list);
-      }
-      return list;
+      return list.filter(e => e.examId !== "ex1");
     }
     try {
       const snaps = await getDocs(collection(db, 'daily_exams'));
-      if (snaps.empty) {
-        console.log("No exams found in Firestore. Bootstrapping...");
-        await bootstrapDefaultFirestoreData();
-        const reSnaps = await getDocs(collection(db, 'daily_exams'));
-        const res: DailyExam[] = [];
-        reSnaps.forEach(d => res.push(d.data() as DailyExam));
-        return res;
-      }
       const res: DailyExam[] = [];
       snaps.forEach(d => {
-        res.push(d.data() as DailyExam);
+        const e = d.data() as DailyExam;
+        if (e.examId !== "ex1") {
+          res.push(e);
+        }
       });
       return res;
     } catch (e) {
@@ -2951,9 +2972,9 @@ export const AdminRepository = {
 
   async createExam(adminId: string, adminName: string, exam: DailyExam): Promise<boolean> {
     const exams = await this.getAllExams();
-    const hasDuplicate = exams.some(e => e.status === "active" && e.examDate === exam.examDate);
+    const hasDuplicate = exams.some(e => e.status === "active" && e.examDate === exam.examDate && (e.standard || "10") === (exam.standard || "10"));
     if (hasDuplicate && exam.status === "active") {
-      console.warn("Active Exam Control Rule: An active exam already exists on this day.");
+      console.warn("Active Exam Control Rule: An active exam already exists on this day for this standard.");
       return false;
     }
 
@@ -2983,9 +3004,10 @@ export const AdminRepository = {
       const exams = await this.getAllExams();
       const currentObj = exams.find(e => e.examId === examId);
       const targetDate = partial.examDate || currentObj?.examDate;
-      const hasDuplicate = exams.some(e => e.status === "active" && e.examDate === targetDate && e.examId !== examId);
+      const currentStd = currentObj?.standard || "10";
+      const hasDuplicate = exams.some(e => e.status === "active" && e.examDate === targetDate && e.examId !== examId && (e.standard || "10") === currentStd);
       if (hasDuplicate) {
-        console.warn("Active Exam Control Rule: An active exam already exists.");
+        console.warn("Active Exam Control Rule: An active exam already exists for this standard.");
         return false;
       }
     }

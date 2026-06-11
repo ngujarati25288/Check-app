@@ -9,7 +9,16 @@ import { sfx } from "@/lib/settings";
 import { getExamQuestionsSecure, submitExamSecure } from "@/lib/api/exam.functions";
 import { secureStorage } from "@/lib/secureStorage";
 
+interface ExamSearchParams {
+  examId?: string;
+}
+
 export const Route = createFileRoute("/exam")({
+  validateSearch: (search: Record<string, unknown>): ExamSearchParams => {
+    return {
+      examId: search.examId as string | undefined,
+    };
+  },
   head: () => ({ meta: [{ title: "Exam in progress" }] }),
   component: Exam,
 });
@@ -17,6 +26,7 @@ export const Route = createFileRoute("/exam")({
 function Exam() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { examId } = Route.useSearch();
 
   // Route protection
   useEffect(() => {
@@ -57,7 +67,13 @@ function Exam() {
           return;
         }
 
-        const exam = exams[0];
+        let exam = exams[0];
+        if (examId) {
+          const matched = exams.find((e) => e.examId === examId);
+          if (matched) {
+            exam = matched;
+          }
+        }
         setActiveExam(exam);
 
         // Verify duplicate submissions (Fix 8)
@@ -134,9 +150,10 @@ function Exam() {
           setAnswers(finalQuestions.map(() => null));
         }
 
-      } catch (err) {
+      } catch (err: any) {
         console.error("Exam load issue:", err);
-        toast.error("પરીક્ષા શરૂ કરવામાં મુશ્કેલી પડી.");
+        const errMsg = err?.message || "પરીક્ષા શરૂ કરવામાં મુશ્કેલી પડી.";
+        toast.error(errMsg);
         navigate({ to: "/dashboard" });
       } finally {
         clearTimeout(timeoutId);

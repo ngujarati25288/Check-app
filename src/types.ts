@@ -25,6 +25,7 @@ export interface DBUser {
   role: UserRole;
   status: UserStatus;
   streak?: number;
+  lastActiveDate?: string;
   fcmToken?: string;
   lastTokenUpdate?: string;
   createdAt: any; // Server timestamp or Date string
@@ -129,6 +130,7 @@ export interface DailyExam {
   totalQuestions: number;
   status: ExamStatus;
   createdAt: any;
+  standard?: string; // Standard associated with this exam (e.g. "7", "10")
   publishAt?: any; // Timestamp / Date - when the exam should be visible to students
   startAt?: any; // Timestamp / Date - when the exam becomes active
   endAt?: any; // Timestamp / Date - when the exam closes

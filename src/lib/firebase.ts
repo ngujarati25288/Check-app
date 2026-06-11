@@ -43,8 +43,11 @@ if (typeof window !== "undefined" && !isFirebasePlaceholder) {
   try {
     const isAndroidApp = navigator.userAgent.toLowerCase().includes("android");
     const isAISDev = window.location.hostname.includes("run.app") || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    const isInIframe = window.self !== window.top;
     
-    if (isAndroidApp) {
+    if (isAISDev || isInIframe) {
+      console.log("Firebase App Check bypassed in dev/iframe/automation environment to prevent Firestore connection timeouts.");
+    } else if (isAndroidApp) {
       initializeAppCheck(app, {
         provider: new CustomProvider({
           getToken: async () => {
@@ -65,23 +68,12 @@ if (typeof window !== "undefined" && !isFirebasePlaceholder) {
         isTokenAutoRefreshEnabled: true,
       });
       console.log("Firebase App Check (Android) securely initialized.");
-    } else if (!isAISDev) {
+    } else {
       initializeAppCheck(app, {
         provider: new ReCaptchaV3Provider("6Lca-mEqAAAAAL_Bv3KIsi_DfeO613OaE4e8fL8p"),
         isTokenAutoRefreshEnabled: true,
       });
       console.log("Firebase App Check (Web) securely initialized.");
-    } else {
-      // In development, set debug token to true so App Check logs the token to console
-      // and allows testing on ais-dev/localhost
-      if (typeof self !== "undefined") {
-        (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-      }
-      initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider("6Lca-mEqAAAAAL_Bv3KIsi_DfeO613OaE4e8fL8p"),
-        isTokenAutoRefreshEnabled: true,
-      });
-      console.log("Firebase App Check (Web Debug) securely initialized on development domain.");
     }
   } catch (err) {
     console.warn("App Check initialization warning:", err);

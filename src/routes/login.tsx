@@ -1,9 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { Lock, User, Eye, EyeOff, ArrowRight, ShieldCheck, HelpCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { 
+  Lock, User, Eye, EyeOff, ArrowRight, ShieldCheck, HelpCircle,
+  Phone, School, UserCheck, KeyRound, CheckCircle, RefreshCw, AlertCircle, ArrowLeft 
+} from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/components/FirebaseProvider";
 import { toast } from "sonner";
+import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { db, isFirebasePlaceholder } from "@/lib/firebase";
+import { MasterDataRepository, getLocalStorageKey, setLocalStorageKey } from "@/lib/db";
+import { DBUser } from "@/types";
+import { hashSync } from "bcryptjs";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign In — Daily Learning Exam" }] }),
@@ -11,13 +19,157 @@ export const Route = createFileRoute("/login")({
 });
 
 function Login() {
-  const { loginWithStudentId } = useAuth();
+  const { user, loginWithStudentId } = useAuth();
+  const navigate = useNavigate();
   
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
+
+  // Forgot Password Flow States
+  const [resetStep, setResetStep] = useState<"MOBILE" | "SELECT_STUDENT" | "VERIFY_SCHOOL" | "RESET_PASSWORD" | "SUCCESS">("MOBILE");
+  const [mobileNum, setMobileNum] = useState("");
+  const [matchingStudents, setMatchingStudents] = useState<DBUser[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<DBUser | null>(null);
+  const [schools, setSchools] = useState<string[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  useEffect(() => {
+    const fetchSchoolsData = async () => {
+      try {
+        const schoolsList = await MasterDataRepository.getSchools();
+        const schoolNames = Array.from(new Set(schoolsList.map(s => s.schoolName).filter(Boolean)));
+        setSchools(schoolNames);
+      } catch (err) {
+        console.error("Failed to load schools:", err);
+      }
+    };
+    if (showForgotModal) {
+      fetchSchoolsData();
+    }
+  }, [showForgotModal]);
+
+  const openResetModal = () => {
+    setResetStep("MOBILE");
+    setMobileNum("");
+    setMatchingStudents([]);
+    setSelectedStudent(null);
+    setSelectedSchool("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowNewPassword(false);
+    setShowForgotModal(true);
+  };
+
+  const handleFetchStudents = async () => {
+    if (!/^[0-9]{10}$/.test(mobileNum)) {
+      toast.error("કૃપા કરીને સાચો ૧૦ આંકડાનો મોબાઈલ નંબર લખો. (Please enter a valid 10-digit mobile number.)");
+      return;
+    }
+    
+    setResetLoading(true);
+    try {
+      let results: DBUser[] = [];
+      if (isFirebasePlaceholder) {
+        const usersList = getLocalStorageKey<DBUser[]>('users', []);
+        results = usersList.filter((u: DBUser) => u.mobile === mobileNum);
+      } else {
+        const q = query(collection(db, 'users'), where('mobile', '==', mobileNum));
+        const snap = await getDocs(q);
+        snap.forEach(d => {
+          results.push(d.data() as DBUser);
+        });
+      }
+      
+      if (results.length === 0) {
+        toast.error("આ મોબાઈલ નંબર સાથે કોઈ નોંધાયેલ વિદ્યાર્થી મળ્યો નથી.");
+      } else {
+        setMatchingStudents(results);
+        setResetStep("SELECT_STUDENT");
+        setSelectedStudent(results[0]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch students by mobile:", err);
+      toast.error("માહિતી શોધવામાં કંઈક મુશ્કેલી પડી.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleVerifySchool = () => {
+    if (!selectedSchool) {
+      toast.error("કૃપા કરીને શાળા પસંદ કરો.");
+      return;
+    }
+    
+    if (selectedStudent && selectedSchool.trim().toLowerCase() === selectedStudent.school?.trim().toLowerCase()) {
+      toast.success("તમારી વિગતો સફળતાપૂર્વક ચકાસાયેલ છે!");
+      setResetStep("RESET_PASSWORD");
+    } else {
+      toast.error("પસંદ કરાયેલ શાળા ખોટી છે! કૃપા કરીને સાચી શાળા પસંદ કરો.");
+    }
+  };
+
+  const handlePasswordResetSubmit = async () => {
+    if (!selectedStudent) return;
+    if (newPassword.length < 4) {
+      toast.error("પાસવર્ડ ઓછામાં ઓછો ૪ આંકડાનો હોવો જોઈએ. (Password must be at least 4 characters.)");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("બંને પાસવર્ડ એકસાથે મળતા નથી. (Passwords do not match.)");
+      return;
+    }
+    
+    setResetLoading(true);
+    try {
+      const hashed = hashSync(newPassword, 10);
+      
+      if (isFirebasePlaceholder) {
+        const usersList = getLocalStorageKey<DBUser[]>('users', []);
+        const idx = usersList.findIndex(u => u.uid === selectedStudent.uid);
+        if (idx !== -1) {
+          usersList[idx].passwordHash = hashed;
+          setLocalStorageKey('users', usersList);
+        }
+        
+        const active = getLocalStorageKey<DBUser | null>('user', null);
+        if (active && active.uid === selectedStudent.uid) {
+          active.passwordHash = hashed;
+          setLocalStorageKey('user', active);
+        }
+      } else {
+        await updateDoc(doc(db, 'users', selectedStudent.uid), {
+          passwordHash: hashed,
+          updatedAt: new Date().toISOString()
+        });
+      }
+      
+      toast.success("તમારો પાસવર્ડ સફળતાપૂર્વક બદલવામાં આવ્યો છે!");
+      setResetStep("SUCCESS");
+    } catch (err: any) {
+      console.error("Error resetting password:", err);
+      toast.error("પાસવર્ડ બદલવામાં સમસ્યા આવી.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'admin' || user.role === 'super_admin') {
+        navigate({ to: '/admin' });
+      } else {
+        navigate({ to: '/dashboard' });
+      }
+    }
+  }, [user, navigate]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +237,7 @@ function Login() {
                     <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Password *</span>
                     <button
                       type="button"
-                      onClick={() => setShowForgotModal(true)}
+                      onClick={openResetModal}
                       className="text-xs text-primary font-semibold hover:underline"
                     >
                       Forgot Password?
@@ -137,29 +289,290 @@ function Login() {
         </p>
       </div>
 
-      {/* Offline Password Reset Instruction Modal */}
+      {/* Interactive Forgot Password Multi-Step Modal */}
       {showForgotModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-[fade-in_0.2s_ease-out]">
-          <div className="max-w-sm w-full bg-card border border-border rounded-3xl p-6 space-y-4 shadow-xl animate-[scale-in_0.2s_ease-out]">
-            <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
-              <HelpCircle className="size-6" />
-            </div>
+          <div className="max-w-md w-full bg-card border border-border rounded-3xl p-6 space-y-4 shadow-xl animate-[scale-in_0.2s_ease-out] relative">
             
-            <div className="text-center space-y-1.5">
-              <h3 className="text-base font-bold text-foreground">પાસવર્ડ પુનઃપ્રાપ્તિ માર્ગદર્શિકા</h3>
-              <p className="text-xs text-muted-foreground font-sans">Password Recovery Information</p>
+            {/* Header with Title and Step Icons */}
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <div className="size-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center">
+                  {resetStep === "MOBILE" && <Phone className="size-4.5" />}
+                  {resetStep === "SELECT_STUDENT" && <UserCheck className="size-4.5" />}
+                  {resetStep === "VERIFY_SCHOOL" && <School className="size-4.5" />}
+                  {resetStep === "RESET_PASSWORD" && <KeyRound className="size-4.5" />}
+                  {resetStep === "SUCCESS" && <CheckCircle className="size-4.5 text-emerald-500" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-foreground">
+                    {resetStep === "MOBILE" && "મોબાઈલ નંબર ચકાસણી"}
+                    {resetStep === "SELECT_STUDENT" && "પાસવર્ડ પુનઃપ્રાપ્તિ"}
+                    {resetStep === "VERIFY_SCHOOL" && "શાળાની ચકાસણી"}
+                    {resetStep === "RESET_PASSWORD" && "નવો પાસવર્ડ સેટ કરો"}
+                    {resetStep === "SUCCESS" && "અપડેટ સફળ રહ્યો!"}
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                    {resetStep === "MOBILE" && "Step 1/4: Verify Mobile"}
+                    {resetStep === "SELECT_STUDENT" && "Step 2/4: Select Student"}
+                    {resetStep === "VERIFY_SCHOOL" && "Step 3/4: Match School"}
+                    {resetStep === "RESET_PASSWORD" && "Step 4/4: Reset Password"}
+                    {resetStep === "SUCCESS" && "Password Reset Successful"}
+                  </p>
+                </div>
+              </div>
+              
+              {resetStep !== "SUCCESS" && (
+                <button
+                  onClick={() => setShowForgotModal(false)}
+                  className="rounded-full size-7 hover:bg-muted text-muted-foreground flex items-center justify-center transition"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
-            <p className="text-xs font-gu text-muted-foreground text-center leading-relaxed">
-              સુરક્ષાના નિયમો મુજબ તમારી પાસવર્ડ પુનઃપ્રાપ્તિ પ્રક્રિયા માત્ર તમારા પ્રશાસક (Super Admin) અથવા વર્ગશિક્ષક દ્વારા કરી શકાશે. કૃપા કરીને નવો પાસવર્ડ સેટ કરવા માટે શાળા કાર્યાલય અથવા શિક્ષકનો સંપર્ક કરો.
-            </p>
+            {/* STEP 1: MOBILE ENTRY */}
+            {resetStep === "MOBILE" && (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground leading-relaxed font-gu">
+                  તમારા એકાઉન્ટ સાથે જોડાયેલ ૧૦ આંકડાનો મોબાઈલ નંબર લખો જેથી અમે તેમાં નોંધાયેલ વિદ્યાર્થીઓ શોધી શકીએ:
+                </p>
+                
+                <div className="relative flex items-center h-12 px-4 rounded-xl bg-muted/60 border border-border focus-within:border-primary transition">
+                  <span className="text-xs font-bold text-muted-foreground mr-2 shrink-0 border-r border-border pr-2">+91</span>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    placeholder="મોબાઈલ નંબર (e.g. 9876543210)"
+                    value={mobileNum}
+                    onChange={(e) => setMobileNum(e.target.value.replace(/\D/g, ''))}
+                    className="w-full bg-transparent outline-none text-sm font-semibold tracking-wider placeholder:text-muted-foreground/60"
+                  />
+                </div>
 
-            <button
-              onClick={() => setShowForgotModal(false)}
-              className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-xs font-semibold uppercase tracking-wider transition hover:bg-primary/90"
-            >
-              સમજાઈ ગયું (Understood)
-            </button>
+                <button
+                  type="button"
+                  onClick={handleFetchStudents}
+                  disabled={resetLoading}
+                  className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-bold text-xs uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  {resetLoading ? (
+                    <RefreshCw className="size-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <User className="size-3.5 shrink-0" />
+                  )}
+                  {resetLoading ? "વિદ્યાર્થીઓ શોધાઈ રહ્યા છે..." : "વિદ્યાર્થીઓ મેળવો (Fetch Students)"}
+                </button>
+              </div>
+            )}
+
+            {/* STEP 2: SELECT STUDENT */}
+            {resetStep === "SELECT_STUDENT" && (
+              <div className="space-y-4">
+                <p className="text-xs text-muted-foreground leading-relaxed font-gu">
+                  મોબાઈલ નંબર <strong>+91 {mobileNum}</strong> પર નીચેના ખાતાં મળેલ છે. કૃપા કરીને તમારું એકાઉન્ટ પસંદ કરો:
+                </p>
+
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                  {matchingStudents.map((student) => (
+                    <button
+                      key={student.uid}
+                      onClick={() => setSelectedStudent(student)}
+                      className={`w-full text-left p-3 rounded-xl border-2 transition relative flex items-center justify-between ${
+                        selectedStudent?.uid === student.uid
+                          ? "border-primary bg-primary/5 text-foreground"
+                          : "border-border hover:border-muted-foreground/30 bg-muted/30 text-muted-foreground"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-extrabold flex items-center gap-1.5 text-foreground">
+                          <CheckCircle className={`size-3.5 shrink-0 ${selectedStudent?.uid === student.uid ? "text-primary fill-primary/10" : "text-muted-foreground/30"}`} />
+                          {student.fullName}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground pl-5">
+                          ID: <span className="font-mono font-bold select-all">{student.studentId}</span> | ધોરણ: {student.standard}-{student.division || "A"}
+                        </div>
+                        {student.village && (
+                          <div className="text-[9px] text-muted-foreground/80 pl-5">
+                            ગામ/શહેર: {student.village}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      setResetStep("MOBILE");
+                    }}
+                    className="h-10 border border-border bg-transparent hover:bg-muted text-foreground text-xs font-black rounded-xl uppercase transition active:scale-[0.97] flex items-center justify-center gap-1"
+                  >
+                    <ArrowLeft className="size-3.5" /> પાછા જાઓ
+                  </button>
+                  <button
+                    onClick={() => {
+                      setResetStep("VERIFY_SCHOOL");
+                    }}
+                    className="h-10 bg-primary text-primary-foreground text-xs font-black rounded-xl uppercase tracking-wider transition active:scale-[0.97]"
+                  >
+                    શાળા નક્કી કરો
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: VERIFY SCHOOL */}
+            {resetStep === "VERIFY_SCHOOL" && (
+              <div className="space-y-4">
+                <div className="p-3 bg-muted/50 rounded-xl space-y-1 text-center">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">પસંદ કરેલ વિદ્યાર્થી</p>
+                  <p className="text-xs font-extrabold text-foreground">{selectedStudent?.fullName}</p>
+                  <p className="text-[9px] text-muted-foreground">ID: {selectedStudent?.studentId}</p>
+                </div>
+
+                <p className="text-xs text-muted-foreground leading-relaxed font-gu">
+                  સુરક્ષા ચકાસણી માટે, કૃપા કરીને આ વિદ્યાર્થીની <strong>સાચી શાળાનું નામ</strong> નીચેથી પસંદ કરો:
+                </p>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">તમારી શાળા પસંદ કરો *</span>
+                  <select
+                    value={selectedSchool}
+                    onChange={(e) => setSelectedSchool(e.target.value)}
+                    className="w-full h-11 px-3 text-xs font-bold rounded-xl bg-muted/60 border border-border focus:border-primary outline-none text-foreground"
+                  >
+                    <option value="">-- શાળાનું નામ પસંદ કરો --</option>
+                    {schools.map((schName) => (
+                      <option key={schName} value={schName}>
+                        {schName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    onClick={() => setResetStep("SELECT_STUDENT")}
+                    className="h-10 border border-border bg-transparent hover:bg-muted text-foreground text-xs font-black rounded-xl uppercase transition active:scale-[0.97] flex items-center justify-center gap-1"
+                  >
+                    <ArrowLeft className="size-3.5" /> પાછા જાઓ
+                  </button>
+                  <button
+                    onClick={handleVerifySchool}
+                    className="h-10 bg-primary text-primary-foreground text-xs font-black rounded-xl uppercase tracking-wider transition active:scale-[0.97]"
+                  >
+                    ચકાસો
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: RESET PASSWORD */}
+            {resetStep === "RESET_PASSWORD" && (
+              <div className="space-y-4">
+                <div className="flex gap-2.5 items-start p-3 bg-emerald-50/75 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 rounded-xl">
+                  <CheckCircle className="size-4.5 text-emerald-500 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-emerald-800 dark:text-emerald-300">ચકાસણી સફળ રહી!</p>
+                    <p className="text-[10px] text-emerald-700/80 dark:text-emerald-400">મોબાઈલ અને શાળાનું નામ બરાબર મેચ થાય છે.</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground font-gu">
+                  હવે આ વિદ્યાર્થી માટે <strong>નવો પાસવર્ડ</strong> લખો:
+                </p>
+
+                <div className="space-y-3">
+                  <label className="block space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">નવો પાસવર્ડ (New Password) *</span>
+                    <div className="relative flex items-center h-11 px-3 rounded-xl bg-muted/60 border border-border focus-within:border-primary transition">
+                      <Lock className="size-3.5 text-muted-foreground mr-2 shrink-0" />
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="ઓછામાં ઓછા ૪ આંકડા (e.g. 1234)"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground/60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="size-7 hover:bg-muted text-muted-foreground rounded-full flex items-center justify-center shrink-0"
+                      >
+                        {showNewPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="block space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">પાસવર્ડની પુષ્ટિ કરો (Confirm Password) *</span>
+                    <div className="relative flex items-center h-11 px-3 rounded-xl bg-muted/60 border border-border focus-within:border-primary transition">
+                      <Lock className="size-3.5 text-muted-foreground mr-2 shrink-0" />
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="પાસવર્ડ ફરીથી લખો"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground/60"
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    onClick={() => setResetStep("VERIFY_SCHOOL")}
+                    disabled={resetLoading}
+                    className="h-10 border border-border bg-transparent hover:bg-muted text-foreground text-xs font-black rounded-xl uppercase transition active:scale-[0.97] flex items-center justify-center gap-1"
+                  >
+                    <ArrowLeft className="size-3.5" /> પાછા જાઓ
+                  </button>
+                  <button
+                    onClick={handlePasswordResetSubmit}
+                    disabled={resetLoading}
+                    className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl uppercase tracking-wider transition active:scale-[0.97] flex items-center justify-center gap-1.5"
+                  >
+                    {resetLoading ? (
+                      <RefreshCw className="size-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle className="size-3.5" />
+                    )}
+                    {resetLoading ? "સાચવી રહ્યા છીએ..." : "પાસવર્ડ બદલો"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5: SUCCESS */}
+            {resetStep === "SUCCESS" && (
+              <div className="space-y-4 text-center">
+                <div className="size-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto shadow-sm">
+                  <CheckCircle className="size-8" />
+                </div>
+                
+                <div className="space-y-1.5 text-center">
+                  <h4 className="text-base font-black text-foreground">પાસવર્ડ સફળતાપૂર્વક અપડેટ થયો!</h4>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 font-gu">The student password has been reset successfully.</p>
+                </div>
+
+                <div className="p-3.5 bg-muted/50 rounded-2xl text-left text-xs space-y-1.5 leading-relaxed">
+                  <div className="flex justify-between border-b border-border/80 pb-1.5"><span className="text-muted-foreground">વિદ્યાર્થી:</span> <span className="font-bold text-foreground">{selectedStudent?.fullName}</span></div>
+                  <div className="flex justify-between border-b border-border/80 pb-1.5"><span className="text-muted-foreground">સ્ટુડન્ટ આઈડી:</span> <span className="font-mono font-bold text-foreground">{selectedStudent?.studentId}</span></div>
+                  <div className="flex justify-between pt-0.5"><span className="text-muted-foreground">નવો પાસવર્ડ:</span> <span className="font-mono font-black text-primary select-all">{newPassword}</span></div>
+                </div>
+
+                <button
+                  onClick={() => setShowForgotModal(false)}
+                  className="w-full h-11 rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-extrabold uppercase tracking-wider transition active:scale-95 shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <ArrowRight className="size-3.5" /> લોગીન કરો (Login Now)
+                </button>
+              </div>
+            )}
+
           </div>
         </div>
       )}

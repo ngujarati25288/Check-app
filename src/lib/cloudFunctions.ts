@@ -1,4 +1,4 @@
-import { db, isFirebasePlaceholder } from "./firebase";
+import { db, isFirebasePlaceholder, auth } from "./firebase";
 import { 
   collection, 
   getDocs, 
@@ -91,6 +91,35 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
   const isPlaceholder = isFirebasePlaceholder;
   const now = new Date();
   const errorsList: string[] = [];
+
+  // Security role guard to prevent permission denied wipes from students
+  if (!isPlaceholder) {
+    let userIsAdmin = false;
+    if (auth.currentUser) {
+      try {
+        const uSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+        if (uSnap.exists()) {
+          const r = uSnap.data()?.role;
+          if (r === "admin" || r === "super_admin") {
+            userIsAdmin = true;
+          }
+        }
+      } catch (err) {
+        console.warn("Failed checking admin status during span calculation:", err);
+      }
+    }
+    if (!userIsAdmin) {
+      console.warn("Unauthorized attempt to recalculate leaderboard database. Aborting.");
+      const currentList: LeaderboardRecord[] = [];
+      try {
+        const snap = await getDocs(collection(db, `leaderboard_${span}`));
+        snap.forEach(d => {
+          currentList.push(d.data() as LeaderboardRecord);
+        });
+      } catch (_) {}
+      return currentList;
+    }
+  }
   
   // Calculate cut-off ranges for spans
   let cutOffDate = new Date(0); // All time default
@@ -123,7 +152,10 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
       snap.forEach(d => {
         const u = d.data() as DBUser;
         if (u.role === "student") {
-          students.push(u);
+          students.push({
+            ...u,
+            uid: u.uid || d.id
+          });
         }
       });
     } catch (e: any) {
@@ -186,10 +218,34 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
         getDocs(collection(db, "user_achievements"))
       ]);
 
-      resSnap.forEach(d => allExamResults.push(d.data() as ExamResult));
-      misSnap.forEach(d => allMistakes.push(d.data() as StudentMistake));
-      ptsSnap.forEach(d => allPoints.push(d.data() as StudentPoints));
-      achSnap.forEach(d => allAchievements.push(d.data() as UserAchievement));
+      resSnap.forEach(d => {
+        const item = d.data() as ExamResult;
+        allExamResults.push({
+          ...item,
+          studentId: item.studentId || d.id
+        });
+      });
+      misSnap.forEach(d => {
+        const item = d.data() as StudentMistake;
+        allMistakes.push({
+          ...item,
+          studentId: item.studentId || d.id
+        });
+      });
+      ptsSnap.forEach(d => {
+        const item = d.data() as StudentPoints;
+        allPoints.push({
+          ...item,
+          studentId: item.studentId || d.id
+        });
+      });
+      achSnap.forEach(d => {
+        const item = d.data() as UserAchievement;
+        allAchievements.push({
+          ...item,
+          studentId: item.studentId || d.id
+        });
+      });
     } catch (e: any) {
       errorsList.push(`Firestore subcollection loading queries failed: ${e.message}`);
     }
@@ -364,6 +420,35 @@ export async function calculateSubjectLeaderboards(): Promise<SubjectLeaderboard
   const subjects = ["Science", "Mathematics", "Gujarati", "English", "Social Science", "Hindi"];
   const allSubjectRecords: SubjectLeaderboardRecord[] = [];
 
+  // Security role guard to prevent permission denied wipes from students
+  if (!isPlaceholder) {
+    let userIsAdmin = false;
+    if (auth.currentUser) {
+      try {
+        const uSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+        if (uSnap.exists()) {
+          const r = uSnap.data()?.role;
+          if (r === "admin" || r === "super_admin") {
+            userIsAdmin = true;
+          }
+        }
+      } catch (err) {
+        console.warn("Failed checking admin status during subject calculation:", err);
+      }
+    }
+    if (!userIsAdmin) {
+      console.warn("Unauthorized attempt to recalculate subject leaderboard database. Aborting.");
+      const currentSubjList: SubjectLeaderboardRecord[] = [];
+      try {
+        const snap = await getDocs(collection(db, "subject_leaderboards"));
+        snap.forEach(d => {
+          currentSubjList.push(d.data() as SubjectLeaderboardRecord);
+        });
+      } catch (_) {}
+      return currentSubjList;
+    }
+  }
+
   // 1. Load users
   let students: DBUser[] = [];
   if (isPlaceholder) {
@@ -382,7 +467,12 @@ export async function calculateSubjectLeaderboards(): Promise<SubjectLeaderboard
       const snap = await getDocs(collection(db, "users"));
       snap.forEach(d => {
         const u = d.data() as DBUser;
-        if (u.role === "student") students.push(u);
+        if (u.role === "student") {
+          students.push({
+            ...u,
+            uid: u.uid || d.id
+          });
+        }
       });
     } catch (_) {}
   }
@@ -431,8 +521,20 @@ export async function calculateSubjectLeaderboards(): Promise<SubjectLeaderboard
         getDocs(collection(db, "exam_results")),
         getDocs(collection(db, "student_points"))
       ]);
-      resSnap.forEach(d => allExamResults.push(d.data() as ExamResult));
-      ptsSnap.forEach(d => allPoints.push(d.data() as StudentPoints));
+      resSnap.forEach(d => {
+        const item = d.data() as ExamResult;
+        allExamResults.push({
+          ...item,
+          studentId: item.studentId || d.id
+        });
+      });
+      ptsSnap.forEach(d => {
+        const item = d.data() as StudentPoints;
+        allPoints.push({
+          ...item,
+          studentId: item.studentId || d.id
+        });
+      });
     } catch (_) {}
   }
 

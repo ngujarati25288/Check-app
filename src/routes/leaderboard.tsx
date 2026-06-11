@@ -12,8 +12,10 @@ import {
   HelpCircle,
   Sparkles,
   Calendar,
-  Zap
+  Zap,
+  RefreshCw
 } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { PointsRepository } from "@/lib/db";
 import { useAuth } from "@/components/FirebaseProvider";
@@ -49,12 +51,55 @@ function Leaderboard() {
   const [fullList, setFullList] = useState<CompiledLeaderboardItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFormulaInfo, setShowFormulaInfo] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Filters State
   const [selectedStandard, setSelectedStandard] = useState<string>("");
   const [selectedSchool, setSelectedSchool] = useState<string>("");
   const [selectedVillage, setSelectedVillage] = useState<string>("");
   const [selectedSubject, setSelectedSubject] = useState<string>("");
+
+  const handleManualRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await PointsRepository.syncAllLeaderboards();
+      
+      if (selectedSubject) {
+        const data = await PointsRepository.getSubjectLeaderboard(selectedSubject);
+        const baseData = await PointsRepository.getLeaderboardWithFilters(undefined, undefined, undefined, "alltime");
+        
+        const enriched = data.map(item => {
+          const match = baseData.find(x => x.studentId === item.studentId);
+          return {
+            studentId: item.studentId,
+            name: item.studentName,
+            standard: match?.standard || "10",
+            school: match?.school || "DL High School",
+            village: match?.village || "Village",
+            points: match?.points || 0,
+            rankingScore: item.rankingScore,
+            masteredQuestions: match?.masteredQuestions || 0,
+            revisionAccuracy: match?.revisionAccuracy || 0,
+            achievementsCount: match?.achievementsCount || 0,
+            rank: item.rank,
+            previousRank: match?.previousRank,
+            rankChange: match?.rankChange || "flat",
+            badges: match?.badges || []
+          };
+        });
+        setFullList(enriched);
+      } else {
+        const data = await PointsRepository.getLeaderboardWithFilters(undefined, undefined, undefined, span, true);
+        setFullList(data);
+      }
+      toast.success("મળેલ વિગતો સફળતાપૂર્વક અપડેટ કરવામાં આવી છે! (Scores successfully synchronized!)");
+    } catch (err) {
+      console.error("Leaderboard manual refresh failure:", err);
+      toast.error("રેન્કિંગ વિગતો અપડેટ કરવામાં સમસ્યા આવી. (Failed to sync scores.)");
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     async function loadBoard() {
@@ -268,15 +313,28 @@ function Leaderboard() {
               <Filter className="size-3.5" />
               <span> ફિલ્ટર મેળવો (Leaderboard Filters) </span>
             </div>
-            {hasAnyFilter && (
+            <div className="flex items-center gap-3">
               <button
-                onClick={resetFilters}
-                className="flex items-center gap-1 text-destructive hover:opacity-80 transition text-xs font-bold"
+                type="button"
+                onClick={handleManualRefresh}
+                disabled={refreshing || loading}
+                className="flex items-center gap-1 text-primary hover:opacity-80 transition text-[11px] font-bold disabled:opacity-40"
+                title="Force synchronize scores"
               >
-                <X className="size-3" />
-                <span>Reset</span>
+                <RefreshCw className={`size-3 ${refreshing ? "animate-spin" : ""}`} />
+                <span>તાજગી આપો (Refresh)</span>
               </button>
-            )}
+              {hasAnyFilter && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="flex items-center gap-1 text-destructive hover:opacity-80 transition text-[11px] font-bold"
+                >
+                  <X className="size-3" />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">

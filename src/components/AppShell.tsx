@@ -16,19 +16,26 @@ interface AppShellProps {
   className?: string;
 }
 
-const navItems = [
-  { to: "/dashboard", label: "મુખ્ય", icon: Home },
-  { to: "/exam-today", label: "પરીક્ષા", icon: FileText },
-  { to: "/revision", label: "પુનરાવર્તન", icon: RotateCcw },
-  { to: "/leaderboard", label: "ક્રમ", icon: Trophy },
-  { to: "/profile", label: "પ્રોફાઇલ", icon: User },
-];
-
 export function AppShell({ children, title, titleGu, back, hideNav, showBell, className }: AppShellProps) {
   const location = useLocation();
   const { user } = useAuth();
   const [maintenanceActive, setMaintenanceActive] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState("");
+
+  const dynamicNavItems = [
+    { to: "/dashboard", label: "મુખ્ય", icon: Home },
+    ...(user?.role === "super_admin" ? [
+      { to: "/super-admin", label: "નિયંત્રણ", icon: ShieldAlert },
+      { to: "/admin", label: "સંચાલન", icon: FileText },
+    ] : user?.role === "admin" ? [
+      { to: "/admin", label: "સંચાલન", icon: FileText },
+    ] : [
+      { to: "/exam-today", label: "પરીક્ષા", icon: FileText },
+      { to: "/revision", label: "પુનરાવર્તન", icon: RotateCcw },
+      { to: "/leaderboard", label: "ક્રમ", icon: Trophy },
+    ]),
+    { to: "/profile", label: "પ્રોફાઇલ", icon: User },
+  ];
 
   useEffect(() => {
     initSettings();
@@ -148,7 +155,7 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
           <nav className="fixed bottom-0 inset-x-0 z-40 flex justify-center pointer-events-none">
             <div className="w-full max-w-md px-3 pb-3 pointer-events-auto">
               <div className="bg-card/95 backdrop-blur border border-border rounded-3xl shadow-card flex items-center justify-around px-2 py-2">
-                {navItems.map((item) => {
+                {dynamicNavItems.map((item) => {
                   const active = location.pathname.startsWith(item.to);
                   const Icon = item.icon;
                   return (

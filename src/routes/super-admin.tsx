@@ -27,12 +27,13 @@ import {
   ChevronRight,
   Database,
   Award,
+  Trophy,
   Loader2
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { AdvancedAnalyticsDashboard } from "@/components/AdvancedAnalyticsDashboard";
 import { useAuth } from "@/components/FirebaseProvider";
-import { SuperAdminRepository, AdminRepository, AnalyticsRepository } from "@/lib/db";
+import { SuperAdminRepository, AdminRepository, AnalyticsRepository, PointsRepository } from "@/lib/db";
 import { 
   SuperAdminSettings, 
   Announcement, 
@@ -65,7 +66,7 @@ function SuperAdminLayout() {
   const isSuperAdmin = user?.role === "super_admin";
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "analytics" | "admins" | "students" | "announcements" | "settings" | "backups" | "export"
+    "overview" | "analytics" | "admins" | "students" | "announcements" | "settings" | "backups" | "export" | "leaderboard"
   >("overview");
 
   // System States
@@ -77,6 +78,7 @@ function SuperAdminLayout() {
   const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Advanced Analytics States
   const [studentAnalytics, setStudentAnalytics] = useState<StudentAnalytics[]>([]);
@@ -131,6 +133,10 @@ function SuperAdminLayout() {
   const [thresholdGold, setThresholdGold] = useState(90);
   const [thresholdSilver, setThresholdSilver] = useState(80);
   const [thresholdBronze, setThresholdBronze] = useState(70);
+
+  // Leaderboard Custom States
+  const [leaderboardLogs, setLeaderboardLogs] = useState<any[]>([]);
+  const [isLeaderboardSyncing, setIsLeaderboardSyncing] = useState(false);
 
   const loadData = async () => {
     try {
@@ -203,6 +209,13 @@ function SuperAdminLayout() {
       setStandardAnalytics(stdAnList);
       setLearningTrends(trendAn);
       setAnalyticsReports(rptsAn);
+
+      try {
+        const boardLogs = await PointsRepository.getLeaderboardAuditLogs();
+        setLeaderboardLogs(boardLogs);
+      } catch (err) {
+        console.warn("Failed fetching leaderboard logs:", err);
+      }
     } catch (e) {
       console.error(e);
       toast.error("Error loading Super Admin systems.");
@@ -518,6 +531,39 @@ function SuperAdminLayout() {
     }
   };
 
+  const handleTriggerLeaderboardSync = async () => {
+    try {
+      setIsLeaderboardSyncing(true);
+      sfx.tap();
+      const toastId = toast.loading("લીડરબોર્ડ અને મોક ટેસ્ટ પોઈન્ટ સંકલન ચાલી રહ્યું છે...");
+
+      await PointsRepository.syncAllLeaderboards();
+
+      try {
+        const boardLogs = await PointsRepository.getLeaderboardAuditLogs();
+        setLeaderboardLogs(boardLogs);
+      } catch (logErr) {
+        console.warn("Failed loading logs post sync:", logErr);
+      }
+
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: "લીડરબોર્ડ ડેટાબેઝ અપડેટ અને રીકોમ્પ્યુટેશન પ્રક્રિયા સફળતાપૂર્વક સંપન્ન થઈ."
+      });
+
+      toast.success("તમામ લીડરબોર્ડ પ્લેસમેન્ટ અને માર્કસ ગણતરી સંપન્ન!", { id: toastId });
+      loadData();
+    } catch (e: any) {
+      console.warn("Leaderboard manual sync error:", e);
+      toast.error("લીડરબોર્ડ સંકલન પ્રક્રિયા ચલાવવામાં ક્ષતિ આવી છે.");
+    } finally {
+      setIsLeaderboardSyncing(false);
+    }
+  };
+
   // Export CSV generator
   const handleExportDataCsv = (dataType: "students" | "admins" | "questions" | "security") => {
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -601,6 +647,7 @@ function SuperAdminLayout() {
               { id: "analytics", label: "Advanced Analytics", icon: Activity },
               { id: "admins", label: "Admins", icon: Shield },
               { id: "students", label: "Students", icon: Users },
+              { id: "leaderboard", label: "🏆 Leaderboard", icon: Trophy },
               { id: "announcements", label: "📢 Custom", icon: Send },
               { id: "settings", label: "Config", icon: Settings },
               { id: "backups", label: "Backups", icon: HardDrive },
@@ -1598,6 +1645,149 @@ function SuperAdminLayout() {
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: LEADERBOARD MANAGEMENT PANEL */}
+          {activeTab === "leaderboard" && (
+            <div className="space-y-4 animate-[fade-in_0.35s_ease-out]">
+              {/* MAIN METRICS & STATS CARD */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-amber-500/10 text-amber-500">
+                      <Trophy className="size-4 text-amber-500 animate-bounce" />
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-sm">LEADERBOARD ENGINE CONTROL</h3>
+                      <p className="text-[10px] text-muted-foreground">લીડરબોર્ડ સિંક્રનાઇઝેશન અને મોનિટરિંગ કંટ્રોલ</p>
+                    </div>
+                  </div>
+
+                  <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
+                    ● ACTIVE ENGINE
+                  </span>
+                </div>
+
+                <p className="text-xs text-muted-foreground font-gu leading-relaxed">
+                  વિદ્યાર્થીઓ માટે દૈનિક, સાપ્તાહિક, માસિક અને ઓલ-ટાઇમ માર્ક્સ સંકલિત કરી ક્રમાંક (Ranks) અને બેજ નક્કી કરવા માટેનું હેડક્વાર્ટર. નીચે આપેલા ઓટો-સિંક બટન પર ક્લિક કરીને તમે સમગ્ર ગણતરી રન કરી શકો છો.
+                </p>
+
+                {/* THE TRIGGER BUTTON BOX */}
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="text-left w-full sm:w-auto">
+                    <p className="text-xs font-bold text-amber-700 dark:text-amber-300">લીડરબોર્ડ ગણતરી ફરી શરૂ કરો</p>
+                    <p className="text-[10px] text-muted-foreground">આ પ્રોસેસ ક્લાઉડ ફંક્શન્સ રન કરી તમામ સ્કેલ રૈંક ઓટો અપડેટ કરશે.</p>
+                  </div>
+
+                  <button
+                    onClick={handleTriggerLeaderboardSync}
+                    disabled={isLeaderboardSyncing}
+                    className="w-full sm:w-auto px-5 h-11 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 shadow-md whitespace-nowrap"
+                  >
+                    {isLeaderboardSyncing ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        <span>પ્રોસેસિંગ...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="size-3.5" />
+                        <span>Force Sync Leaderboard</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* TIMESPANS PREVIEWS REGISTRY */}
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  { name: "Daily Span", code: "daily", color: "from-blue-500/10 to-indigo-500/10 border-blue-500/20 text-blue-500", desc: "દરરોજ રાત્રે અપડેટ થાય" },
+                  { name: "Weekly Span", code: "weekly", color: "from-purple-500/10 to-pink-500/10 border-purple-500/20 text-purple-500", desc: "દર સોમવારે સવારનો સ્કેલ" },
+                  { name: "Monthly Span", code: "monthly", color: "from-green-500/10 to-teal-500/10 border-green-500/20 text-green-500", desc: "દર મહિનાની પહેલી તારીખે" },
+                  { name: "Alltime Span", code: "alltime", color: "from-amber-500/10 to-orange-500/10 border-amber-500/20 text-amber-500", desc: "કુલ વિદ્યાર્થી સ્કોર્સ પ્લેસમેન્ટ" }
+                ].map((sp) => (
+                  <div key={sp.code} className={`bg-gradient-to-br ${sp.color} border p-4 rounded-3xl text-left`}>
+                    <p className="text-xs font-bold font-sans">{sp.name}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{sp.desc}</p>
+                    <span className="inline-flex items-center gap-1 mt-2 bg-background border border-border text-[8px] px-2 py-0.5 rounded-full font-bold font-mono">
+                      SYNC READY
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* AUDIT LOG LISTINGS */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">LEADERBOARD AUDIT LOGS (સિંક રિપોર્ટ્સ)</h3>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const boardLogs = await PointsRepository.getLeaderboardAuditLogs();
+                        setLeaderboardLogs(boardLogs);
+                        toast.success("લોગ્સ અપડેટ કરવામાં આવ્યા!");
+                      } catch (err) {
+                        toast.error("લોગ લોડિંગ નિષ્ફળ.");
+                      }
+                    }}
+                    className="text-[10px] font-bold text-primary hover:underline"
+                  >
+                    Refresh Logs
+                  </button>
+                </div>
+
+                {leaderboardLogs.length === 0 ? (
+                  <div className="border border-border border-dashed rounded-3xl p-6 text-center text-muted-foreground bg-muted/20">
+                    <Trophy className="size-6 text-muted-foreground/40 mx-auto mb-2" />
+                    <p className="text-xs font-medium font-gu">હજી સુધી કોઈ લીડરબોર્ડ ઓડિટ નથી મળી શક્યા.</p>
+                    <p className="text-[10px] text-muted-foreground/75 mt-0.5">પ્રથમ પ્રક્રિયા શરૂ કરવા ઉપર આપેલા "Force Sync" બટનનો ઉપયોગ કરો.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {leaderboardLogs.map((log) => {
+                      const hasErrors = log.errors && log.errors.length > 0;
+                      return (
+                        <div key={log.id} className="bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-col gap-2 text-left">
+                          <div className="flex justify-between items-start gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`size-2 rounded-full ${hasErrors ? "bg-destructive animate-pulse" : "bg-success"}`} />
+                                <h4 className="font-bold text-xs font-mono text-foreground">{log.id}</h4>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                Synced on: {new Date(log.generationTime).toLocaleString()}
+                              </p>
+                            </div>
+
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${hasErrors ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
+                              {hasErrors ? "Failed / Linked" : "Success"}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 mt-1 border-t border-border pt-2 text-[10px] text-muted-foreground font-semibold">
+                            <div>
+                              <span className="block text-[8px] uppercase tracking-wider text-muted-foreground">RECORDS PROCESSED</span>
+                              <span className="text-foreground font-bold">{log.recordsProcessed ?? 0} students</span>
+                            </div>
+                            <div>
+                              <span className="block text-[8px] uppercase tracking-wider text-muted-foreground">DURATION</span>
+                              <span className="text-foreground font-bold">{log.functionDuration ?? 0} ms</span>
+                            </div>
+                          </div>
+
+                          {hasErrors && (
+                            <div className="mt-1 bg-destructive/5 border border-destructive/25 rounded-xl p-2.5 text-[10px] text-destructive leading-relaxed font-gu">
+                              <strong>खोटी प्रक्रीयाओ (Errors):</strong> {log.errors.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

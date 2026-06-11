@@ -43,7 +43,7 @@ service cloud.firestore {
 
     function isApproved() {
       return isSignedIn() && (
-        (request.auth.token.email != null && request.auth.token.email == 'n.gujarati25288@gmail.com') ||
+        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com')) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['approved', 'Approved'] ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
@@ -53,7 +53,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && request.auth.token.email == 'n.gujarati25288@gmail.com') ||
+        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com')) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
@@ -63,7 +63,7 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && request.auth.token.email == 'n.gujarati25288@gmail.com') ||
+        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com')) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
       );
@@ -117,13 +117,18 @@ service cloud.firestore {
         isValidUser(incoming()) && 
         (
           incoming().role == 'student' || 
-          (incoming().role == 'super_admin' && request.auth.token.email == 'n.gujarati25288@gmail.com')
+          (incoming().role == 'super_admin' && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com'))
         ) && 
         incoming().status in ['pending', 'Approved', 'approved']
       ) || isAdmin() || isSuperAdmin();
         
       // Students can modify their non-identity fields. Admins and Super Admins can update any field.
-      allow update: if isEmailVerified() && (
+      // Additionally allow unauthenticated password reset if they ONLY modify passwordHash and updatedAt.
+      allow update: if (
+        incoming().diff(existing()).affectedKeys().hasOnly(['passwordHash', 'updatedAt']) &&
+        incoming().passwordHash is string &&
+        incoming().passwordHash.size() <= 100
+      ) || (isEmailVerified() && (
         (isCurrentUser(userId) && (
           incoming().diff(existing()).affectedKeys().hasOnly([
             'fullName', 'mobile', 'school', 'standard', 'division', 'village', 'fcmToken', 'lastTokenUpdate', 'updatedAt', 'streak', 'lastActiveDate', 'role'
@@ -131,7 +136,7 @@ service cloud.firestore {
         )) || 
         isAdmin() || 
         isSuperAdmin()
-      );
+      ));
       
       allow delete: if isSuperAdmin();
     }
@@ -156,13 +161,8 @@ service cloud.firestore {
       // Approved users can fetch individual questions.
       allow get: if isApproved();
 
-      // Only allow query listing if they fetch active standard questions.
-      // Admins/Super Admins can run unrestricted queries.
-      allow list: if isApproved() && (
-        resource.data.active == true || 
-        isAdmin() || 
-        isSuperAdmin()
-      );
+      // Approved users can search/query the question bank.
+      allow list: if isApproved();
 
       allow write: if isAdmin() || isSuperAdmin();
     }
@@ -200,6 +200,7 @@ service cloud.firestore {
     // ----------------------------------------------------
     match /exam_results/{resultId} {
       allow read: if isApproved() && (
+        resource == null ||
         resource.data.studentId == request.auth.uid || 
         isAdmin() || 
         isSuperAdmin()
@@ -214,6 +215,7 @@ service cloud.firestore {
 
     match /student_failures/{failureId} {
       allow read: if isApproved() && (
+        resource == null ||
         resource.data.studentId == request.auth.uid || 
         isAdmin() || 
         isSuperAdmin()
@@ -227,6 +229,7 @@ service cloud.firestore {
 
     match /student_mistakes/{mistakeId} {
       allow read: if isApproved() && (
+        resource == null ||
         resource.data.studentId == request.auth.uid || 
         isAdmin() || 
         isSuperAdmin()
@@ -253,6 +256,7 @@ service cloud.firestore {
 
     match /revision_progress/{progressId} {
       allow read: if isApproved() && (
+        resource == null ||
         resource.data.studentId == request.auth.uid || 
         isAdmin() || 
         isSuperAdmin()
@@ -316,7 +320,7 @@ service cloud.firestore {
         (studentId == request.auth.uid && 
          incoming().updatedAt == request.time &&
          incoming().diff(existing()).affectedKeys().hasOnly([
-           'totalPoints', 'examPoints', 'revisionPoints', 'masteryPoints', 'achievementPoints', 'updatedAt'
+           'totalPoints', 'examPoints', 'revisionPoints', 'masteryPoints', 'achievementPoints', 'studentName', 'studentId', 'updatedAt'
          ])) || 
         isAdmin() || 
         isSuperAdmin()
@@ -327,7 +331,16 @@ service cloud.firestore {
 
     match /achievements/{achievementId} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow create: if isApproved() && 
+                    incoming().studentId == request.auth.uid && 
+                    incoming().unlockedAt == request.time;
+      allow update: if isApproved() && (
+                    (existing().studentId == request.auth.uid && 
+                     incoming().studentId == request.auth.uid) ||
+                    isAdmin() ||
+                    isSuperAdmin()
+      );
+      allow delete: if isAdmin() || isSuperAdmin();
     }
 
     match /user_achievements/{achievementId} {
@@ -337,7 +350,12 @@ service cloud.firestore {
                     incoming().studentId == request.auth.uid && 
                     incoming().unlockedAt == request.time;
 
-      allow update: if isAdmin() || isSuperAdmin();
+      allow update: if isApproved() && (
+                    (existing().studentId == request.auth.uid && 
+                     incoming().studentId == request.auth.uid) ||
+                    isAdmin() ||
+                    isSuperAdmin()
+      );
       allow delete: if isSuperAdmin();
     }
 
@@ -346,37 +364,49 @@ service cloud.firestore {
     // ----------------------------------------------------
     match /leaderboard/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow create: if isApproved() && (
+                    id == request.auth.uid &&
+                    incoming().studentId == request.auth.uid
+      ) || isAdmin() || isSuperAdmin();
+      allow update: if isApproved() && (
+                    (id == request.auth.uid && 
+                     incoming().diff(existing()).affectedKeys().hasOnly([
+                       'studentId', 'studentName', 'totalMarks', 'percentage', 'rank', 'updatedAt'
+                     ])) ||
+                    isAdmin() ||
+                    isSuperAdmin()
+      );
+      allow delete: if isAdmin() || isSuperAdmin();
     }
 
     match /leaderboard_daily/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     match /leaderboard_weekly/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     match /leaderboard_monthly/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     match /leaderboard_alltime/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     match /subject_leaderboards/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     match /topPerformers/{id} {
       allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     // ----------------------------------------------------
@@ -459,7 +489,8 @@ service cloud.firestore {
     }
 
     match /leaderboard_audit_logs/{id} {
-      allow read, write: if isSuperAdmin();
+      allow read: if isAdmin() || isSuperAdmin();
+      allow write: if isApproved();
     }
 
     match /security_logs/{id} {
@@ -472,6 +503,7 @@ service cloud.firestore {
 
     match /notifications/{id} {
       allow read: if isApproved() && (
+        resource == null ||
         resource.data.studentId == request.auth.uid || 
         isAdmin() || 
         isSuperAdmin()
@@ -481,6 +513,7 @@ service cloud.firestore {
 
     match /notification_history/{recordId} {
       allow read: if isApproved() && (
+        resource == null ||
         resource.data.studentId == request.auth.uid || 
         isAdmin() || 
         isSuperAdmin()

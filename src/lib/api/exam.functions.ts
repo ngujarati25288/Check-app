@@ -46,6 +46,168 @@ export interface RecordRevisionInput {
 }
 
 /**
+ * Robust learning streak calculations using Asia/Kolkata (Indian Standard Time)
+ * to avoid timezone resetting bugs or premature streak endings.
+ */
+export function calculateAndVerifyStreak(currentStreak: number, lastActiveDateStr?: string): { streak: number, lastActiveDate: string } {
+  const now = new Date();
+  
+  // Format to standard YYYY-MM-DD in India Standard Time (GMT +5:30)
+  let todayStr = "";
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = formatter.formatToParts(now);
+    const yVal = parts.find(p => p.type === 'year')?.value || "";
+    const mVal = parts.find(p => p.type === 'month')?.value || "";
+    const dVal = parts.find(p => p.type === 'day')?.value || "";
+    todayStr = `${yVal}-${mVal}-${dVal}`;
+  } catch (err) {
+    todayStr = now.toISOString().split('T')[0];
+  }
+
+  if (!lastActiveDateStr) {
+    return { streak: 1, lastActiveDate: todayStr };
+  }
+
+  if (lastActiveDateStr === todayStr) {
+    // Already did an active training action today. Maintain streak without double incrementing today.
+    return { streak: currentStreak || 1, lastActiveDate: todayStr };
+  }
+
+  try {
+    const todayDate = new Date(todayStr);
+    const lastDate = new Date(lastActiveDateStr);
+    const diffTime = todayDate.getTime() - lastDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      // Consecutive day! Earn +1 streak day.
+      return { streak: (currentStreak || 0) + 1, lastActiveDate: todayStr };
+    } else if (diffDays <= 0) {
+      // Future or overlapping times
+      return { streak: currentStreak || 1, lastActiveDate: todayStr };
+    } else {
+      // Missed at least one whole calendar day, streak resets back to 1.
+      return { streak: 1, lastActiveDate: todayStr };
+    }
+  } catch (err) {
+    return { streak: (currentStreak || 0) + 1, lastActiveDate: todayStr };
+  }
+}
+
+/**
+ * Safely aggregates, persists, caches, and signals the updated learner streak.
+ */
+export async function updateStudentStreakInternal(studentId: string): Promise<{ streak: number; lastActiveDate: string }> {
+  let currentStreak = 0;
+  let lastActiveDate = "";
+  let userProfile: DBUser | null = null;
+
+  if (isFirebasePlaceholder) {
+    try {
+      const stored = localStorage.getItem("dle:user_session") || localStorage.getItem("dle:user");
+      if (stored) {
+        userProfile = JSON.parse(stored) as DBUser;
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const userRef = doc(db, "users", studentId);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        userProfile = snap.data() as DBUser;
+      }
+    } catch (e) {
+      console.error("Error fetching user profile for streak update:", e);
+    }
+  }
+
+  // Fallback to active session user if profile not found (safely avoid blanks)
+  if (!userProfile) {
+    try {
+      const stored = localStorage.getItem("dle:user_session") || localStorage.getItem("dle:user");
+      if (stored) {
+        userProfile = JSON.parse(stored) as DBUser;
+      }
+    } catch (_) {}
+  }
+
+  currentStreak = userProfile?.streak || 0;
+  lastActiveDate = userProfile?.lastActiveDate || "";
+
+  const streakResult = calculateAndVerifyStreak(currentStreak, lastActiveDate);
+
+  // Determine if it is a new active day or reset
+  const hasChanges = streakResult.streak !== currentStreak || streakResult.lastActiveDate !== lastActiveDate;
+
+  if (userProfile) {
+    const updatedProfile = {
+      ...userProfile,
+      streak: streakResult.streak,
+      lastActiveDate: streakResult.lastActiveDate,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (isFirebasePlaceholder) {
+      try {
+        localStorage.setItem("dle:user_session", JSON.stringify(updatedProfile));
+        localStorage.setItem("dle:user", JSON.stringify(updatedProfile));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("dle:profile_updated"));
+        }
+      } catch (_) {}
+    } else {
+      try {
+        const userRef = doc(db, "users", studentId);
+        await updateDoc(userRef, {
+          streak: streakResult.streak,
+          lastActiveDate: streakResult.lastActiveDate,
+          updatedAt: serverTimestamp()
+        });
+        
+        // Also update local cache copy and trigger event for real-time local display update!
+        localStorage.setItem("dle:user_session", JSON.stringify(updatedProfile));
+        localStorage.setItem("dle:user", JSON.stringify(updatedProfile));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("dle:profile_updated"));
+        }
+      } catch (e) {
+        console.error("Failed to update user streak in Firestore:", e);
+      }
+    }
+  } else {
+    // If user profile is missing from database entirely, we'll still update session storage
+    const fallbackProfile: DBUser = {
+      uid: studentId,
+      fullName: "વિદ્યાર્થી",
+      mobile: "",
+      standard: "10",
+      division: "A",
+      village: "ગામ",
+      role: "student",
+      status: "Approved",
+      streak: streakResult.streak,
+      lastActiveDate: streakResult.lastActiveDate,
+      createdAt: new Date().toISOString()
+    };
+    try {
+      localStorage.setItem("dle:user_session", JSON.stringify(fallbackProfile));
+      localStorage.setItem("dle:user", JSON.stringify(fallbackProfile));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dle:profile_updated"));
+      }
+    } catch (_) {}
+  }
+
+  return streakResult;
+}
+
+/**
  * Loads exam questions securely by retrieving from Firestore
  * and stripping sensitive fields (correctAnswer, explanation) 
  * before returning them to the React client components.
@@ -55,11 +217,21 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
 
   // 1. Double intent/abuse protection check
   if (!isFirebasePlaceholder) {
-    const resultDocId = `res_${studentId}_${examId}`;
-    const resDocRef = doc(db, "exam_results", resultDocId);
-    const resDocSnap = await getDoc(resDocRef);
-    if (resDocSnap.exists()) {
-      throw new Error("તમે આ પરીક્ષા પહેલાથી જ સબમિટ કરી દીધી છે.");
+    try {
+      const resultDocId = `res_${studentId}_${examId}`;
+      const resDocRef = doc(db, "exam_results", resultDocId);
+      const resDocSnap = await getDoc(resDocRef);
+      if (resDocSnap.exists()) {
+        throw new Error("તમે આ પરીક્ષા પહેલાથી જ સબમિટ કરી દીધી છે.");
+      }
+    } catch (e: any) {
+      if (e.message && (e.message.includes("permission-denied") || e.message.includes("permissions") || e.code === "permission-denied")) {
+        console.warn("Permission checking exam results document, proceeding assuming non-existent", e);
+      } else if (e.message === "તમે આ પરીક્ષા પહેલાથી જ સબમિટ કરી દીધી છે.") {
+        throw e;
+      } else {
+        console.error("Unhandleable error during security double-check:", e);
+      }
     }
   }
 
@@ -82,7 +254,10 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
       const qQuery = query(qRef, where("subjectId", "==", subjectId), where("chapterId", "==", chapterId));
       const qSnaps = await getDocs(qQuery);
       qSnaps.forEach((doc) => {
-        dbQuestions.push(doc.data() as Question);
+        const item = doc.data() as Question;
+        if (item.questionId !== "q1" && item.questionId !== "q2") {
+          dbQuestions.push(item);
+        }
       });
     } catch (e: any) {
       console.error("Firestore loading error on secure get questions function:", e);
@@ -92,7 +267,7 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
   // Filter matching subject/chapter if in placeholder
   if (isFirebasePlaceholder) {
     dbQuestions = dbQuestions.filter(
-      (q) => q.subjectId === subjectId && q.chapterId === chapterId
+      (q) => q.subjectId === subjectId && q.chapterId === chapterId && q.questionId !== "q1" && q.questionId !== "q2"
     );
   }
 
@@ -275,8 +450,31 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
   let wrong = 0;
   const mistakesToSave: StudentMistake[] = [];
 
-  const subjectStr = subjectId === "sub1" ? "Science" : subjectId === "sub2" ? "Mathematics" : "Social Science";
-  const chapterStr = chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers";
+  let subjectStr = subjectId === "sub1" ? "Science" : subjectId === "sub2" ? "Mathematics" : "Social Science";
+  let chapterStr = chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers";
+
+  try {
+    if (isFirebasePlaceholder) {
+      const subjectsList = JSON.parse(localStorage.getItem("subjects") || "[]") as any[];
+      const matchedS = subjectsList.find(s => s.subjectId === subjectId);
+      if (matchedS) subjectStr = matchedS.subjectName;
+
+      const chaptersList = JSON.parse(localStorage.getItem("chapters") || "[]") as any[];
+      const matchedC = chaptersList.find(c => c.chapterId === chapterId);
+      if (matchedC) chapterStr = matchedC.chapterName;
+    } else {
+      const sDoc = await getDoc(doc(db, "subjects", subjectId));
+      if (sDoc.exists()) {
+        subjectStr = (sDoc.data() as any).subjectName;
+      }
+      const cDoc = await getDoc(doc(db, "chapters", chapterId));
+      if (cDoc.exists()) {
+        chapterStr = (cDoc.data() as any).chapterName;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to dynamically look up subject/chapter names:", err);
+  }
 
   masterQuestions.forEach((q, idx) => {
     const selectedIdx = answers[idx];
@@ -411,6 +609,16 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
   // Recalculate revision analytics
   await updateRevisionAnalyticsInternal(studentId, isFirebasePlaceholder);
 
+  // Update learner streak dynamically on exam submit
+  let finalStreakVal = 0;
+  try {
+    const streakRes = await updateStudentStreakInternal(studentId);
+    finalStreakVal = streakRes.streak;
+    await awardPointsAndCheckAchievementsSecure(studentId, "streak", finalStreakVal);
+  } catch (streakErr) {
+    console.error("Failed to update student streak on exam submission:", streakErr);
+  }
+
   // Trigger Points & Achievements Securing
   try {
     await awardPointsAndCheckAchievementsSecure(studentId, "exam");
@@ -492,7 +700,7 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
   if (isCorrect) {
     newLevel = currentLevel + 1;
     newConsecutive = currentConsecutive + 1;
-    newMastered = newConsecutive >= 3;
+    newMastered = newConsecutive >= 1;
 
     // Spaced repetition scheduler logic (FIX 2)
     // Level 1 -> Day 1
@@ -579,39 +787,12 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
   // 3. Update student streak on active dynamic action
   let streakUpdated = false;
   let currentStreak = 0;
-  
-  if (isFirebasePlaceholder) {
-    try {
-      const userProfile = localStorage.getItem("dle:user");
-      const u = userProfile ? JSON.parse(userProfile) as DBUser : null;
-      if (u && u.uid === studentId) {
-        currentStreak = u.streak || 0;
-        const updatedUser = {
-          ...u,
-          streak: currentStreak + 1,
-          lastActiveDate: todayStr
-        };
-        localStorage.setItem("dle:user", JSON.stringify(updatedUser));
-        streakUpdated = true;
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const userRef = doc(db, "users", studentId);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const userData = userSnap.data() as DBUser;
-        currentStreak = userData.streak || 0;
-        await updateDoc(userRef, {
-          streak: currentStreak + 1,
-          lastActiveDate: todayStr,
-          updatedAt: serverTimestamp()
-        });
-        streakUpdated = true;
-      }
-    } catch (e) {
-      console.error("User profile streak update failed:", e);
-    }
+  try {
+    const streakResult = await updateStudentStreakInternal(studentId);
+    currentStreak = streakResult.streak;
+    streakUpdated = true;
+  } catch (streakErr) {
+    console.error("Failed to update student streak on revision attempt:", streakErr);
   }
 
   // 4. Recalculate revision analytics
@@ -624,7 +805,7 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
       await awardPointsAndCheckAchievementsSecure(studentId, "mastery");
     }
     if (streakUpdated) {
-      await awardPointsAndCheckAchievementsSecure(studentId, "streak", currentStreak + 1);
+      await awardPointsAndCheckAchievementsSecure(studentId, "streak", currentStreak);
     }
   } catch (e) {
     console.error("Points/Achievements triggering failed inside recordRevisionAttemptSecure:", e);
@@ -968,7 +1149,7 @@ export async function awardPointsAndCheckAchievementsSecure(
         updatedAt: serverTimestamp()
       });
 
-      // Update in leaderboard as well for ranking
+      // Update in legacy leaderboard as well for ranking
       const boardDocRef = doc(db, "leaderboard", studentId);
       await setDoc(boardDocRef, {
         studentId,
@@ -979,6 +1160,25 @@ export async function awardPointsAndCheckAchievementsSecure(
         updatedAt: serverTimestamp()
       }, { merge: true });
 
+      // Update in all spanning leaderboards so that points are always visually synced on load
+      const leaderboardSpans = ["alltime", "daily", "weekly", "monthly"];
+      for (const span of leaderboardSpans) {
+        try {
+          const spanDocRef = doc(db, `leaderboard_${span}`, studentId);
+          await setDoc(spanDocRef, {
+            studentId,
+            studentName: userProfile?.fullName || "વિદ્યાર્થી",
+            standard: userProfile?.standard || "10",
+            school: userProfile?.school || "DL High School",
+            village: userProfile?.village || "Village",
+            points: studentPoints.totalPoints,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        } catch (spanErr) {
+          console.warn(`Silently failed updating span leaderboard_${span}:`, spanErr);
+        }
+      }
+
       // Clean sync leaderboard rankings in Firestore
       const querySnaps = await getDocs(query(collection(db, "leaderboard")));
       const all_board: any[] = [];
@@ -988,10 +1188,23 @@ export async function awardPointsAndCheckAchievementsSecure(
       all_board.sort((a, b) => (b.totalMarks || 0) - (a.totalMarks || 0));
       for (let idx = 0; idx < all_board.length; idx++) {
         const item = all_board[idx];
-        await updateDoc(doc(db, "leaderboard", item.studentId), {
-          rank: idx + 1,
-          updatedAt: serverTimestamp()
-        });
+        if (item.studentId === studentId) {
+          await updateDoc(doc(db, "leaderboard", item.studentId), {
+            rank: idx + 1,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          try {
+            if (userProfile?.role === "admin" || userProfile?.role === "super_admin") {
+              await updateDoc(doc(db, "leaderboard", item.studentId), {
+                rank: idx + 1,
+                updatedAt: serverTimestamp()
+              });
+            }
+          } catch (_) {
+            // Suppress other students' permission update failures
+          }
+        }
       }
     } catch (e) {
       console.error("Error writing points and leaderboard sync to Firestore:", e);

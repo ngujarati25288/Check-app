@@ -1,7 +1,9 @@
+import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { TrendingUp, Target, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { student, subjectPerformance } from "@/lib/mockData";
+import { useAuth } from "@/components/FirebaseProvider";
 
 export const Route = createFileRoute("/progress")({
   head: () => ({ meta: [{ title: "Progress Report" }] }),
@@ -9,12 +11,54 @@ export const Route = createFileRoute("/progress")({
 });
 
 function Progress() {
+  const { user } = useAuth();
+  const [totalExams, setTotalExams] = useState<number>(user ? 0 : student.totalExams);
+  const [avgPercentage, setAvgPercentage] = useState<number>(user ? 0 : student.avgPercentage);
+  const [mistakesCount, setMistakesCount] = useState<number>(23);
+  const [masteredCount, setMasteredCount] = useState<number>(156);
+  const [pendingCount, setPendingCount] = useState<number>(12);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const loadDynamicProgress = async () => {
+      try {
+        const { ResultRepository, MistakeRepository } = await import("@/lib/db");
+        
+        // Load exam metrics
+        const results = await ResultRepository.getUserResults(user.uid);
+        if (!active) return;
+        const count = results.length;
+        setTotalExams(count);
+        if (count > 0) {
+          const avg = Math.round(results.reduce((s: number, r: any) => s + (r.percentage || 0), 0) / count);
+          setAvgPercentage(avg);
+        } else {
+          setAvgPercentage(0);
+        }
+
+        // Load revision metrics
+        const mistakesList = await MistakeRepository.getUserMistakes(user.uid);
+        if (!active) return;
+        setMistakesCount(mistakesList.length);
+        setMasteredCount(mistakesList.filter((m: any) => m.mastered).length);
+        setPendingCount(mistakesList.filter((m: any) => !m.mastered).length);
+      } catch (err) {
+        console.error("Progress report dynamic metrics load error:", err);
+      }
+    };
+    loadDynamicProgress();
+    return () => {
+      active = false;
+    };
+  }, [user?.uid]);
+
   const stats = [
-    { label: "Total Exams", value: student.totalExams, icon: Target, tone: "primary" },
-    { label: "Avg %", value: `${student.avgPercentage}%`, icon: TrendingUp, tone: "success" },
-    { label: "Mistakes", value: 23, icon: AlertTriangle, tone: "destructive" },
-    { label: "Mastered", value: 156, icon: CheckCircle2, tone: "success" },
-    { label: "Revision Pending", value: 12, icon: RotateCcw, tone: "warning" },
+    { label: "Total Exams", value: totalExams, icon: Target, tone: "primary" },
+    { label: "Avg %", value: `${avgPercentage}%`, icon: TrendingUp, tone: "success" },
+    { label: "Mistakes", value: mistakesCount, icon: AlertTriangle, tone: "destructive" },
+    { label: "Mastered", value: masteredCount, icon: CheckCircle2, tone: "success" },
+    { label: "Revision Pending", value: pendingCount, icon: RotateCcw, tone: "warning" },
   ];
 
   // mock 7-day trend

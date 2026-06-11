@@ -87,22 +87,15 @@ export const Route = createFileRoute("/admin")({
 });
 
 type AdminTab = 
-  | "dashboard" 
-  | "analytics"
-  | "subjects" 
-  | "chapters" 
   | "questions" 
-  | "exams" 
-  | "students" 
-  | "notifications" 
-  | "audit_logs";
+  | "exams";
 
 function AdminPanel() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   // Navigation / Tabs State
-  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  const [activeTab, setActiveTab] = useState<AdminTab>("questions");
 
   // Core Data States
   const [students, setStudents] = useState<DBUser[]>([]);
@@ -257,9 +250,122 @@ function AdminPanel() {
         AnalyticsRepository.getAnalyticsReports()
       ]);
 
+      // Automatically derive unique subjects and chapters from our single source of truth: Questions!
+      const derivedSubsMap: Record<string, Subject> = {};
+      const derivedChapsMap: Record<string, Chapter> = {};
+
+      const existingSubsMap: Record<string, Subject> = {};
+      (subList || []).forEach(s => {
+        existingSubsMap[s.subjectId] = s;
+      });
+
+      const existingChapsMap: Record<string, Chapter> = {};
+      (chapList || []).forEach(c => {
+        existingChapsMap[c.chapterId] = c;
+      });
+
+      // Dynamic lookup fallback helpers for old data compatibility
+      const subjectFallbackName = (id: string) => {
+        if (id === "sub1") return "Science";
+        if (id === "sub2") return "Mathematics";
+        if (id === "sub3") return "Social Science";
+        return id;
+      };
+
+      const chapterFallbackName = (id: string) => {
+        if (id === "ch1") return "Chemical Reactions";
+        if (id === "ch2") return "Life Processes";
+        if (id === "ch3") return "Quadratic Equations";
+        return id;
+      };
+
+      questList.forEach(q => {
+        const rawSubId = q.subjectId || "sub1";
+        const rawChapId = q.chapterId || "ch1";
+
+        // Keep database stored IDs exactly as they are to prevent coordination mismatches
+        const subId = rawSubId;
+        const chapId = rawChapId;
+
+        let subName = existingSubsMap[subId]?.subjectName;
+        if (!subName) {
+          subName = subjectFallbackName(rawSubId);
+        }
+
+        let chapName = existingChapsMap[chapId]?.chapterName;
+        if (!chapName) {
+          chapName = chapterFallbackName(rawChapId);
+        }
+
+        const stdRaw = q.standard || existingSubsMap[subId]?.standard || "10";
+        // Clean standard
+        let std = "10";
+        if (stdRaw) {
+          const numMatches = stdRaw.match(/\d+/);
+          std = numMatches ? numMatches[0] : stdRaw.trim();
+        }
+
+        // Keep questions perfectly mapped to exact database IDs
+        q.standard = std;
+        q.subjectId = subId;
+        q.chapterId = chapId;
+
+        if (!derivedSubsMap[subId]) {
+          derivedSubsMap[subId] = {
+            subjectId: subId,
+            subjectName: subName,
+            standard: std,
+            status: "active" as const,
+            createdAt: q.createdAt || new Date().toISOString()
+          };
+        }
+
+        if (!derivedChapsMap[chapId]) {
+          derivedChapsMap[chapId] = {
+            chapterId: chapId,
+            subjectId: subId,
+            chapterName: chapName,
+            standard: std,
+            status: "active" as const
+          };
+        }
+      });
+
+      // Include academic subjects/chapters from the database even if they have 0 questions currently
+      (subList || []).forEach(s => {
+        if (!derivedSubsMap[s.subjectId]) {
+          derivedSubsMap[s.subjectId] = s;
+        }
+      });
+      (chapList || []).forEach(c => {
+        if (!derivedChapsMap[c.chapterId]) {
+          derivedChapsMap[c.chapterId] = c;
+        }
+      });
+
+      // Keep static defaults for empty database situation so experience isn't blank
+      if (Object.keys(derivedSubsMap).length === 0) {
+        const defaultSubs = [
+          { subjectId: "sub1", subjectName: "Science", standard: "10", status: "active" as const, createdAt: new Date().toISOString() },
+          { subjectId: "sub2", subjectName: "Mathematics", standard: "10", status: "active" as const, createdAt: new Date().toISOString() },
+          { subjectId: "sub3", subjectName: "Social Science", standard: "10", status: "active" as const, createdAt: new Date().toISOString() }
+        ];
+        defaultSubs.forEach(s => { derivedSubsMap[s.subjectId] = s; });
+
+        const defaultChaps = [
+          { chapterId: "ch1", subjectId: "sub1", chapterName: "Chemical Reactions", standard: "10", status: "active" as const },
+          { chapterId: "ch2", subjectId: "sub1", chapterName: "Life Processes", standard: "10", status: "active" as const },
+          { chapterId: "ch3", subjectId: "sub2", chapterName: "Quadratic Equations", standard: "10", status: "active" as const }
+        ];
+        defaultChaps.forEach(c => { derivedChapsMap[c.chapterId] = c; });
+      }
+
+      const finalSubjects = Object.values(derivedSubsMap);
+      const finalChapters = Object.values(derivedChapsMap);
+
       setStudents(stdList);
-      setSubjects(subList);
-      setChapters(chapList);
+      setSubjects(finalSubjects);
+      setChapters(finalChapters);
       setQuestions(questList);
       setExams(examList);
       setResults(resList);
@@ -278,14 +384,14 @@ function AdminPanel() {
       setAnalyticsReports(rptsAn);
 
       // Auto-set initial select ids
-      if (subList.length > 0) {
-        setChapSubId(subList[0].subjectId);
-        setQuestSubId(subList[0].subjectId);
-        setExamSubId(subList[0].subjectId);
+      if (finalSubjects.length > 0) {
+        setChapSubId(finalSubjects[0].subjectId);
+        setQuestSubId(finalSubjects[0].subjectId);
+        setExamSubId(finalSubjects[0].subjectId);
       }
-      if (chapList.length > 0) {
-        setQuestChapId(chapList[0].chapterId);
-        setExamChapId(chapList[0].chapterId);
+      if (finalChapters.length > 0) {
+        setQuestChapId(finalChapters[0].chapterId);
+        setExamChapId(finalChapters[0].chapterId);
       }
     } catch (e) {
       console.error(e);
@@ -358,6 +464,118 @@ function AdminPanel() {
   useEffect(() => {
     setQuestPage(1);
   }, [questSearch, questFilterStd, questFilterSub, questFilterChap, questFilterDiff]);
+
+  // Compute stats metrics
+  const stats = useMemo(() => {
+    const totalStudents = students.length;
+    const activeExamsToday = exams.filter(e => e.status === "active").length;
+    const pendingRevs = results.reduce((acc, r) => acc + (r.totalQuestions - r.correctAnswers), 0);
+    const avgPerf = results.length > 0 
+      ? Math.round(results.reduce((acc, r) => acc + r.percentage, 0) / results.length) 
+      : 0;
+
+    // Determine difficult subjects
+    const subjectWrongMap: Record<string, number> = {};
+    results.forEach(r => {
+      subjectWrongMap[r.subject] = (subjectWrongMap[r.subject] || 0) + r.wrongAnswers;
+    });
+    let mostDifficultSubject = "N/A";
+    let maxWr = -1;
+    Object.entries(subjectWrongMap).forEach(([sub, wr]) => {
+      if (wr > maxWr) {
+        maxWr = wr;
+        mostDifficultSubject = sub;
+      }
+    });
+
+    const activeUserCount = students.filter(s => s.status === "approved").length;
+
+    return {
+      totalStudents,
+      activeExamsToday,
+      pendingRevs,
+      totalExamsConducted: exams.length,
+      avgPerf,
+      notificationsSent: notifHistory.length,
+      activeUserCount,
+      mostDifficultSubject
+    };
+  }, [students, exams, results, notifHistory]);
+
+  const chartData = useMemo(() => {
+    // Generate recent 7 days stats
+    const map: Record<string, { Date: string, Average: number, Completed: number }> = {};
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dStr = date.toISOString().split('T')[0];
+      map[dStr] = { Date: dStr.substring(5), Average: 0, Completed: 0 };
+    }
+
+    results.forEach(r => {
+      const d = r.examDate || (r.submittedAt ? r.submittedAt.split('T')[0] : "");
+      if (map[d]) {
+        map[d].Completed += 1;
+        map[d].Average = Math.round((map[d].Average + r.percentage) / (map[d].Completed === 1 ? 1 : 2));
+      }
+    });
+
+    return Object.values(map);
+  }, [results]);
+
+  // Questions filtered list
+  const filteredQuestions = useMemo(() => {
+    return questions.filter(q => {
+      const subjectObj = subjects.find(s => s.subjectId === q.subjectId);
+      const matchesSearch = questSearch ? q.question.toLowerCase().includes(questSearch.toLowerCase()) : true;
+      const matchesStd = questFilterStd === "all" ? true : (q.standard === questFilterStd || (subjectObj && subjectObj.standard === questFilterStd));
+      const matchesSub = questFilterSub === "all" ? true : q.subjectId === questFilterSub;
+      const matchesChap = questFilterChap === "all" ? true : q.chapterId === questFilterChap;
+      const matchesDiff = questFilterDiff === "all" ? true : q.difficulty === questFilterDiff;
+      const matchesType = questFilterType === "all" ? true : q.questionType === questFilterType;
+      return matchesSearch && matchesStd && matchesSub && matchesChap && matchesDiff && matchesType;
+    });
+  }, [questions, subjects, questSearch, questFilterStd, questFilterSub, questFilterChap, questFilterDiff, questFilterType]);
+
+  // Subjects filter for inline display
+  const filteredSubjectsForView = useMemo(() => {
+    return subjects.filter(s => {
+      const matchesStd = subFilterStd === "all" ? true : s.standard === subFilterStd;
+      const matchesSearch = subSearch.trim() 
+        ? s.subjectName.toLowerCase().includes(subSearch.toLowerCase()) || (s.description || "").toLowerCase().includes(subSearch.toLowerCase())
+        : true;
+      return matchesStd && matchesSearch;
+    });
+  }, [subjects, subFilterStd, subSearch]);
+
+  // Chapters filter for inline display
+  const filteredChaptersForView = useMemo(() => {
+    return chapters.filter(c => {
+      const matchesSub = chapFilterSub === "all" ? true : c.subjectId === chapFilterSub;
+      const matchesStd = chapFilterStd === "all" ? true : c.standard === chapFilterStd;
+      const matchesSearch = chapSearch.trim()
+        ? c.chapterName.toLowerCase().includes(chapSearch.toLowerCase()) || (c.description || "").toLowerCase().includes(chapSearch.toLowerCase())
+        : true;
+      return matchesSub && matchesStd && matchesSearch;
+    });
+  }, [chapters, chapFilterSub, chapFilterStd, chapSearch]);
+
+  // Paginated questions list block
+  const paginatedQuestions = useMemo(() => {
+    const startIndex = (questPage - 1) * questPerPage;
+    return filteredQuestions.slice(startIndex, startIndex + questPerPage);
+  }, [filteredQuestions, questPage, questPerPage]);
+
+  // Students filter
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const matchesSearch = studentSearch 
+        ? s.fullName.toLowerCase().includes(studentSearch.toLowerCase()) || s.mobile.includes(studentSearch)
+        : true;
+      const matchesStd = studentFilterStd === "all" ? true : s.standard === studentFilterStd;
+      return matchesSearch && matchesStd;
+    });
+  }, [students, studentSearch, studentFilterStd]);
 
   // Render Access Denied
   if (authLoading) {
@@ -888,118 +1106,6 @@ function AdminPanel() {
     }
   };
 
-  // Compute stats metrics
-  const stats = useMemo(() => {
-    const totalStudents = students.length;
-    const activeExamsToday = exams.filter(e => e.status === "active").length;
-    const pendingRevs = results.reduce((acc, r) => acc + (r.totalQuestions - r.correctAnswers), 0);
-    const avgPerf = results.length > 0 
-      ? Math.round(results.reduce((acc, r) => acc + r.percentage, 0) / results.length) 
-      : 0;
-
-    // Determine difficult subjects
-    const subjectWrongMap: Record<string, number> = {};
-    results.forEach(r => {
-      subjectWrongMap[r.subject] = (subjectWrongMap[r.subject] || 0) + r.wrongAnswers;
-    });
-    let mostDifficultSubject = "N/A";
-    let maxWr = -1;
-    Object.entries(subjectWrongMap).forEach(([sub, wr]) => {
-      if (wr > maxWr) {
-        maxWr = wr;
-        mostDifficultSubject = sub;
-      }
-    });
-
-    const activeUserCount = students.filter(s => s.status === "approved").length;
-
-    return {
-      totalStudents,
-      activeExamsToday,
-      pendingRevs,
-      totalExamsConducted: exams.length,
-      avgPerf,
-      notificationsSent: notifHistory.length,
-      activeUserCount,
-      mostDifficultSubject
-    };
-  }, [students, exams, results, notifHistory]);
-
-  const chartData = useMemo(() => {
-    // Generate recent 7 days stats
-    const map: Record<string, { Date: string, Average: number, Completed: number }> = {};
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dStr = date.toISOString().split('T')[0];
-      map[dStr] = { Date: dStr.substring(5), Average: 0, Completed: 0 };
-    }
-
-    results.forEach(r => {
-      const d = r.examDate || (r.submittedAt ? r.submittedAt.split('T')[0] : "");
-      if (map[d]) {
-        map[d].Completed += 1;
-        map[d].Average = Math.round((map[d].Average + r.percentage) / (map[d].Completed === 1 ? 1 : 2));
-      }
-    });
-
-    return Object.values(map);
-  }, [results]);
-
-  // Questions filtered list
-  const filteredQuestions = useMemo(() => {
-    return questions.filter(q => {
-      const subjectObj = subjects.find(s => s.subjectId === q.subjectId);
-      const matchesSearch = questSearch ? q.question.toLowerCase().includes(questSearch.toLowerCase()) : true;
-      const matchesStd = questFilterStd === "all" ? true : (q.standard === questFilterStd || (subjectObj && subjectObj.standard === questFilterStd));
-      const matchesSub = questFilterSub === "all" ? true : q.subjectId === questFilterSub;
-      const matchesChap = questFilterChap === "all" ? true : q.chapterId === questFilterChap;
-      const matchesDiff = questFilterDiff === "all" ? true : q.difficulty === questFilterDiff;
-      const matchesType = questFilterType === "all" ? true : q.questionType === questFilterType;
-      return matchesSearch && matchesStd && matchesSub && matchesChap && matchesDiff && matchesType;
-    });
-  }, [questions, subjects, questSearch, questFilterStd, questFilterSub, questFilterChap, questFilterDiff, questFilterType]);
-
-  // Subjects filter for inline display
-  const filteredSubjectsForView = useMemo(() => {
-    return subjects.filter(s => {
-      const matchesStd = subFilterStd === "all" ? true : s.standard === subFilterStd;
-      const matchesSearch = subSearch.trim() 
-        ? s.subjectName.toLowerCase().includes(subSearch.toLowerCase()) || (s.description || "").toLowerCase().includes(subSearch.toLowerCase())
-        : true;
-      return matchesStd && matchesSearch;
-    });
-  }, [subjects, subFilterStd, subSearch]);
-
-  // Chapters filter for inline display
-  const filteredChaptersForView = useMemo(() => {
-    return chapters.filter(c => {
-      const matchesSub = chapFilterSub === "all" ? true : c.subjectId === chapFilterSub;
-      const matchesStd = chapFilterStd === "all" ? true : c.standard === chapFilterStd;
-      const matchesSearch = chapSearch.trim()
-        ? c.chapterName.toLowerCase().includes(chapSearch.toLowerCase()) || (c.description || "").toLowerCase().includes(chapSearch.toLowerCase())
-        : true;
-      return matchesSub && matchesStd && matchesSearch;
-    });
-  }, [chapters, chapFilterSub, chapFilterStd, chapSearch]);
-
-  // Paginated questions list block
-  const paginatedQuestions = useMemo(() => {
-    const startIndex = (questPage - 1) * questPerPage;
-    return filteredQuestions.slice(startIndex, startIndex + questPerPage);
-  }, [filteredQuestions, questPage, questPerPage]);
-
-  // Students filter
-  const filteredStudents = useMemo(() => {
-    return students.filter(s => {
-      const matchesSearch = studentSearch 
-        ? s.fullName.toLowerCase().includes(studentSearch.toLowerCase()) || s.mobile.includes(studentSearch)
-        : true;
-      const matchesStd = studentFilterStd === "all" ? true : s.standard === studentFilterStd;
-      return matchesSearch && matchesStd;
-    });
-  }, [students, studentSearch, studentFilterStd]);
-
   return (
     <div className="min-h-screen bg-[#fafbfc] dark:bg-slate-950 text-slate-900 dark:text-slate-50 flex">
       
@@ -1017,36 +1123,8 @@ function AdminPanel() {
 
         {/* Sidebar Nav Items */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          <SidebarBtn 
-            active={activeTab === "dashboard"} 
-            onClick={() => setActiveTab("dashboard")} 
-            icon={<LayoutDashboard className="size-4" />} 
-            label="Dashboard Overview" 
-            sub="પેનલ ઝાંખી"
-          />
-          <SidebarBtn 
-            active={activeTab === "analytics"} 
-            onClick={() => setActiveTab("analytics")} 
-            icon={<LineChartIcon className="size-4" />} 
-            label="Advanced Analytics" 
-            sub="શૈક્ષણિક વિશ્લેષણ"
-          />
           {user?.role !== "teacher" && (
             <>
-              <SidebarBtn 
-                active={activeTab === "subjects"} 
-                onClick={() => setActiveTab("subjects")} 
-                icon={<BookOpen className="size-4" />} 
-                label="Subjects" 
-                sub="વિષયો મેનેજમેન્ટ"
-              />
-              <SidebarBtn 
-                active={activeTab === "chapters"} 
-                onClick={() => setActiveTab("chapters")} 
-                icon={<Layers className="size-4" />} 
-                label="Chapters" 
-                sub="પ્રકરણો મેનેજમેન્ટ"
-              />
               <SidebarBtn 
                 active={activeTab === "questions"} 
                 onClick={() => setActiveTab("questions")} 
@@ -1060,31 +1138,6 @@ function AdminPanel() {
                 icon={<CalendarClock className="size-4" />} 
                 label="Daily Exam Scheduler" 
                 sub="પરીક્ષા નિયંત્રણો"
-              />
-            </>
-          )}
-          <SidebarBtn 
-            active={activeTab === "students"} 
-            onClick={() => setActiveTab("students")} 
-            icon={<UsersRound className="size-4" />} 
-            label="Students & Results" 
-            sub="વિદ્યાર્થી અને પરિણામ"
-          />
-          {user?.role !== "teacher" && (
-            <>
-              <SidebarBtn 
-                active={activeTab === "notifications"} 
-                onClick={() => setActiveTab("notifications")} 
-                icon={<BellRing className="size-4" />} 
-                label="Notification Center" 
-                sub="પૂશ નોટિફિકેશન"
-              />
-              <SidebarBtn 
-                active={activeTab === "audit_logs"} 
-                onClick={() => setActiveTab("audit_logs")} 
-                icon={<History className="size-4" />} 
-                label="System Audit Logs" 
-                sub="સુરક્ષા ઓડિટ લોગ"
               />
             </>
           )}
@@ -1130,21 +1183,10 @@ function AdminPanel() {
             onChange={(e) => setActiveTab(e.target.value as AdminTab)}
             className="text-xs bg-muted px-2 py-1.5 rounded-xl border border-border font-semibold outline-none"
           >
-            <option value="dashboard">Dashboard</option>
-            <option value="analytics">Advanced Analytics</option>
             {user?.role !== "teacher" && (
               <>
-                <option value="subjects">Subjects (વિષયો)</option>
-                <option value="chapters">Chapters (પ્રકરણો)</option>
                 <option value="questions">Question Bank (પ્રશ્ન બેંક)</option>
                 <option value="exams">Daily Exams (દૈનિક પરીક્ષા)</option>
-              </>
-            )}
-            <option value="students">Students & Results</option>
-            {user?.role !== "teacher" && (
-              <>
-                <option value="notifications">Push Notifications</option>
-                <option value="audit_logs">Audit Logs</option>
               </>
             )}
           </select>
@@ -1188,7 +1230,7 @@ function AdminPanel() {
             </div>
           ) : (
             <>
-              {activeTab === "analytics" && (
+              {(activeTab as any) === "analytics" && (
                 <AdvancedAnalyticsDashboard
                   studentAnalytics={studentAnalytics}
                   subjectAnalytics={subjectAnalytics}
@@ -1205,7 +1247,7 @@ function AdminPanel() {
               )}
 
               {/* TAB 1: OVERVIEW DASHBOARD */}
-              {activeTab === "dashboard" && (
+              {(activeTab as any) === "dashboard" && (
                 <div className="space-y-6">
                   
                   {/* Stats Grid */}
@@ -1326,7 +1368,7 @@ function AdminPanel() {
               )}
 
               {/* Tab 2: SUBJECTS MANAGEMENT */}
-              {activeTab === "subjects" && (
+              {false && (
                 <div className="space-y-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-teal-500/10 dark:bg-teal-500/5 p-4 rounded-3xl border border-teal-500/20">
                     <div>
@@ -1536,8 +1578,8 @@ function AdminPanel() {
                                           const nextActiveStatus = !s.active;
                                           const nextStatusString = nextActiveStatus ? "active" : "disabled";
                                           await AdminRepository.updateSubject(
-                                            user.uid, 
-                                            user.fullName || "Admin", 
+                                            user?.uid || "admin", 
+                                            user?.fullName || "Admin", 
                                             s.subjectId, 
                                             { 
                                               active: nextActiveStatus,
@@ -1559,7 +1601,7 @@ function AdminPanel() {
                                       <button
                                         onClick={async () => {
                                           if (confirm(`આ વિષય "${s.subjectName}" કાઢી નાખવાથી તેની સાથે જોડાયેલા પ્રકરણો અને પરીક્ષાઓને અસર થશે. શું આપ ખરેખર આગળ વધવા માંગો છો?`)) {
-                                            await AdminRepository.deleteSubject(user.uid, user.fullName || "Admin", s.subjectId);
+                                            await AdminRepository.deleteSubject(user?.uid || "admin", user?.fullName || "Admin", s.subjectId);
                                             toast.success("Subject permanently deleted!");
                                             loadAllData();
                                           }
@@ -1583,7 +1625,7 @@ function AdminPanel() {
               )}
 
               {/* Tab 2.5: CHAPTERS MANAGEMENT */}
-              {activeTab === "chapters" && (
+              {false && (
                 <div className="space-y-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-teal-500/10 dark:bg-teal-500/5 p-4 rounded-3xl border border-teal-500/20">
                     <div>
@@ -1646,12 +1688,16 @@ function AdminPanel() {
                               onChange={(e) => setChapStd(e.target.value)}
                               className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
                             >
+                              <option value="1">ધોરણ 1</option>
+                              <option value="2">ધોરણ 2</option>
+                              <option value="3">ધોરણ 3</option>
+                              <option value="4">ધોરણ 4</option>
+                              <option value="5">ધોરણ 5</option>
+                              <option value="6">ધોરણ 6</option>
                               <option value="7">ધોરણ 7</option>
                               <option value="8">ધોરણ 8</option>
                               <option value="9">ધોરણ 9</option>
                               <option value="10">ધોરણ 10</option>
-                              <option value="11">ધોરણ 11</option>
-                              <option value="12">ધોરણ 12</option>
                             </select>
                           </div>
                         </div>
@@ -1849,8 +1895,8 @@ function AdminPanel() {
                                             const nextActiveStatus = !c.active;
                                             const nextStatusString = nextActiveStatus ? "active" : "archived";
                                             await AdminRepository.updateChapter(
-                                              user.uid, 
-                                              user.fullName || "Admin", 
+                                              user?.uid || "admin", 
+                                              user?.fullName || "Admin", 
                                               c.chapterId, 
                                               { 
                                                 active: nextActiveStatus,
@@ -1872,7 +1918,7 @@ function AdminPanel() {
                                         <button
                                           onClick={async () => {
                                             if (confirm(`શું આપ ખરેખર પ્રકરણ "${c.chapterName}" કાઢી નાખવા માંગો છો?`)) {
-                                              await AdminRepository.deleteChapter(user.uid, user.fullName || "Admin", c.chapterId);
+                                              await AdminRepository.deleteChapter(user?.uid || "admin", user?.fullName || "Admin", c.chapterId);
                                               toast.success("Chapter permanently deleted!");
                                               loadAllData();
                                             }
@@ -1902,8 +1948,10 @@ function AdminPanel() {
                   subjects={subjects}
                   chapters={chapters}
                   questions={questions}
+                  exams={exams}
                   onRefresh={loadAllData}
                   currentUser={user}
+                  onScheduleSuccess={() => setActiveTab("exams")}
                 />
               )}
               {/* REMOVED INLINE QUESTIONS */}
@@ -2419,6 +2467,7 @@ function AdminPanel() {
                   questions={questions}
                   exams={exams}
                   results={results}
+                  students={students}
                   onRefresh={loadAllData}
                   currentUser={user}
                 />
@@ -2640,7 +2689,7 @@ function AdminPanel() {
               )}
 
               {/* TAB 5: STUDENTS AND RESULTS */}
-              {activeTab === "students" && (
+              {(activeTab as any) === "students" && (
                 <div className="space-y-6">
                   
                   {/* Grid control panels widgets list */}
@@ -2805,7 +2854,7 @@ function AdminPanel() {
               )}
 
               {/* TAB 6: PUSH NOTIFICATION CENTRE */}
-              {activeTab === "notifications" && (
+              {(activeTab as any) === "notifications" && (
                 <div className="space-y-6">
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2829,12 +2878,16 @@ function AdminPanel() {
                               className="w-full h-11 px-3 mt-1 bg-muted/45 rounded-xl border outline-none text-xs font-semibold"
                             >
                               <option value="all">આખા ગુજરાતના વિદ્યાર્થીઓ (All Standards)</option>
+                              <option value="1">ધોરણ 1 ના વિદ્યાર્થીઓ</option>
+                              <option value="2">ધોરણ 2 ના વિદ્યાર્થીઓ</option>
+                              <option value="3">ધોરણ 3 ના વિદ્યાર્થીઓ</option>
+                              <option value="4">ધોરણ 4 ના વિદ્યાર્થીઓ</option>
+                              <option value="5">ધોરણ 5 ના વિદ્યાર્થીઓ</option>
+                              <option value="6">ધોરણ 6 ના વિદ્યાર્થીઓ</option>
                               <option value="7">ધોરણ 7 ના વિદ્યાર્થીઓ</option>
                               <option value="8">ધોરણ 8 ના વિદ્યાર્થીઓ</option>
                               <option value="9">ધોરણ 9 ના વિદ્યાર્થીઓ</option>
                               <option value="10">ધોરણ 10 ના વિદ્યાર્થીઓ</option>
-                              <option value="11">ધોરણ 11 ના વિદ્યાર્થીઓ</option>
-                              <option value="12">ધોરણ 12 ના વિદ્યાર્થીઓ</option>
                             </select>
                           </div>
 
@@ -2930,7 +2983,7 @@ function AdminPanel() {
               )}
 
               {/* TAB 7: ADMINISTRATIVE AUDIT LOGS */}
-              {activeTab === "audit_logs" && (
+              {(activeTab as any) === "audit_logs" && (
                 <div className="space-y-6">
                   
                   <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">

@@ -1,237 +1,280 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { School, MapPin, Hash, Phone, Pencil, LogOut, Award, Moon, Sun, Volume2, VolumeX, Check, ShieldCheck } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { 
+  LogOut, User, Phone, MapPin, School, BookOpen, Flame, 
+  Settings, Volume2, VolumeX, Moon, Sun, Check, Sparkles, Award, AlertCircle
+} from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { student, avatars } from "@/lib/mockData";
-import { useSettings, setSettings, toggleTheme, sfx } from "@/lib/settings";
 import { useAuth } from "@/components/FirebaseProvider";
-import { UserRepository } from "@/lib/db";
+import { useSettings, setSettings, sfx } from "@/lib/settings";
+import { avatars } from "@/lib/mockData";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/profile")({
-  head: () => ({ meta: [{ title: "Profile" }] }),
+  head: () => ({ meta: [{ title: "Profile / પ્રોફાઇલ" }] }),
   component: Profile,
 });
 
 function Profile() {
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const settings = useSettings();
-  const selectedAvatar = settings.avatar;
-  const { user } = useAuth();
+  const [showConfirmLogout, setShowConfirmLogout] = useState(false);
 
-  const handleRoleChange = async (targetRole: "student" | "admin" | "super_admin") => {
-    if (!user) {
-      toast.error("Please sign in or register first.");
-      return;
-    }
+  const handleAvatarSelect = (emoji: string) => {
+    setSettings({ avatar: emoji });
+    sfx.tap();
+    toast.success("તમારો અવતાર સફળતાપૂર્વક અપડેટ કરવામાં આવ્યો છે!");
+  };
+
+  const toggleSound = () => {
+    const newVal = !settings.sound;
+    setSettings({ sound: newVal });
+    if (newVal) sfx.tap();
+    toast.success(newVal ? "સાઉન્ડ ઇફેક્ટ્સ ચાલુ કરવામાં આવી!" : "સાઉન્ડ ઇફેક્ટ્સ બંધ કરવામાં આવી!");
+  };
+
+  const toggleTheme = () => {
+    const newVal = settings.theme === "dark" ? "light" : "dark";
+    setSettings({ theme: newVal });
+    sfx.tap();
+    toast.success(newVal === "dark" ? "ડાર્ક મોડ એક્ટિવેટ થયો!" : "લાઇટ મોડ એક્ટિવેટ થયો!");
+  };
+
+  const handleUserLogout = async () => {
     try {
-      sfx.correct();
-      // Update role
-      await UserRepository.updateProfile(user.uid, { role: targetRole });
-      
-      const sessionUpdate = { ...user, role: targetRole };
-      localStorage.setItem('dle:user_session', JSON.stringify(sessionUpdate));
-      localStorage.setItem('dle:user', JSON.stringify(sessionUpdate));
-
-      toast.success(`Role changed to ${targetRole.toUpperCase()}!`, {
-        description: "Application context updated successfully."
-      });
-
-      // Simple brief wait and reload
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
-    } catch (e) {
-      toast.error("Failed to swap system roles.");
+      await signOut();
+      sfx.wrong();
+      toast.success("ਤમે સફળતાપૂર્વક લૉગઆઉટ થઈ ગયા છો.");
+      navigate({ to: "/login" });
+    } catch (_) {
+      // Fallback navigation
+      navigate({ to: "/login" });
     }
   };
 
   return (
     <AppShell title="Profile" titleGu="પ્રોફાઇલ" back="/dashboard">
-      <div className="px-5 py-5 space-y-5">
-        <div className="rounded-3xl gradient-hero text-primary-foreground p-6 shadow-card flex items-center gap-4 relative overflow-hidden">
-          <div className="absolute -bottom-10 -right-10 size-40 rounded-full bg-white/10 blur-2xl" />
-          <div className="relative size-20 rounded-3xl bg-white/20 backdrop-blur flex items-center justify-center text-4xl">
-            {selectedAvatar}
+      <div className="max-w-md mx-auto px-4 py-6 space-y-6">
+        
+        {/* HERO AVATAR DISPLAY */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 rounded-3xl p-6 text-white shadow-lg text-center space-y-3">
+          <div className="absolute -right-6 -bottom-6 size-32 rounded-full bg-white/10 blur-xl pointer-events-none" />
+          <div className="absolute -left-6 -top-6 size-32 rounded-full bg-white/15 blur-xl pointer-events-none" />
+          
+          <div className="relative mx-auto size-24 bg-white/20 backdrop-blur-md rounded-full shadow-inner border border-white/35 flex items-center justify-center text-5xl">
+            {settings.avatar || "📚"}
           </div>
-          <div className="min-w-0">
-            <h2 className="text-xl font-bold truncate">{user?.fullName || student.name}</h2>
-            <p className="text-xs text-white/75 mt-1">Standard {user?.standard || student.standard}</p>
-            <span className="inline-block mt-2 text-[10px] uppercase font-black tracking-wider bg-white/20 px-2 py-0.5 rounded-full font-mono">
-              Role: {user?.role || "student"}
-            </span>
-          </div>
-        </div>
 
-        {/* DEVELOPER SYS CONTROL */}
-        <div className="bg-card border-2 border-primary/20 rounded-3xl p-5 shadow-card space-y-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="size-5 text-primary" />
-            <p className="text-xs uppercase tracking-wider text-primary font-bold font-gu">
-              Developer System Control (સત્તા બદલો)
+          <div className="space-y-1">
+            <h2 className="text-xl font-extrabold tracking-tight drop-shadow-xs">
+              {user?.fullName || "વપરાશકર્તા"}
+            </h2>
+            <p className="text-xs text-white/80 font-semibold uppercase tracking-wider">
+              {user?.role === "super_admin" 
+                ? "👑 મુખ્ય સુપર સંચાલક" 
+                : user?.role === "admin" 
+                  ? "🛠️ સહાયક એડમિન" 
+                  : `Standard ${user?.standard || "10"}-${user?.division || "A"} • વિદ્યાર્થી`}
             </p>
           </div>
-          <p className="text-[11px] text-muted-foreground font-gu">
-            બિગિનર્સ ડેવલપર રિવ્યુ અને ઓડિટ માટે કોઈપણ સત્તા પસંદ કરીને સિસ્ટમનો અનુભવ કરો:
-          </p>
 
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: "student", label: "Student 🎓" },
-              { id: "admin", label: "Admin 🛠️" },
-              { id: "super_admin", label: "Super Admin 👑" }
-            ].map((r) => {
-              const active = (user?.role || "student") === r.id;
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => handleRoleChange(r.id as any)}
-                  className={`py-2 text-xs font-bold rounded-2xl border transition active:scale-95 ${
-                    active
-                      ? "gradient-primary text-primary-foreground border-primary shadow-sm"
-                      : "bg-muted border-border text-muted-foreground hover:bg-muted/70"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              );
-            })}
+          {/* Sparkly statistics indicators in card */}
+          <div className="pt-2 flex justify-center gap-4 text-xs font-bold">
+            <div className="px-3 py-1 bg-white/15 backdrop-blur-xs rounded-full flex items-center gap-1">
+              <Flame className="size-3.5 fill-amber-400 text-amber-400 shrink-0" />
+              <span>{user?.streak || 0} દિવસ સ્ટ્રીક</span>
+            </div>
+            <div className="px-3 py-1 bg-white/15 backdrop-blur-xs rounded-full flex items-center gap-1">
+              <Award className="size-3.5 text-yellow-300 shrink-0" />
+              <span>{user?.status === "Approved" ? "મંજૂર પ્રોફાઇલ" : "પેન્ડિંગ"}</span>
+            </div>
           </div>
         </div>
 
-        {/* AVATAR SELECTOR */}
-        <div className="bg-card border border-border rounded-3xl p-4 shadow-card">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold font-gu mb-3">
-            તમારો અવતાર પસંદ કરો
-          </p>
+        {/* AVATAR SELECTOR GRID */}
+        <div className="bg-card border border-border rounded-3xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center gap-2 pb-1">
+            <Sparkles className="size-4 text-indigo-500" />
+            <h3 className="text-xs font-black uppercase text-foreground leading-none tracking-wider">
+              તમારો અવતાર પસંદ કરો (Select Avatar)
+            </h3>
+          </div>
           <div className="grid grid-cols-6 gap-2">
-            {avatars.map((a) => {
-              const active = selectedAvatar === a.emoji;
-              return (
-                <button
-                  key={a.id}
-                  onClick={() => { setSettings({ avatar: a.emoji }); sfx.tap(); }}
-                  className={`aspect-square rounded-2xl text-2xl flex items-center justify-center transition active:scale-95 ${
-                    active
-                      ? "gradient-primary text-primary-foreground shadow-float ring-2 ring-primary"
-                      : "bg-muted hover:bg-muted/70"
-                  }`}
-                  aria-label={a.labelGu}
-                >
-                  {a.emoji}
-                </button>
-              );
-            })}
+            {avatars.map((av) => (
+              <button
+                key={av.id}
+                onClick={() => handleAvatarSelect(av.emoji)}
+                className={`aspect-square rounded-2xl flex items-center justify-center text-2xl relative border-2 transition active:scale-95 ${
+                  settings.avatar === av.emoji
+                    ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 shadow-xs"
+                    : "border-border hover:bg-muted/40"
+                }`}
+                title={av.labelGu}
+              >
+                {av.emoji}
+                {settings.avatar === av.emoji && (
+                  <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-0.5 rounded-full">
+                    <Check className="size-2.5" />
+                  </div>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Stat label="Exams" value={student.totalExams} />
-          <Stat label="Avg %" value={`${student.avgPercentage}%`} />
-          <Stat label="Rank" value={`#${student.rank}`} />
-        </div>
+        {/* DETAILS LIST BOX */}
+        <div className="bg-card border border-border rounded-3xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-border/80">
+            <User className="size-4 text-purple-600" />
+            <h3 className="text-xs font-black uppercase text-foreground leading-none tracking-wider">
+              વિદ્યાર્થી ઓળખ પત્રક (Personal Information)
+            </h3>
+          </div>
 
-        {/* SETTINGS */}
-        <div className="bg-card border border-border rounded-3xl shadow-card overflow-hidden">
-          <SettingsRow
-            icon={settings.theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
-            label="Dark Mode"
-            labelGu="ડાર્ક મોડ"
-            active={settings.theme === "dark"}
-            onClick={toggleTheme}
-          />
-          <SettingsRow
-            icon={settings.sound ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
-            label="Sound Effects"
-            labelGu="અવાજ"
-            active={settings.sound}
-            onClick={() => { setSettings({ sound: !settings.sound }); if (!settings.sound) sfx.correct(); }}
-            last
-          />
-        </div>
+          <div className="space-y-3.5 text-xs text-foreground font-semibold">
+            
+            <div className="flex items-center justify-between pb-2 border-b border-dashed">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <User className="size-4 shrink-0" />
+                <span className="font-gu">પૂરું નામ (Full Name)</span>
+              </div>
+              <span className="text-right text-foreground font-bold">{user?.fullName || "નવા વપરાશકર્તા"}</span>
+            </div>
 
-        <div className="bg-card border border-border rounded-3xl shadow-card overflow-hidden">
-          <Row icon={<School className="size-4" />} label="School" value={student.school} />
-          <Row icon={<Hash className="size-4" />} label="Standard" value={student.standard} />
-          <Row icon={<MapPin className="size-4" />} label="Village / City" value={student.village} />
-          <Row icon={<Phone className="size-4" />} label="Mobile" value={student.mobile} last />
-        </div>
+            <div className="flex items-center justify-between pb-2 border-b border-dashed">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <Phone className="size-4 shrink-0" />
+                <span className="font-gu">મોબાઈલ નંબર (Mobile No)</span>
+              </div>
+              <span className="text-right font-mono text-foreground font-bold">{user?.mobile || user?.studentId || "ઉપલબ્ધ નથી"}</span>
+            </div>
 
-        <div className="bg-success-soft border border-success/20 rounded-3xl p-4 flex items-center gap-3">
-          <Award className="size-6 text-success" />
-          <div className="text-sm">
-            <p className="font-semibold text-success">Top Performer Badge</p>
-            <p className="text-xs text-muted-foreground">Earned for 7-day learning streak</p>
+            <div className="flex items-center justify-between pb-2 border-b border-dashed">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <BookOpen className="size-4 shrink-0" />
+                <span className="font-gu">ધોરણ અને વર્ગ (Class / Std)</span>
+              </div>
+              <span className="text-right text-foreground font-bold">Standard {user?.standard || "10"}-{user?.division || "A"}</span>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-dashed">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <School className="size-4 shrink-0" />
+                <span className="font-gu">શાળા નું નામ (School Name)</span>
+              </div>
+              <span className="text-right text-foreground font-bold truncate max-w-[180px]" title={user?.school}>
+                {user?.school || "નિયુક્ત વહીવટી વિભાગ"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
+                <MapPin className="size-4 shrink-0" />
+                <span className="font-gu">ગામ / શહેર (Village Name)</span>
+              </div>
+              <span className="text-right text-foreground font-bold">{user?.village || "અમદાવાદ"}</span>
+            </div>
+
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <button className="h-12 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float active:scale-[0.98] transition">
-            <Pencil className="size-4" /> Edit Profile
-          </button>
+        {/* SYSTEM PREFERENCES */}
+        <div className="bg-card border border-border rounded-3xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center gap-2 pb-1">
+            <Settings className="size-4 text-teal-600" />
+            <h3 className="text-xs font-black uppercase text-foreground leading-none tracking-wider">
+              સિસ્ટમ સેટિંગ્સ (Preferences)
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            
+            {/* Tone Toggle */}
+            <button
+              onClick={toggleSound}
+              className="flex items-center justify-between p-3 border rounded-2xl bg-muted/20 hover:bg-muted/40 transition active:scale-98"
+            >
+              <div className="flex items-center gap-2.5">
+                {settings.sound ? (
+                  <Volume2 className="size-4.5 text-emerald-600 shrink-0" />
+                ) : (
+                  <VolumeX className="size-4.5 text-muted-foreground shrink-0" />
+                )}
+                <div className="text-left leading-none font-semibold">
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block mb-0.5">સાઉન્ડ પ્લેયર</span>
+                  <span className="text-xs text-foreground font-bold">{settings.sound ? "ઓન" : "ઓફ"}</span>
+                </div>
+              </div>
+            </button>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="flex items-center justify-between p-3 border rounded-2xl bg-muted/20 hover:bg-muted/40 transition active:scale-98"
+            >
+              <div className="flex items-center gap-2.5">
+                {settings.theme === "dark" ? (
+                  <Moon className="size-4.5 text-indigo-500 shrink-0" />
+                ) : (
+                  <Sun className="size-4.5 text-amber-500 shrink-0" />
+                )}
+                <div className="text-left leading-none font-semibold">
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block mb-0.5">થીમ પસંદગી</span>
+                  <span className="text-xs text-foreground font-bold">{settings.theme === "dark" ? "શ્યામ (Dark)" : "પ્રકાશિત (Light)"}</span>
+                </div>
+              </div>
+            </button>
+
+          </div>
+        </div>
+
+        {/* ACTION LOGOUT */}
+        {!showConfirmLogout ? (
           <button
-            onClick={() => navigate({ to: "/login" })}
-            className="h-12 rounded-2xl border border-destructive/30 bg-destructive-soft text-destructive font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition"
+            onClick={() => {
+              sfx.tap();
+              setShowConfirmLogout(true);
+            }}
+            className="w-full h-12 rounded-2xl bg-red-50 hover:bg-red-100 dark:bg-red-950/20 text-red-600 dark:text-red-400 font-extrabold flex items-center justify-center gap-2.5 active:scale-[0.98] transition shadow-xs border border-red-200 dark:border-red-900 text-sm font-sans"
           >
-            <LogOut className="size-4" /> Logout
+            <LogOut className="size-4 shrink-0" /> લૉગઆઉટ કરો (System Logout)
           </button>
-        </div>
+        ) : (
+          <div className="bg-red-50/60 dark:bg-red-950/20 border-2 border-red-200 dark:border-red-900 rounded-3xl p-5 space-y-4 animate-[fade-in_0.2s_ease-out]">
+            <div className="flex gap-3">
+              <AlertCircle className="size-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-red-900 dark:text-red-200 font-sans">
+                  શું તમે ખરેખર લૉગઆઉટ કરવા માંગો છો?
+                </p>
+                <p className="text-[10px] text-red-700/80 dark:text-red-400/80 font-semibold uppercase tracking-wider">
+                  Are you sure you want to logout from your account?
+                </p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                onClick={() => {
+                  sfx.tap();
+                  setShowConfirmLogout(false);
+                }}
+                className="h-10 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black rounded-xl uppercase transition active:scale-[0.97]"
+              >
+                ના (Cancel)
+              </button>
+              <button
+                onClick={handleUserLogout}
+                className="h-10 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl uppercase tracking-wider transition active:scale-[0.97] flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="size-3.5 shrink-0" /> હા (Log Out)
+              </button>
+            </div>
+          </div>
+        )}
 
-        <Link to="/notifications" className="block text-center text-xs text-muted-foreground py-2">
-          View notifications
-        </Link>
       </div>
     </AppShell>
-  );
-}
-
-function SettingsRow({
-  icon, label, labelGu, active, onClick, last,
-}: {
-  icon: React.ReactNode; label: string; labelGu: string; active: boolean; onClick: () => void; last?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/40 transition ${last ? "" : "border-b border-border"}`}
-    >
-      <div className={`size-9 rounded-xl flex items-center justify-center ${active ? "gradient-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-        {icon}
-      </div>
-      <div className="flex-1 text-left">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-[11px] text-muted-foreground font-gu">{labelGu}</p>
-      </div>
-      <span
-        className={`w-11 h-6 rounded-full p-0.5 flex items-center transition ${active ? "bg-primary justify-end" : "bg-muted justify-start"}`}
-        aria-hidden
-      >
-        <span className="size-5 rounded-full bg-card shadow flex items-center justify-center text-primary">
-          {active ? <Check className="size-3" /> : null}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="bg-card border border-border rounded-2xl py-3 text-center shadow-card">
-      <p className="text-lg font-bold">{value}</p>
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
-function Row({
-  icon, label, value, last,
-}: { icon: React.ReactNode; label: string; value: string; last?: boolean; }) {
-  return (
-    <div className={`flex items-center gap-3 px-4 py-3.5 ${last ? "" : "border-b border-border"}`}>
-      <div className="size-9 rounded-xl bg-primary-soft text-primary flex items-center justify-center">{icon}</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium truncate">{value}</p>
-      </div>
-    </div>
   );
 }

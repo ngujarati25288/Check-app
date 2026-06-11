@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FirebaseProvider } from "../components/FirebaseProvider";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -100,6 +101,7 @@ function RootComponent() {
       <QueryClientProvider client={queryClient}>
         <FirebaseProvider>
           <Outlet />
+          <Toaster />
         </FirebaseProvider>
       </QueryClientProvider>
     </ErrorBoundary>

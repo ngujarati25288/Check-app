@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { DBUser } from '../types';
 import { UserRepository, AdminRepository, getLocalStorageKey, setLocalStorageKey } from '../lib/db';
+import { registerFcmToken } from '../lib/fcm';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { compareSync, hashSync } from 'bcryptjs';
@@ -41,7 +42,67 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<DBUser | null>(null);
+  const [user, setUserRaw] = useState<DBUser | null>(null);
+
+  // Live streak validation and timing checker (prevents stale or cheating streaks)
+  const getLiveStreak = (streak: number, lastActiveDateStr?: string): number => {
+    if (!lastActiveDateStr) return 0;
+    
+    const now = new Date();
+    let todayStr = "";
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const parts = formatter.formatToParts(now);
+      const yVal = parts.find(p => p.type === 'year')?.value || "";
+      const mVal = parts.find(p => p.type === 'month')?.value || "";
+      const dVal = parts.find(p => p.type === 'day')?.value || "";
+      todayStr = `${yVal}-${mVal}-${dVal}`;
+    } catch (err) {
+      todayStr = now.toISOString().split('T')[0];
+    }
+
+    if (lastActiveDateStr === todayStr) {
+      return streak || 0;
+    }
+
+    try {
+      const todayDate = new Date(todayStr);
+      const lastDate = new Date(lastActiveDateStr);
+      const diffTime = todayDate.getTime() - lastDate.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) {
+        return streak || 0;
+      }
+    } catch (err) {
+      // fallback
+    }
+
+    return 0;
+  };
+
+  const setUser = (profile: DBUser | null) => {
+    if (profile) {
+      const liveStreak = getLiveStreak(profile.streak || 0, profile.lastActiveDate);
+      if (liveStreak !== profile.streak) {
+        // Create shallow clone to avoid mutation of references in state
+        profile = {
+          ...profile,
+          streak: liveStreak
+        };
+        try {
+          localStorage.setItem('dle:user_session', JSON.stringify(profile));
+          localStorage.setItem('dle:user', JSON.stringify(profile));
+        } catch (_) {}
+      }
+    }
+    setUserRaw(profile);
+  };
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const registerInProgress = React.useRef(false);
@@ -50,13 +111,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const handleBootstrapIfEligible = async (fUser: FirebaseUser): Promise<DBUser | null> => {
     try {
-      const isSuperAdminEmail = fUser.email === "n.gujarati25288@gmail.com";
+      const isSuperAdminEmail = fUser.email === "n.gujarati25288@gmail.com" || fUser.email === "8511125288@daily-learning-exam.com";
 
       if (isSuperAdminEmail) {
+        const isNayan = fUser.email === "8511125288@daily-learning-exam.com";
         const newSuperAdmin: DBUser = {
           uid: fUser.uid,
-          fullName: fUser.displayName || "Super Admin",
-          mobile: fUser.phoneNumber || "9999999999",
+          studentId: isNayan ? "8511125288" : undefined,
+          passwordHash: isNayan ? hashSync("Nayan@25288", 10) : undefined,
+          fullName: isNayan ? "સુપર એડમિનિસ્ટ્રેટર (Super Admin)" : (fUser.displayName || "Super Admin"),
+          mobile: isNayan ? "8511125288" : (fUser.phoneNumber || "9999999999"),
           school: "મુખ્ય વહીવટી મથક",
           standard: "10",
           division: "A",
@@ -155,25 +219,40 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
       } else {
         const savedSession = localStorage.getItem('dle:user_session');
-        let isStudentSession = false;
         if (savedSession) {
           try {
             const parsed = JSON.parse(savedSession);
-            if (parsed && typeof parsed.uid === 'string' && (parsed.uid.startsWith('user_') || parsed.role === 'student')) {
-              isStudentSession = true;
+            if (parsed && typeof parsed.uid === 'string') {
+              setUser(parsed);
             }
           } catch {}
-        }
-
-        if (!isStudentSession && !isFirebasePlaceholder) {
+        } else {
           setUser(null);
-          localStorage.removeItem('dle:user_session');
         }
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Listen for manual local profile updates and sync instantly
+  useEffect(() => {
+    const handleLocalProfileUpdate = () => {
+      try {
+        const savedUser = localStorage.getItem('dle:user_session');
+        if (savedUser) {
+          const parsed = JSON.parse(savedUser) as DBUser;
+          setUser(parsed);
+        }
+      } catch (e) {
+        console.error("Local session refresh failed on profile update event:", e);
+      }
+    };
+    window.addEventListener('dle:profile_updated', handleLocalProfileUpdate);
+    return () => {
+      window.removeEventListener('dle:profile_updated', handleLocalProfileUpdate);
+    };
   }, []);
 
   // Periodic and active session verification loop (Auto logout on account disable)
@@ -216,7 +295,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             freshProfile.standard !== user.standard ||
             freshProfile.division !== user.division ||
             freshProfile.school !== user.school ||
-            freshProfile.village !== user.village;
+            freshProfile.village !== user.village ||
+            freshProfile.streak !== user.streak;
           if (hasChanges) {
             setUser(freshProfile);
             localStorage.setItem('dle:user_session', JSON.stringify(freshProfile));
@@ -252,8 +332,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (isFirebasePlaceholder) {
         matchedUser = await UserRepository.getProfile("user_" + uIdInput);
       } else {
-        const email = `${uIdInput}@daily-learning-exam.com`;
+        // Find profile checking Student ID first (as typed), then case-insensitive student ID, then mobile number
         let profileById = await UserRepository.getProfileByStudentId(uIdInput);
+
+        if (!profileById && uIdInput.toLowerCase().startsWith("std")) {
+          profileById = await UserRepository.getProfileByStudentId(uIdInput.toUpperCase());
+        }
+
+        if (!profileById && /^[0-9]{10}$/.test(uIdInput)) {
+          profileById = await UserRepository.getProfileByMobile(uIdInput);
+        }
 
         // On-the-fly self-healing bootstrap for known demo users if not present in Firestore yet
         if (!profileById) {
@@ -273,20 +361,21 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           ];
 
           const demoFound = defaultDemoUsers.find(
-            d => d.studentId === uIdInput && d.passwordPlain === passwordPlain
+            d => (d.studentId === uIdInput || d.mobile === uIdInput) && d.passwordPlain === passwordPlain
           );
 
           if (demoFound) {
             console.log(`Auto-bootstrapping demo user ${uIdInput} on-the-fly...`);
             try {
+              const demoEmail = `${demoFound.studentId}@daily-learning-exam.com`;
               // 1. Create in Firebase Auth
               let finalUid = "";
               try {
-                const credential = await createUserWithEmailAndPassword(auth, email, passwordPlain);
+                const credential = await createUserWithEmailAndPassword(auth, demoEmail, passwordPlain);
                 finalUid = credential.user.uid;
               } catch (authErr: any) {
                 if (authErr.code === "auth/email-already-in-use") {
-                  const credential = await signInWithEmailAndPassword(auth, email, passwordPlain);
+                  const credential = await signInWithEmailAndPassword(auth, demoEmail, passwordPlain);
                   finalUid = credential.user.uid;
                 } else {
                   throw authErr;
@@ -311,7 +400,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
               await UserRepository.createProfile(newProfile);
               profileById = newProfile;
-              console.log(`Successfully bootstrapped demo user ${uIdInput} as Firestore UID ${finalUid}`);
+              console.log(`Successfully bootstrapped demo user ${newProfile.studentId} as Firestore UID ${finalUid}`);
             } catch (bootErr) {
               console.warn("Demo user self-healing bootstrap failed:", bootErr);
             }
@@ -319,6 +408,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         if (profileById) {
+          const actualStudentId = profileById.studentId;
+          const email = `${actualStudentId}@daily-learning-exam.com`;
+
           const passwordCheck = profileById.passwordHash 
             ? compareSync(passwordPlain, profileById.passwordHash)
             : passwordPlain === "123456";
@@ -328,8 +420,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               const authResult = await signInWithEmailAndPassword(auth, email, passwordPlain);
               matchedUser = await UserRepository.getProfile(authResult.user.uid);
               if (!matchedUser) {
-                // If auth succeeded but UID changed, map the existing document attributes to the new UID
-                matchedUser = { ...profileById, uid: authResult.user.uid };
+                // If auth succeeded but UID changed, map the existing document attributes to the new UID and save it
+                const mappedProfile = { ...profileById, uid: authResult.user.uid };
+                await UserRepository.createProfile(mappedProfile);
+                matchedUser = mappedProfile;
               }
             } catch (authError: any) {
               console.log("Seed/manually added user is correct locally, attempting on-the-fly Firebase Auth registration:", authError.code);
@@ -354,13 +448,38 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }
         }
         
-        if (!matchedUser) {
+        if (!matchedUser && profileById) {
+          const actualStudentId = profileById.studentId;
+          const email = `${actualStudentId}@daily-learning-exam.com`;
           try {
             const authResult = await signInWithEmailAndPassword(auth, email, passwordPlain);
             matchedUser = await UserRepository.getProfile(authResult.user.uid);
           } catch (authError: any) {
             console.warn("Firebase auth login failing:", authError);
-            toast.error("ખોટો પાસવર્ડ કે રજીસ્ટ્રેશન આઈડી! (Incorrect ID or password)");
+            const getFriendlyErrorMessage = (err: any): string => {
+              if (typeof navigator !== "undefined" && !navigator.onLine) {
+                return "ઇન્ટરનેટ કનેક્શન બંધ છે! કૃપા કરીને તમારું ઇન્ટરનેટ ચાલુ કરો. (Internet disconnected!)";
+              }
+              const code = err?.code || "";
+              const msg = err?.message || String(err);
+              if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+                return "ખોટો પાસવર્ડ! કૃપા કરીને સાચો પાસવર્ડ લખો. (Incorrect password!)";
+              }
+              if (code === "auth/user-not-found") {
+                return "નોંધાયેલ સ્ટુડન્ટ આઈડી મળ્યો નથી. (Student ID not found!)";
+              }
+              if (code === "auth/network-request-failed") {
+                return "સર્વર કનેક્શન મળી શક્યું નથી! કૃપા કરીને ઇન્ટરનેટ કનેક્શન તપાસો. (Server connection failed!)";
+              }
+              if (code === "unavailable" || msg.includes("unavailable") || msg.includes("offline")) {
+                return "સર્વર અત્યારે ઉપલબ્ધ નથી અથવા ઇન્ટરનેટ ખુબ ધીમું છે. (Server offline or slow!)";
+              }
+              if (msg.includes("quota") || msg.includes("Quota")) {
+                return "સર્વર ક્વોટા પુરો થઈ ગયો છે (Quota exceeded). કૃપા કરીને આવતીકાલે સવારે સંપર્ક કરો.";
+              }
+              return `ખોટો પાસવર્ડ કે રજીસ્ટ્રેશન આઈડી! (Incorrect password/ID). વિગતવાર ભૂલ: ${msg}`;
+            };
+            toast.error(getFriendlyErrorMessage(authError));
             setLoading(false);
             return false;
           }
@@ -368,7 +487,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       if (!matchedUser) {
-        toast.error("નોંધાયેલ સ્ટુડન્ટ આઈડી મળ્યો નથી. (Student ID not found)");
+        toast.error("નોંધાયેલ સ્ટુડન્ટ આઈડી મળ્યો નથી. (Student ID not found!)");
         setLoading(false);
         return false;
       }
@@ -379,7 +498,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         : passwordPlain === "123456"; // graceful fallback
 
       if (!passwordMatches) {
-        toast.error("ખોટો પાસવર્ડ! કૃપા કરીને સાચો પાસવર્ડ લખો.");
+        toast.error("ખોટો પાસવર્ડ! કૃપા કરીને સાચો પાસવર્ડ લખો. (Incorrect password!)");
         setLoading(false);
         return false;
       }
@@ -387,7 +506,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Handle lock guards: status validation
       const statusLower = (matchedUser.status || '').toLowerCase();
       if (statusLower !== 'approved') {
-        toast.error("Your account is pending approval.");
+        toast.error("તમારું એકાઉન્ટ મંજૂરી માટે બાકી છે. (Your account is pending approval!)");
         if (!isFirebasePlaceholder) {
           await firebaseSignOut(auth);
         }
@@ -398,14 +517,45 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Successful verification path
       setUser(matchedUser);
       localStorage.setItem('dle:user_session', JSON.stringify(matchedUser));
-      toast.success(`આપનું સ્વાગત છે, ${matchedUser.fullName}!`);
+      toast.success(`આપનું સ્વાગત છે, ${matchedUser.fullName || "વિદ્યાર્થી"}!`);
       
       // Navigate to main application board
-      navigate({ to: '/dashboard' });
+      if (matchedUser.role === 'admin' || matchedUser.role === 'super_admin') {
+        navigate({ to: '/admin' });
+      } else {
+        navigate({ to: '/dashboard' });
+      }
       setLoading(false);
       return true;
     } catch (err: any) {
-      toast.error(err.message || "Login failed");
+      console.error("Login process caught outer exception:", err);
+      const getFriendlyErrorMessage = (err: any): string => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          return "ઇન્ટરનેટ કનેક્શન બંધ છે! કૃપા કરીને તમારું ઇન્ટરનેટ ચાલુ કરો. (Internet disconnected!)";
+        }
+        const code = err?.code || "";
+        const msg = err?.message || String(err);
+        if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+          return "ખોટો પાસવર્ડ! કૃપા કરીને સાચો પાસવર્ડ લખો. (Incorrect password!)";
+        }
+        if (code === "auth/user-not-found" || msg.includes("Student ID not found")) {
+          return "નોંધાયેલ સ્ટુડન્ટ આઈડી મળ્યો નથી. (Student ID not found!)";
+        }
+        if (code === "auth/network-request-failed") {
+          return "સર્વર કનેક્શન મળી શક્યું નથી! કૃપા કરીને ઇન્ટરનેટ કનેક્શન તપાસો. (Server connection failed!)";
+        }
+        if (code === "unavailable" || msg.includes("unavailable") || msg.includes("offline")) {
+          return "સર્વર અત્યારે ઉપલબ્ધ નથી અથવા ઇન્ટરનેટ ખુબ ધીમું છે. (Server offline or slow!)";
+        }
+        if (msg.includes("quota") || msg.includes("Quota")) {
+          return "સર્વર ક્વોટા પુરો થઈ ગયો છે (Quota exceeded). કૃપા કરીને વહીવટી ટીમનો અથવા આવતીકાલે સવારે સંપર્ક કરો.";
+        }
+        if (code === "permission-denied" || msg.includes("permission-denied") || msg.includes("insufficient permissions")) {
+          return "સર્વર પરવાનગી પ્રોબ્લેમ (Permission Denied). કૃપા કરીને એડમિનનો સંપર્ક કરો.";
+        }
+        return `લોગીન નિષ્ફળ ગયું: ${msg}`;
+      };
+      toast.error(getFriendlyErrorMessage(err));
       setLoading(false);
       return false;
     }
@@ -425,14 +575,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     console.log("STEP 1 - Registration started");
     console.log("1. registerStudent start", { ...fields, passwordPlain: "[REDACTED]" });
     try {
-      // 1. Verify Uniqueness of the Mobile Number
+      // 1. Uniqueness of the Mobile Number constraint lifted to support multiple siblings
       const mobileClean = fields.mobile.trim();
-      const mobileDuplicate = await UserRepository.checkMobileExists(mobileClean);
-      if (mobileDuplicate) {
-        toast.error("આ મોબાઇલ નંબર પહેલેથી નોંધાયેલ છે.");
-        setLoading(false);
-        return false;
-      }
+      // Allow sibling registrations on the same family mobile number
+      console.log(`Using mobile number: ${mobileClean} for registration (sibling support active)`);
 
       // 2. Auto-generate Sequential Student ID
       let studentIdClean = await UserRepository.generateStudentId(fields.standard);
@@ -548,12 +694,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const signOut = async () => {
     setLoading(true);
     try {
+      localStorage.removeItem('dle:user_session');
+      setUser(null);
       if (!isFirebasePlaceholder) {
         await firebaseSignOut(auth);
       }
-      setUser(null);
-      localStorage.removeItem('dle:user_session');
-      toast.success("Logged out successfully");
+      toast.success("તમે સફળતાપૂર્વક લૉગઆઉટ થઈ ગયા છો.");
       navigate({ to: '/login' });
     } catch (err: any) {
       toast.error("Sign out issue");
@@ -588,7 +734,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setUser(profile);
           localStorage.setItem('dle:user_session', JSON.stringify(profile));
           toast.success(`આપનું સ્વાગત છે, ${profile.fullName}!`);
-          navigate({ to: '/dashboard' });
+          if (profile.role === 'admin' || profile.role === 'super_admin') {
+            navigate({ to: '/admin' });
+          } else {
+            navigate({ to: '/dashboard' });
+          }
           setLoading(false);
           return true;
         } else {
@@ -617,7 +767,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setUser(profile);
         localStorage.setItem('dle:user_session', JSON.stringify(profile));
         toast.success(`આપનું સ્વાગત છે, ${profile.fullName}!`);
-        navigate({ to: '/dashboard' });
+        if (profile.role === 'admin' || profile.role === 'super_admin') {
+          navigate({ to: '/admin' });
+        } else {
+          navigate({ to: '/dashboard' });
+        }
         setLoading(false);
         return true;
       } else {
@@ -645,10 +799,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
       }
-      import('../lib/fcm').then(({ registerFcmToken }) => {
-        registerFcmToken(user.uid).catch(err => {
-          console.warn("FCM registration deferred:", err);
-        });
+      registerFcmToken(user.uid).catch(err => {
+        console.warn("FCM registration deferred:", err);
       });
     }
   }, [user?.uid, firebaseUser]);

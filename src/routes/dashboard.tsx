@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Sparkles,
   Shield,
+  User,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { MotivationalQuote } from "@/components/MotivationalQuote";
@@ -31,7 +32,7 @@ import {
 } from "@/lib/mockData";
 import { useSettings } from "@/lib/settings";
 import { useAuth } from "@/components/FirebaseProvider";
-import { ExamRepository, ResultRepository, MistakeRepository, AnalyticsRepository, PointsRepository } from "@/lib/db";
+import { ExamRepository, ResultRepository, MistakeRepository, AnalyticsRepository, PointsRepository, SubjectRepository, ChapterRepository } from "@/lib/db";
 import { DailyExam, ExamResult, StudentMistake, RevisionAnalytics, StudentPoints } from "@/types";
 
 export const Route = createFileRoute("/dashboard")({
@@ -65,12 +66,20 @@ function Dashboard() {
 
   // Real-time states
   const [activeExam, setActiveExam] = useState<DailyExam | null>(null);
+  const [activeExamSubjectName, setActiveExamSubjectName] = useState("");
+  const [activeExamChapterName, setActiveExamChapterName] = useState("");
+  const [currentTime, setCurrentTime] = useState(new Date());
   const [results, setResults] = useState<ExamResult[]>([]);
   const [mistakes, setMistakes] = useState<StudentMistake[]>([]);
   const [analytics, setAnalytics] = useState<RevisionAnalytics | null>(null);
   const [points, setPoints] = useState<StudentPoints | null>(null);
   const [leaderboardPos, setLeaderboardPos] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const handle = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(handle);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -90,7 +99,49 @@ function Dashboard() {
         const activeExamsList = await ExamRepository.getActiveExams(user.standard || "10");
         if (!active) return;
         if (activeExamsList.length > 0) {
-          setActiveExam(activeExamsList[0]);
+          const firstExam = activeExamsList[0];
+          setActiveExam(firstExam);
+          try {
+            const allSubs = await SubjectRepository.getSubjects(user.standard || "10");
+            const mSub = allSubs.find(s => s.subjectId === firstExam.subjectId);
+            setActiveExamSubjectName(mSub ? mSub.subjectName : firstExam.subjectId);
+
+            const chaps = await ChapterRepository.getChapters(firstExam.subjectId);
+            
+            // Format chapter display name based on chapterNo if available
+            let chDisplay = "";
+            const examChapIds = firstExam.chapterIds || (firstExam.chapterId ? [firstExam.chapterId] : []);
+            if (examChapIds.length > 0) {
+              const matchedChaps = chaps.filter(c => examChapIds.includes(c.chapterId));
+              const chapNos = matchedChaps
+                .map(c => c.chapterNo)
+                .filter(no => no !== undefined && no !== null) as number[];
+              
+              if (chapNos.length > 0) {
+                const minNo = Math.min(...chapNos);
+                const maxNo = Math.max(...chapNos);
+                if (minNo === maxNo) {
+                  chDisplay = `પ્રકરણ ${minNo}`; // "Chapter 1" style
+                  const matchedName = matchedChaps.find(c => c.chapterNo === minNo)?.chapterName;
+                  if (matchedName) {
+                    chDisplay += ` — ${matchedName}`;
+                  }
+                } else {
+                  chDisplay = `પ્રકરણ ${minNo} થી ${maxNo}`; // "Chapter 1 to 4" range style
+                }
+              }
+            }
+
+            if (!chDisplay) {
+              const mChap = chaps.find(c => c.chapterId === firstExam.chapterId);
+              chDisplay = mChap ? mChap.chapterName : firstExam.chapterId;
+            }
+
+            setActiveExamChapterName(chDisplay);
+          } catch (_) {
+            setActiveExamSubjectName(firstExam.subjectId === "sub1" ? "વિજ્ઞાન" : firstExam.subjectId === "sub2" ? "ગણિત" : "સામાજિક વિજ્ઞાન");
+            setActiveExamChapterName(firstExam.chapterId === "ch1" ? "પ્રકરણ ૬ — જીવન પ્રક્રિયાઓ" : "પ્રકરણ ૧ — વાસ્તવિક સંખ્યાઓ");
+          }
         } else {
           setActiveExam(null);
         }
@@ -149,11 +200,24 @@ function Dashboard() {
     ? analytics.pendingRevisionCount 
     : mistakes.filter((m) => !m.mastered).length;
 
-  const streakVal = user?.streak || student.streak || 12;
+  const streakVal = user?.streak !== undefined ? user.streak : 0;
 
   // Daily statistics computation
   const todayDateStr = new Date().toISOString().split('T')[0];
-  const examsCompletedToday = results.filter((r) => r.submittedAt && r.submittedAt.startsWith(todayDateStr)).length;
+  const examsCompletedToday = results.filter((r) => {
+    if (!r.submittedAt) return false;
+    let dateStr = "";
+    if (typeof r.submittedAt === "string") {
+      dateStr = r.submittedAt;
+    } else if (typeof r.submittedAt.toDate === "function") {
+      dateStr = r.submittedAt.toDate().toISOString();
+    } else if (typeof r.submittedAt.seconds === "number") {
+      dateStr = new Date(r.submittedAt.seconds * 1000).toISOString();
+    } else {
+      dateStr = String(r.submittedAt);
+    }
+    return dateStr.startsWith(todayDateStr);
+  }).length;
   const totalExamsToday = activeExam ? 1 : 0;
 
   // Revision progress calculations
@@ -161,6 +225,151 @@ function Dashboard() {
   const revisionProgressPercent = totalQuestionsSum > 0
     ? Math.round((masteredQuestionsVal / totalQuestionsSum) * 100)
     : 100;
+
+  // Render dedicated workspace for Admin and Super Admin
+  if (user?.role === 'admin' || user?.role === 'super_admin') {
+    return (
+      <AppShell showBell>
+        <div className="px-5 pt-2 pb-6 space-y-5">
+          {/* Greeting */}
+          <div className="flex items-center justify-between animate-[fade-in_0.4s_ease-out]">
+            <div className="min-w-0 flex-1 mr-2">
+              <p className="text-sm text-muted-foreground font-gu">
+                {user.role === 'super_admin' ? "👑 મુખ્ય સંચાલક" : "🛠️ પેટા સંચાલક"}
+              </p>
+              <h1 className="text-2xl font-bold truncate">
+                {displayName}
+              </h1>
+              <p className="text-xs text-muted-foreground font-gu">
+                Daily Learning Exam • મુખ્ય વહીવટી અને નિયંત્રણ વિભાગ
+              </p>
+            </div>
+            <Link
+              to="/profile"
+              className="size-12 rounded-2xl bg-card border border-border flex items-center justify-center text-2xl shadow-card shrink-0"
+              aria-label="Profile"
+            >
+              {avatar}
+            </Link>
+          </div>
+
+          {/* Quick System Stats Cards */}
+          <div className="grid grid-cols-2 gap-3.5">
+            <div className="bg-card border border-border rounded-3xl p-4 shadow-card">
+              <div className="flex items-center gap-2 text-primary">
+                <Shield className="size-4" />
+                <span className="text-[10px] uppercase font-bold tracking-wider">સુધારા મોડ</span>
+              </div>
+              <p className="text-xl font-black mt-1 text-foreground font-gu">સક્રિય ✅</p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">૨૪/૭ સુરક્ષિત સર્વર</p>
+            </div>
+            <div className="bg-card border border-border rounded-3xl p-4 shadow-card">
+              <div className="flex items-center gap-2 text-success">
+                <Users className="size-4" />
+                <span className="text-[10px] uppercase font-bold tracking-wider">ધોરણ લક્ષ્યાંક</span>
+              </div>
+              <p className="text-xl font-black mt-1 text-foreground font-gu">૧ થી ૧૦</p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">સમગ્ર ગુજરાત માટે</p>
+            </div>
+          </div>
+
+          {/* Control Console Link */}
+          {user.role === 'super_admin' ? (
+            <div className="bg-gradient-to-r from-purple-500/15 via-indigo-500/10 to-pink-500/10 border border-purple-500/25 text-purple-900 dark:text-purple-100 rounded-3xl p-5 shadow-sm space-y-3.5 animate-[fade-in_0.4s_ease-out]">
+              <div className="flex items-center gap-3">
+                <div className="size-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-float">
+                  <Sparkles className="size-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-sm tracking-wide">મુખ્ય વહીવટી નિયંત્રણ કેન્દ્ર</h3>
+                  <p className="text-xs text-purple-700 dark:text-purple-300 font-gu">Super Admin Control Hub</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed font-gu">
+                અહીંથી તમે તમામ વિદ્યાર્થીઓને મંજૂર (Approve) કરી શકો છો, સક્રિય પરીક્ષાઓ બદલી શકો છો, જાહેરાતો પ્રકાશિત કરી શકો છો, અને ડેટાબેઝનું બૅકઅપ લઈ શકો છો.
+              </p>
+              <Link
+                to="/super-admin"
+                className="w-full h-11 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95"
+              >
+                <span>સુપર એડમિન પેનલ ખોલો</span>
+                <ChevronRight className="size-4" />
+              </Link>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-r from-teal-500/15 to-emerald-500/10 border border-teal-500/25 text-teal-900 dark:text-teal-100 rounded-3xl p-5 shadow-sm space-y-3.5 animate-[fade-in_0.4s_ease-out]">
+              <div className="flex items-center gap-3">
+                <div className="size-11 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-float">
+                  <Shield className="size-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-sm tracking-wide">સંચાલક સંચાલન વિભાગ</h3>
+                  <p className="text-xs text-teal-700 dark:text-teal-300 font-gu">Administrator Control Unit</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed font-gu">
+                અહીંથી તમે લાઈવ પરીક્ષાઓ, વિદ્યાર્થીઓની લિસ્ટ, અને પ્રશ્ન બેંકની સ્થિતિ જોઈ શકો છો.
+              </p>
+              <Link
+                to="/admin"
+                className="w-full h-11 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95"
+              >
+                <span>એડમિનિસ્ટ્રેટર પેનલ ખોલો</span>
+                <ChevronRight className="size-4" />
+              </Link>
+            </div>
+          )}
+
+          {/* Quick Shortcuts Grid */}
+          <div className="space-y-3">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider font-gu">
+              મુખ્ય શોર્ટકટ લિંક્સ
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              <Link
+                to="/profile"
+                className="bg-card border border-border rounded-2xl p-4 shadow-card hover:-translate-y-0.5 transition flex flex-col justify-between h-24"
+              >
+                <div className="size-9 rounded-2xl flex items-center justify-center bg-primary-soft text-primary">
+                  <User className="size-4" />
+                </div>
+                <div>
+                  <p className="font-bold text-xs font-gu leading-tight">મારી પ્રોફાઇલ</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">Profile Settings</p>
+                </div>
+              </Link>
+
+              {user.role === 'super_admin' && (
+                <Link
+                  to="/admin"
+                  className="bg-card border border-border rounded-2xl p-4 shadow-card hover:-translate-y-0.5 transition flex flex-col justify-between h-24"
+                >
+                  <div className="size-9 rounded-2xl flex items-center justify-center bg-teal-500/20 text-teal-600">
+                    <Shield className="size-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-xs font-gu leading-tight">સ્ટાન્ડર્ડ એડમિન</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">Standard Admin Console</p>
+                  </div>
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Guidelines info */}
+          <div className="p-4 bg-muted/60 border border-border rounded-3xl text-xs leading-relaxed text-muted-foreground font-gu space-y-2">
+            <p className="font-bold text-foreground">📌 સંચાલક માર્ગદર્શિકા:</p>
+            <p>
+              આ પ્લેટફોર્મ ગુજરાત બોર્ડના ધોરણ ૧ થી ૧૦ ના તમામ વિદ્યાર્થીઓ માટે ક્વિઝ અને દૈનિક પરીક્ષાઓના સુચારુ સંચાલન માટે બનાવવામાં આવેલું છે.
+            </p>
+            <p className="text-[10px]">
+              As an Administrator, you bypass standard student constraints and hold high-level control over student registrations and testing assets.
+            </p>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell showBell>
@@ -187,50 +396,6 @@ function Dashboard() {
             {avatar}
           </Link>
         </div>
-
-        {/* Admin control panel card */}
-        {(user?.role === 'admin' || user?.role === 'super_admin') && (
-          <div className="bg-gradient-to-r from-teal-500/10 to-emerald-500/10 border border-teal-500/20 text-teal-900 dark:text-teal-100 rounded-3xl p-4 shadow-sm flex items-center justify-between gap-3 animate-[fade-in_0.4s_ease-out]">
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-2xl bg-teal-500/20 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                <Shield className="size-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm tracking-wide">ADMINISTRATOR PANEL</h3>
-                <p className="text-[11px] text-muted-foreground font-gu">સંચાલક સંચાલન પેનલ ખોલો</p>
-              </div>
-            </div>
-            <Link
-              to="/admin"
-              className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition shadow-sm active:scale-95"
-            >
-              <span>Manage</span>
-              <ChevronRight className="size-4" />
-            </Link>
-          </div>
-        )}
-
-        {/* Super Admin control panel card */}
-        {user?.role === 'super_admin' && (
-          <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 text-purple-900 dark:text-purple-100 rounded-3xl p-4 shadow-sm flex items-center justify-between gap-3 animate-[fade-in_0.4s_ease-out]">
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-2xl bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 animate-pulse">
-                <Sparkles className="size-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-sm tracking-wide">SUPER ADMIN CONTROL</h3>
-                <p className="text-[11px] text-muted-foreground font-gu">મુખ્ય વહીવટી નિયંત્રણ કેન્દ્ર ખોલો</p>
-              </div>
-            </div>
-            <Link
-              to="/super-admin"
-              className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition shadow-sm active:scale-95"
-            >
-              <span>Control</span>
-              <ChevronRight className="size-4" />
-            </Link>
-          </div>
-        )}
 
         {/* PROGRESS HERO */}
         <div className="rounded-3xl gradient-hero text-primary-foreground p-6 shadow-float relative overflow-hidden animate-[scale-in_0.45s_ease-out]">
@@ -328,28 +493,60 @@ function Dashboard() {
           >
             <div className="absolute top-0 right-0 size-28 bg-primary/10 rounded-full blur-2xl" />
             <div className="relative">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-primary font-semibold font-gu">
-                <FileText className="size-3.5" /> આજની પરીક્ષા
-              </div>
-              <h2 className="mt-2 text-xl font-bold font-gu leading-tight">
-                {activeExam.subjectId === "sub1" ? "વિજ્ઞાન" : activeExam.subjectId === "sub2" ? "ગણિત" : "સામાજિક વિજ્ઞાન"}
-              </h2>
-              <p className="text-sm text-muted-foreground font-gu mt-0.5">
-                {activeExam.chapterId === "ch1" ? "પ્રકરણ ૬ — જીવન પ્રક્રિયાઓ" : "પ્રકરણ ૧ — વાસ્તવિક સંખ્યાઓ"}
-              </p>
+              {(() => {
+                const examStartTime = activeExam.startAt ? new Date(activeExam.startAt) : null;
+                const isUpcoming = examStartTime ? currentTime < examStartTime : false;
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-primary font-semibold font-gu">
+                        <FileText className="size-3.5" /> {isUpcoming ? "આયોજિત પરીક્ષા (Scheduled)" : "આજની પરીક્ષા"}
+                      </div>
+                      {isUpcoming && (
+                        <span className="px-2 py-0.5 text-[8px] bg-amber-500 text-white rounded-full font-bold uppercase animate-pulse">
+                          Upcoming
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="mt-2 text-xl font-bold font-gu leading-tight">
+                      {activeExamSubjectName || activeExam.subjectId}
+                    </h2>
+                    <p className="text-sm text-muted-foreground font-gu mt-0.5">
+                      {activeExamChapterName || activeExam.chapterId}
+                    </p>
 
-              <div className="mt-3 flex items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 font-gu">
-                  <Calendar className="size-3" /> {activeExam.examDate}
-                </span>
-                <span className="inline-flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 font-gu">
-                  <Clock className="size-3" /> {activeExam.duration} min
-                </span>
-              </div>
+                    <div className="mt-3 flex items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 font-gu">
+                        <Calendar className="size-3" /> {activeExam.examDate}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 bg-muted rounded-full px-2.5 py-1 font-gu">
+                        <Clock className="size-3" /> {activeExam.duration} min
+                      </span>
+                    </div>
 
-              <div className="mt-4 h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold font-gu text-sm flex items-center justify-center gap-2 shadow-float">
-                પરીક્ષા શરૂ કરો <ArrowRight className="size-4" />
-              </div>
+                    {isUpcoming ? (
+                      <div className="mt-4 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-semibold font-gu text-xs flex items-center justify-center gap-2 shadow-sm animate-pulse">
+                        ⌛ શરૂ થવા આડેનો સમય: {(() => {
+                          const diff = examStartTime!.getTime() - currentTime.getTime();
+                          if (diff <= 0) return "શરૂ કરો";
+                          const h = Math.floor(diff / (1000 * 60 * 60));
+                          const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                          const s = Math.floor((diff % (1000 * 60)) / 1000);
+                          const parts = [];
+                          if (h > 0) parts.push(`${h} કલાક`);
+                          if (m > 0 || h > 0) parts.push(`${m} મિનિટ`);
+                          parts.push(`${s} સેકન્ડ`);
+                          return parts.join(" ");
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="mt-4 h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold font-gu text-sm flex items-center justify-center gap-2 shadow-float">
+                        પરીક્ષા શરૂ કરો <ArrowRight className="size-4" />
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </Link>
         ) : (
@@ -457,7 +654,7 @@ function Dashboard() {
           <div className="grid grid-cols-2 gap-3">
             <SummaryStat labelGu="કુલ પરીક્ષા" value={totalExamsVal} />
             <SummaryStat labelGu="સરેરાશ %" value={`${avgPercentageVal}%`} />
-            <SummaryStat labelGu="હાલનો ક્રમ" value={`#${student.rank}`} />
+            <SummaryStat labelGu="હાલનો ક્રમ" value={leaderboardPos ? `#${leaderboardPos.rank}` : "#1"} />
             <SummaryStat labelGu="પુનરાવર્તન" value={masteredQuestionsVal} />
           </div>
         </div>
