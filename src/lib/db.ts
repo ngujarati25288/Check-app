@@ -298,6 +298,9 @@ export async function bootstrapDefaultFirestoreData(): Promise<void> {
 export const UserRepository = {
   async getProfile(uid: string): Promise<DBUser | null> {
     if (isFirebasePlaceholder) {
+      const list = getLocalStorageKey<DBUser[]>('users', []);
+      const found = list.find((u: DBUser) => u.uid === uid);
+      if (found) return found;
       const u = getLocalStorageKey<DBUser | null>('user', null);
       if (u && u.uid === uid) return u;
       return null;
@@ -858,8 +861,10 @@ export const QuestionRepository = {
 };
 
 export const ExamRepository = {
-  async getActiveExams(standard: string): Promise<DailyExam[]> {
+  async getActiveExams(standard: string, medium?: string): Promise<DailyExam[]> {
     const isPlaceholder = isFirebasePlaceholder;
+    const resolvedMedium = (medium || "Gujarati").toLowerCase();
+
     if (isPlaceholder) {
       const list = getLocalStorageKey<DailyExam[]>('daily_exams', []);
       const now = Date.now();
@@ -868,6 +873,9 @@ export const ExamRepository = {
 
         const examStd = e.standard || "10";
         if (examStd !== standard) return false;
+
+        const examMed = (e.medium || "Gujarati").toLowerCase();
+        if (examMed !== resolvedMedium) return false;
 
         if (e.status === "closed" || e.status === "archived" || e.status === "cancelled") {
           return false;
@@ -897,6 +905,9 @@ export const ExamRepository = {
         const examStd = e.standard || "10";
         if (examStd !== standard) return;
 
+        const examMed = (e.medium || "Gujarati").toLowerCase();
+        if (examMed !== resolvedMedium) return;
+
         if (e.status === "closed" || e.status === "archived" || e.status === "cancelled") {
           return;
         }
@@ -923,6 +934,9 @@ export const ExamRepository = {
 
         const examStd = e.standard || "10";
         if (examStd !== standard) return false;
+
+        const examMed = (e.medium || "Gujarati").toLowerCase();
+        if (examMed !== resolvedMedium) return false;
 
         if (e.status === "closed" || e.status === "archived" || e.status === "cancelled") {
           return false;
@@ -1402,12 +1416,9 @@ export const AnalyticsRepository = {
       }
     }
 
-    // fallback simulation data if the user has no exams registered yet
-    if (studentsRaw.length === 0) {
-      studentsRaw = [
-        { uid: "stud_superadmin", studentId: "8511125288", passwordHash: hashSync("Nayan@25288", 10), fullName: "સુપર એડમિનિસ્ટ્રેટર (Super Admin)", mobile: "8511125288", school: "મુખ્ય વહીવટી મથક", standard: "10", division: "A", village: "અમદાવાદ", role: "super_admin", status: "Approved", streak: 0, createdAt: new Date().toISOString() }
-      ];
-    }
+    // Determine if we are in empty sandbox mode to activate simulation data
+    const isDemoMode = false;
+
     if (resultsRaw.length === 0) {
       resultsRaw = [];
     }
@@ -1424,7 +1435,7 @@ export const AnalyticsRepository = {
       
       const totalExams = sResults.length;
       const sumPercentage = sResults.reduce((acc, r) => acc + (r.percentage || 0), 0);
-      const averageScore = totalExams > 0 ? Math.round(sumPercentage / totalExams) : 70; // baseline default
+      const averageScore = totalExams > 0 ? Math.round(sumPercentage / totalExams) : 0;
       
       // subjects counts
       const subjectScores: Record<string, { sum: number, count: number }> = {};
@@ -1433,8 +1444,8 @@ export const AnalyticsRepository = {
         subjectScores[r.subject].sum += r.percentage;
         subjectScores[r.subject].count += 1;
       });
-      let bestSubject = "Science";
-      let weakestSubject = "Mathematics";
+      let bestSubject = "-";
+      let weakestSubject = "-";
       let maxScore = -1;
       let minScore = 101;
       Object.keys(subjectScores).forEach(sub => {
@@ -1445,7 +1456,7 @@ export const AnalyticsRepository = {
 
       const totalRevisions = sMistakes.reduce((acc, m) => acc + (m.revisionCount || 0), 0);
       const totalCorrectRevisions = sMistakes.reduce((acc, m) => acc + (m.correctRevisionCount || 0), 0);
-      const revisionAccuracy = totalRevisions > 0 ? Math.round((totalCorrectRevisions / totalRevisions) * 100) : 80;
+      const revisionAccuracy = totalRevisions > 0 ? Math.round((totalCorrectRevisions / totalRevisions) * 100) : 0;
       const masteredQuestions = sMistakes.filter(m => m.mastered).length;
       const pendingRevisions = sMistakes.filter(m => !m.mastered).length;
       
@@ -1453,17 +1464,19 @@ export const AnalyticsRepository = {
       const rankTrend = currentRank < 3 ? "up" : currentRank > 5 ? "down" : "stable";
       const learningStreak = stud.streak || 0;
       
-      // Index score 0-100 built from metrics
-      const performanceScore = Math.min(100, Math.max(0, Math.round(
+      // Index score 0-100 built from metrics (0 if no exams taken)
+      const performanceScore = totalExams > 0 ? Math.min(100, Math.max(0, Math.round(
         (averageScore * 0.5) + (revisionAccuracy * 0.2) + (Math.min(10, learningStreak) * 2) + ((masteredQuestions / Math.max(1, masteredQuestions + pendingRevisions)) * 10)
-      )));
+      ))) : 0;
 
       // Student falling rank detection & risk flags
       let riskLevel: "low" | "medium" | "high" = "low";
-      if (averageScore < 50 || (pendingRevisions > 8 && revisionAccuracy < 50)) {
-        riskLevel = "high";
-      } else if (averageScore < 70 || pendingRevisions > 4) {
-        riskLevel = "medium";
+      if (totalExams > 0) {
+        if (averageScore < 50 || (pendingRevisions > 8 && revisionAccuracy < 50)) {
+          riskLevel = "high";
+        } else if (averageScore < 70 || pendingRevisions > 4) {
+          riskLevel = "medium";
+        }
       }
 
       return {
@@ -1495,8 +1508,8 @@ export const AnalyticsRepository = {
     const subjectAnalytics: SubjectAnalytics[] = subjectList.map(subName => {
       const sResults = resultsRaw.filter(r => r.subject?.toLowerCase() === subName.toLowerCase() || r.examId === subName);
       const totalSubExams = sResults.length;
-      const avgPercentage = totalSubExams > 0 ? Math.round(sResults.reduce((acc, r) => acc + r.percentage, 0) / totalSubExams) : 72;
-      const masteryCount = studentAnalytics.reduce((acc, st) => acc + (st.bestSubject === subName ? st.masteredQuestions : 2), 0);
+      const avgPercentage = totalSubExams > 0 ? Math.round(sResults.reduce((acc, r) => acc + r.percentage, 0) / totalSubExams) : 0;
+      const masteryCount = studentAnalytics.reduce((acc, st) => acc + (st.bestSubject === subName ? st.masteredQuestions : 0), 0);
       
       return {
         id: subName.toLowerCase(),
@@ -1504,102 +1517,142 @@ export const AnalyticsRepository = {
         subjectName: subName,
         standard: "10",
         averageScore: avgPercentage,
-        mostDifficultChapter: "chap_1",
-        mostDifficultChapterName: "રાસાયણિક સમીકરણો",
-        mostFailedQuestionsCount: 4,
-        revisionSuccessRate: avgPercentage > 75 ? 88 : 74,
-        masteryRate: masteryCount > 20 ? 82 : 45,
-        studentParticipationPercent: totalSubExams > 0 ? 95 : 80,
+        mostDifficultChapter: "none",
+        mostDifficultChapterName: "કોઈ નોંધપાત્ર વિગતો નથી",
+        mostFailedQuestionsCount: 0,
+        revisionSuccessRate: avgPercentage > 0 ? (avgPercentage > 75 ? 85 : 70) : 0,
+        masteryRate: totalSubExams > 0 ? Math.min(100, Math.round((masteryCount / Math.max(1, studentAnalytics.length)) * 10)) : 0,
+        studentParticipationPercent: totalSubExams > 0 ? 95 : 0,
         calculatedAt
       };
     });
 
-    // 4. Generate CHAPTER ANALYTICS
-    const chapterAnalytics: ChapterAnalytics[] = [
-      {
-        id: "chap_sci_1",
-        chapterId: "chap_sci_1",
-        chapterName: "પ્રકરણ ૧: રાસાયણિક પ્રક્રિયાઓ",
-        subjectId: "subject_sci",
-        subjectName: "Science",
-        standard: "10",
-        totalAttempts: resultsRaw.length * 2,
-        averageMarks: 76,
-        difficultyScore: 35,
-        revisionSuccessPercent: 88,
-        masteryPercent: 70,
-        mostCommonMistakes: ["ઑક્સિડેશન અવસ્થા", "રાસાયણિક પ્રક્રિયા સંતુલન"],
-        riskLevel: "low",
-        calculatedAt
-      },
-      {
-        id: "chap_math_1",
-        chapterId: "chap_math_1",
-        chapterName: "પ્રકરણ ២: વાસ્તવિક સંખ્યાઓ",
-        subjectId: "subject_math",
-        subjectName: "Mathematics",
-        standard: "10",
-        totalAttempts: resultsRaw.length,
-        averageMarks: 48,
-        difficultyScore: 82, // Hard chapter
-        revisionSuccessPercent: 52,
-        masteryPercent: 32,
-        mostCommonMistakes: ["અસંમેય સાબિતી", "યુક્લિડ ભાગાકાર"],
-        riskLevel: "high",
-        calculatedAt
-      }
-    ];
+    // 4. Generate CHAPTER ANALYTICS Dynamically from chaptersRaw
+    const chapterAnalytics: ChapterAnalytics[] = chaptersRaw.map(chap => {
+      const cResults = resultsRaw.filter(r => 
+        r.chapter === chap.chapterId || 
+        r.chapter === chap.chapterName || 
+        (r.examId && r.examId.includes(chap.chapterId))
+      );
+      
+      const totalAttempts = cResults.length;
+      const totalPercentage = cResults.reduce((acc, r) => acc + (r.percentage || 0), 0);
+      const averageMarks = totalAttempts > 0 ? Math.round(totalPercentage / totalAttempts) : 0;
+      const cMistakes = mistakesRaw.filter(m => m.chapterId === chap.chapterId);
+      const totalMistakes = cMistakes.length;
+      
+      const difficultyScore = totalAttempts > 0 
+        ? Math.min(100, Math.max(0, Math.round(100 - averageMarks))) 
+        : 0;
 
-    // 5. Generate QUESTION ANALYTICS
-    const questionAnalytics: QuestionAnalytics[] = [
-      {
-        id: "q_demo_1",
-        questionId: "q_demo_1",
-        questionText: "લોખંડનું કટાાવું એ કઈ પ્રક્રિયાનું ઉદાહરણ છે?",
-        subjectName: "Science",
-        chapterName: "પ્રકરણ ૧",
-        timesAsked: 140,
-        correctPercent: 78,
-        wrongPercent: 22,
-        skipPercent: 0,
-        difficultyScore: 22,
-        revisionSuccessPercent: 90,
-        category: "improved",
-        calculatedAt
-      },
-      {
-        id: "q_demo_2",
-        questionId: "q_demo_2",
-        questionText: "સૌથી નાની અવિભાજ્ય સંખ્યા કઈ છે?",
-        subjectName: "Mathematics",
-        chapterName: "પ્રકરણ ૨",
-        timesAsked: 280,
-        correctPercent: 41,
-        wrongPercent: 54,
-        skipPercent: 5,
-        difficultyScore: 59,
-        revisionSuccessPercent: 44,
-        category: "confusing",
-        calculatedAt
-      }
-    ];
+      const totalRevisions = cMistakes.reduce((acc, m) => acc + (m.revisionCount || 0), 0);
+      const correctRevisions = cMistakes.reduce((acc, m) => acc + (m.correctRevisionCount || 0), 0);
+      const revisionSuccessPercent = totalRevisions > 0 
+        ? Math.round((correctRevisions / totalRevisions) * 100)
+        : 0;
 
-    // 6. Generate SCHOOL ANALYTICS
-    const schoolsList = ["સરસ્વતી વિદ્યાલય", "જ્ઞાન જ્યોત વિદ્યાલય", "ભાવના હાઈસ્કૂલ"];
-    const schoolAnalytics: SchoolAnalytics[] = schoolsList.map((sch, i) => {
-      const schStudents = studentAnalytics.filter(st => st.school === sch);
-      const studentCount = schStudents.length || 10;
-      const sumScores = schStudents.reduce((acc, st) => acc + st.averageScore, 0);
-      const avgScore = schStudents.length > 0 ? Math.round(sumScores / schStudents.length) : (75 - i * 5);
-      const completion = 100 - (i * 12);
-      const totalAch = schStudents.reduce((acc, st) => acc + st.achievementCount, 0) || (15 - i * 4);
+      const masteredCount = cMistakes.filter(m => m.mastered).length;
+      const masteryPercent = totalMistakes > 0
+        ? Math.round((masteredCount / totalMistakes) * 100)
+        : 0;
+
+      const commonMistakes: string[] = [];
+      const distinctQuestionsInMistakes = Array.from(new Set(cMistakes.map(m => m.questionId)));
+      distinctQuestionsInMistakes.slice(0, 2).forEach(qId => {
+        const foundQ = questionsRaw.find(q => q.questionId === qId);
+        if (foundQ) {
+          commonMistakes.push(foundQ.question);
+        }
+      });
+      if (commonMistakes.length === 0) {
+        commonMistakes.push("કોઈ નોંધપાત્ર ભૂલો નથી");
+      }
+
+      const riskLevel = averageMarks === 0 ? "low" : (averageMarks < 55 ? "high" : averageMarks < 72 ? "medium" : "low") as "low" | "medium" | "high";
+      const foundSub = subjectsRaw.find(s => s.subjectId === chap.subjectId);
+      const subjectName = foundSub ? foundSub.subjectName : (chap.subjectId || "Science");
 
       return {
-        id: `school_${i}`,
+        id: chap.chapterId,
+        chapterId: chap.chapterId,
+        chapterName: chap.chapterName,
+        subjectId: chap.subjectId,
+        subjectName,
+        standard: chap.standard || "10",
+        totalAttempts,
+        averageMarks,
+        difficultyScore,
+        revisionSuccessPercent,
+        masteryPercent,
+        mostCommonMistakes: commonMistakes,
+        riskLevel,
+        calculatedAt
+      };
+    });
+
+    // 5. Generate QUESTION ANALYTICS Dynamically from questionsRaw
+    const questionAnalytics: QuestionAnalytics[] = questionsRaw.map(q => {
+      const qMistakes = mistakesRaw.filter(m => m.questionId === q.questionId);
+      const wrongCount = qMistakes.length;
+      
+      const relatedResultsCount = resultsRaw.filter(r => 
+        r.chapter === q.chapterId || 
+        (r.examId && r.examId.includes(q.chapterId))
+      ).length;
+      
+      const timesAsked = Math.max(wrongCount, relatedResultsCount);
+      const wrongPercent = timesAsked > 0 ? Math.round((wrongCount / timesAsked) * 100) : 0;
+      const correctPercent = 100 - wrongPercent;
+      const difficultyScore = wrongPercent;
+
+      const totalRevisions = qMistakes.reduce((acc, m) => acc + (m.revisionCount || 0), 0);
+      const correctRevisions = qMistakes.reduce((acc, m) => acc + (m.correctRevisionCount || 0), 0);
+      const revisionSuccessPercent = totalRevisions > 0 ? Math.round((correctRevisions / totalRevisions) * 100) : 0;
+      const category = difficultyScore > 60 ? "confusing" : difficultyScore < 30 ? "improved" : "normal";
+
+      const foundChap = chaptersRaw.find(c => c.chapterId === q.chapterId);
+      const chapterName = foundChap ? foundChap.chapterName : "પ્રકરણ";
+      const foundSub = subjectsRaw.find(s => s.subjectId === q.subjectId);
+      const subjectName = foundSub ? foundSub.subjectName : "વિષય";
+
+      return {
+        id: q.questionId,
+        questionId: q.questionId,
+        questionText: q.question,
+        subjectName,
+        chapterName,
+        timesAsked,
+        correctPercent,
+        wrongPercent,
+        skipPercent: 0,
+        difficultyScore,
+        revisionSuccessPercent,
+        category: category as any,
+        calculatedAt
+      };
+    });
+
+    // 6. Generate SCHOOL ANALYTICS Dynamically from studentsRaw
+    const schoolsList = Array.from(new Set(studentsRaw.map(s => s.school).filter(Boolean))) as string[];
+    const schoolAnalytics: SchoolAnalytics[] = schoolsList.map((sch, i) => {
+      const schStudents = studentAnalytics.filter(st => st.school === sch);
+      const studentCount = schStudents.length;
+      const sumScores = schStudents.reduce((acc, st) => acc + st.averageScore, 0);
+      const avgScore = studentCount > 0 ? Math.round(sumScores / studentCount) : 0;
+      
+      const masteredTotal = schStudents.reduce((acc, st) => acc + st.masteredQuestions, 0);
+      const pendingTotal = schStudents.reduce((acc, st) => acc + st.pendingRevisions, 0);
+      const completion = (masteredTotal + pendingTotal) > 0 
+        ? Math.round((masteredTotal / (masteredTotal + pendingTotal)) * 100)
+        : 0;
+      const totalAch = schStudents.reduce((acc, st) => acc + st.achievementCount, 0);
+
+      return {
+        id: `school_${sch.replace(/\s+/g, '_')}`,
         schoolName: sch,
         totalStudents: studentCount,
         averageScore: avgScore,
-        participationPercent: 90 + i * 2,
+        participationPercent: studentCount > 0 ? 100 : 0,
         revisionCompletionPercent: completion,
         achievementCount: totalAch,
         leaderboardPosition: i + 1,
@@ -1607,88 +1660,148 @@ export const AnalyticsRepository = {
       };
     });
 
-    // 7. Generate VILLAGE ANALYTICS
-    const villageList = ["વડતાલ", "આણંદ", "ગોધરા", "મહુવા"];
+    // 7. Generate VILLAGE ANALYTICS Dynamically from studentsRaw
+    const villageList = Array.from(new Set(studentsRaw.map(s => s.village).filter(Boolean))) as string[];
     const villageAnalytics: VillageAnalytics[] = villageList.map((vil, i) => {
       const vilStudents = studentAnalytics.filter(st => st.village === vil);
-      const studentCount = vilStudents.length || 8;
+      const studentCount = vilStudents.length;
       const sumScores = vilStudents.reduce((acc, st) => acc + st.averageScore, 0);
-      const avgScore = vilStudents.length > 0 ? Math.round(sumScores / vilStudents.length) : (78 - i * i);
-      const mastery = 55 + i * 8;
+      const avgScore = studentCount > 0 ? Math.round(sumScores / studentCount) : 0;
+      
+      const masteredTotal = vilStudents.reduce((acc, st) => acc + st.masteredQuestions, 0);
+      const pendingTotal = vilStudents.reduce((acc, st) => acc + st.pendingRevisions, 0);
+      const mastery = (masteredTotal + pendingTotal) > 0 
+        ? Math.round((masteredTotal / (masteredTotal + pendingTotal)) * 100)
+        : 0;
 
       return {
-        id: `village_${i}`,
+        id: `village_${vil.replace(/\s+/g, '_')}`,
         villageName: vil,
         totalStudents: studentCount,
         averagePerformance: avgScore,
-        participationRate: 92 - i * 3,
+        participationRate: studentCount > 0 ? 100 : 0,
         masteryRate: mastery,
-        topStudents: vilStudents.map(st => ({ studentId: st.studentId, studentName: st.studentName, score: st.averageScore })),
+        topStudents: vilStudents.slice(0, 3).map(st => ({ 
+          studentId: st.studentId, 
+          studentName: st.studentName, 
+          score: st.averageScore 
+        })),
         villageRank: i + 1,
         calculatedAt
       };
     });
 
-    // 8. Generate STANDARD ANALYTICS
-    const standardAnalytics: StandardAnalytics[] = [
-      {
-        id: "10",
-        standard: "10",
-        averageMarks: 73,
-        subjectPerformance: [
-          { subjectName: "Science", avgScore: 78 },
-          { subjectName: "Mathematics", avgScore: 61 },
-          { subjectName: "English", avgScore: 75 }
-        ],
-        revisionSuccessRate: 81,
+    // 8. Generate STANDARD ANALYTICS Dynamically from studentsRaw
+    const standardsList = Array.from(new Set(studentsRaw.map(s => s.standard).filter(Boolean))) as string[];
+    const standardAnalytics: StandardAnalytics[] = standardsList.map(std => {
+      const stdStudents = studentAnalytics.filter(st => st.standard === std);
+      const studentCount = stdStudents.length;
+      const sumScores = stdStudents.reduce((acc, st) => acc + st.averageScore, 0);
+      const averageMarks = studentCount > 0 ? Math.round(sumScores / studentCount) : 0;
+
+      const subjectMetrics: Record<string, { sum: number, count: number }> = {};
+      resultsRaw.forEach(r => {
+        const stud = studentsRaw.find(s => s.uid === r.studentId);
+        if (stud && stud.standard === std) {
+          if (!subjectMetrics[r.subject]) {
+            subjectMetrics[r.subject] = { sum: 0, count: 0 };
+          }
+          subjectMetrics[r.subject].sum += r.percentage;
+          subjectMetrics[r.subject].count += 1;
+        }
+      });
+      const subjectPerformance = Object.keys(subjectMetrics).map(subName => ({
+        subjectName: subName,
+        avgScore: Math.round(subjectMetrics[subName].sum / subjectMetrics[subName].count)
+      }));
+      if (subjectPerformance.length === 0) {
+        subjectPerformance.push({ subjectName: "Science", avgScore: averageMarks });
+      }
+
+      const masteredTotal = stdStudents.reduce((acc, st) => acc + st.masteredQuestions, 0);
+      const pendingTotal = stdStudents.reduce((acc, st) => acc + st.pendingRevisions, 0);
+      const revisionSuccessRate = (masteredTotal + pendingTotal) > 0 
+        ? Math.round((masteredTotal / (masteredTotal + pendingTotal)) * 100)
+        : 0;
+
+      const goldCount = stdStudents.filter(st => st.averageScore >= 90).length;
+      const silverCount = stdStudents.filter(st => st.averageScore >= 80 && st.averageScore < 90).length;
+      const bronzeCount = stdStudents.filter(st => st.averageScore >= 70 && st.averageScore < 80).length;
+
+      return {
+        id: std,
+        standard: std,
+        averageMarks,
+        subjectPerformance,
+        revisionSuccessRate,
         achievementDistribution: [
-          { badgeName: "Gold Star", count: 12 },
-          { badgeName: "Silver Explorer", count: 28 },
-          { badgeName: "Bronze Scholar", count: 45 }
+          { badgeName: "Gold Star", count: goldCount },
+          { badgeName: "Silver Explorer", count: silverCount },
+          { badgeName: "Bronze Scholar", count: bronzeCount }
         ],
         leaderboardTrends: [
-          { date: "Day 1", highestScore: 90 },
-          { date: "Day 3", highestScore: 95 },
-          { date: "Day 5", highestScore: 100 }
+          { date: "આજે", highestScore: stdStudents.length > 0 ? Math.max(...stdStudents.map(st => st.averageScore)) : 0 }
         ],
         calculatedAt
-      }
-    ];
+      };
+    });
 
-    // 9. Generate LEARNING TRENDS
+    // 9. Generate LEARNING TRENDS Dynamically from submission dates (defaults to 0 for precision)
     const trendsList7 = Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
+      const dateStringStr = d.toISOString().split('T')[0];
       const formatted = d.toLocaleDateString('gu-IN', { month: 'short', day: 'numeric' });
+      
+      const dayResults = resultsRaw.filter(r => {
+        const rDate = r.submittedAt ? (typeof r.submittedAt.toDate === "function" ? r.submittedAt.toDate().toISOString() : r.submittedAt.toString()) : r.examDate;
+        return rDate && rDate.startsWith(dateStringStr);
+      });
+      
+      const scoreTrend = dayResults.length > 0 
+        ? Math.round(dayResults.reduce((acc, r) => acc + r.percentage, 0) / dayResults.length)
+        : 0;
+
       return {
         date: formatted,
-        scoreTrend: 65 + i * 3 + Math.floor(Math.random() * 6),
-        revisionTrend: 12 + i * 5,
-        participationTrend: 15 + i * 4,
-        achievementTrend: 1 + Math.floor(i / 2)
+        scoreTrend,
+        revisionTrend: dayResults.length * 3,
+        participationTrend: dayResults.length,
+        achievementTrend: dayResults.filter(r => r.percentage >= 90).length
       };
     });
 
     const trendsList30 = Array.from({ length: 30 }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (29 - i));
+      const dateStringStr = d.toISOString().split('T')[0];
       const formatted = d.toLocaleDateString('gu-IN', { month: 'short', day: 'numeric' });
+      
+      const dayResults = resultsRaw.filter(r => {
+        const rDate = r.submittedAt ? (typeof r.submittedAt.toDate === "function" ? r.submittedAt.toDate().toISOString() : r.submittedAt.toString()) : r.examDate;
+        return rDate && rDate.startsWith(dateStringStr);
+      });
+      
+      const scoreTrend = dayResults.length > 0 
+        ? Math.round(dayResults.reduce((acc, r) => acc + r.percentage, 0) / dayResults.length)
+        : 0;
+
       return {
         date: formatted,
-        scoreTrend: 60 + Math.floor(i * 0.8) + Math.floor(Math.random() * 10),
-        revisionTrend: 10 + i * 2,
-        participationTrend: 10 + i * 3,
-        achievementTrend: 1 + Math.floor(i / 4)
+        scoreTrend,
+        revisionTrend: dayResults.length * 3,
+        participationTrend: dayResults.length,
+        achievementTrend: dayResults.filter(r => r.percentage >= 90).length
       };
     });
 
     const trendsList90 = Array.from({ length: 12 }, (_, i) => {
       return {
         date: `Wk ${i + 1}`,
-        scoreTrend: 55 + i * 3,
-        revisionTrend: 50 + i * 15,
-        participationTrend: 40 + i * 12,
-        achievementTrend: 4 + i * 2
+        scoreTrend: i < 6 ? 0 : 0,
+        revisionTrend: 0,
+        participationTrend: 0,
+        achievementTrend: 0
       };
     });
 
@@ -1700,18 +1813,45 @@ export const AnalyticsRepository = {
       calculatedAt
     };
 
-    // 10. Generate AUTOMATED PERIODIC REPORT
+    // 10. Generate AUTOMATED PERIODIC REPORT Dynamically
+    let topSchool = "-";
+    let topSchAvg = -1;
+    schoolAnalytics.forEach(sch => {
+      if (sch.averageScore > topSchAvg && sch.averageScore > 0) {
+        topSchAvg = sch.averageScore;
+        topSchool = sch.schoolName;
+      }
+    });
+
+    let topVil = "-";
+    let topVilAvg = -1;
+    villageAnalytics.forEach(vil => {
+      if (vil.averagePerformance > topVilAvg && vil.averagePerformance > 0) {
+        topVilAvg = vil.averagePerformance;
+        topVil = vil.villageName;
+      }
+    });
+
+    const totalActiveCount = studentsRaw.filter(s => resultsRaw.some(r => r.studentId === s.uid)).length;
+    const globalAvg = resultsRaw.length > 0
+      ? Math.round(resultsRaw.reduce((acc, r) => acc + r.percentage, 0) / resultsRaw.length)
+      : 0;
+
+    const summaryText = isDemoMode
+      ? `આ ડેટા ડેમોસ્ટ્રેશન મોડમાં છે. કાર્તિક અને ખુશી સહિત કુલ 6 વિદ્યાર્થીઓની શૈક્ષણિક વિગતો સિમ્યુલેટ કરવામાં આવી છે. સરેરાશ સ્કોર 74% દર્શાવે છે.`
+      : `શિક્ષણ મોનીટરીંગ સત્ર મુજબ કુલ ${studentsRaw.length} પૈકીના ${totalActiveCount} બાળકો પરીક્ષામાં સક્રિય છે. મેળવેલ કુલ સરેરાશ ગુણ ${globalAvg}% રહ્યા છે. સૌથી સારું પ્રદર્શન સ્કૂલ ${topSchool === "-" ? "નથી" : topSchool} તેમજ ગામ ${topVil === "-" ? "નથી" : topVil} હેઠળ નોંધાયું છે.`;
+
     const report: AnalyticsReport = {
       id: `report_${Date.now()}`,
       reportType: "weekly",
-      title: "વિકલી શૈક્ષણિક પ્રગતિ રીપોર્ટ - Daily Learning Exam",
-      summary: "આ અઠવાડિયે શાળાકીય સ્તરે ગણિત અને વિજ્ઞાન વિષયોમાં ખૂબ સારું પરીક્ષણ નોંધાયું છે. કુલ ૨૮% વધુ પુનરાવર્તનો પૂર્ણ કરવામાં આવ્યા છે. ગણિતના અસંમેય સંબંધો પ્રકરણમાં હજી વધુ ચકાસણીની જરૂરિયાત છે.",
-      totalStudentsActive: studentsRaw.length || 4,
-      globalAvgScore: 72,
-      topPerformingSchool: "સરસ્વતી વિદ્યાલય",
-      topPerformingVillage: "વડતાલ",
-      weakestSubject: "Mathematics",
-      highRiskChaptersCount: 1,
+      title: isDemoMode ? "વિકલી શૈક્ષણિક પ્રદર્શન (મોક ડેમો ડેટા)" : "સાપ્તાહિક પ્રદર્શન રીપોર્ટ (વાસ્તવિક લાઈવ)",
+      summary: summaryText,
+      totalStudentsActive: isDemoMode ? 6 : totalActiveCount,
+      globalAvgScore: isDemoMode ? 74 : globalAvg,
+      topPerformingSchool: isDemoMode ? "સરકારી પ્રાથમિક શાળા, વાસણા" : topSchool,
+      topPerformingVillage: isDemoMode ? "વાસણા" : topVil,
+      weakestSubject: isDemoMode ? "ગણિત અને વિજ્ઞાન" : (subjectAnalytics.length > 0 ? [...subjectAnalytics].sort((a,b) => (a.averageScore || 0) - (b.averageScore || 0))[0]?.subjectName : "-"),
+      highRiskChaptersCount: chapterAnalytics.filter(c => c.riskLevel === "high").length,
       createdAt: calculatedAt,
       jsonPayload: JSON.stringify({ studentAnalytics, schoolAnalytics, villageAnalytics })
     };
@@ -1732,6 +1872,32 @@ export const AnalyticsRepository = {
       setLocalStorageKey('analytics_reports', rpts);
     } else {
       try {
+        // Purge existing legacy/mock/orphaned documents in analytics collections to ensure only active real-time data is served
+        const collectionsToPurge = [
+          'student_analytics',
+          'subject_analytics',
+          'chapter_analytics',
+          'question_analytics',
+          'school_analytics',
+          'village_analytics',
+          'standard_analytics',
+          'learning_trends',
+          'analytics_reports'
+        ];
+
+        for (const collName of collectionsToPurge) {
+          try {
+            const snap = await getDocs(collection(db, collName));
+            const deletePromises: Promise<void>[] = [];
+            snap.forEach(d => {
+              deletePromises.push(deleteDoc(doc(db, collName, d.id)));
+            });
+            await Promise.all(deletePromises);
+          } catch (purgeErr) {
+            console.error(`Error purging collection ${collName}:`, purgeErr);
+          }
+        }
+
         // Concurrent parallel writes to Firebase for fast 1D latency
         const promises: Promise<void>[] = [];
         for (const sa of studentAnalytics) {
@@ -2043,26 +2209,28 @@ export const PointsRepository = {
     }
 
     // Map filters using actual users DB profile to guarantee up to date standard / school / village criteria
-    const compiled = compiledList.map(item => {
-      const uProfile = usersList.find(u => u.uid === item.studentId);
-      const userBadges = achievementsMap[item.studentId] || [];
-      return {
-        studentId: item.studentId,
-        name: item.studentName || uProfile?.fullName || "વિદ્યાર્થી",
-        standard: uProfile?.standard || item.standard,
-        school: uProfile?.school || item.school,
-        village: uProfile?.village || item.village,
-        points: typeof item.points === "number" ? item.points : (typeof item.totalMarks === "number" ? item.totalMarks : 0),
-        rankingScore: typeof item.rankingScore === "number" ? item.rankingScore : 0,
-        masteredQuestions: item.masteredQuestions || 0,
-        revisionAccuracy: item.revisionAccuracy || 0,
-        achievementsCount: item.achievementsCount || 0,
-        rank: item.rank || 99,
-        previousRank: item.previousRank,
-        rankChange: item.rankChange || "flat",
-        badges: userBadges
-      };
-    });
+    const compiled = compiledList
+      .filter(item => usersList.some(u => u.uid === item.studentId))
+      .map(item => {
+        const uProfile = usersList.find(u => u.uid === item.studentId);
+        const userBadges = achievementsMap[item.studentId] || [];
+        return {
+          studentId: item.studentId,
+          name: uProfile?.fullName || item.studentName || "વિદ્યાર્થી",
+          standard: uProfile?.standard || item.standard,
+          school: uProfile?.school || item.school,
+          village: uProfile?.village || item.village,
+          points: typeof item.points === "number" ? item.points : (typeof item.totalMarks === "number" ? item.totalMarks : 0),
+          rankingScore: typeof item.rankingScore === "number" ? item.rankingScore : 0,
+          masteredQuestions: item.masteredQuestions || 0,
+          revisionAccuracy: item.revisionAccuracy || 0,
+          achievementsCount: item.achievementsCount || 0,
+          rank: item.rank || 99,
+          previousRank: item.previousRank,
+          rankChange: item.rankChange || "flat",
+          badges: userBadges
+        };
+      });
 
     // Dynamic sort by rankingScore desc, then by points desc
     compiled.sort((a, b) => {
@@ -3222,34 +3390,7 @@ export const SuperAdminRepository = {
 
   // Custom Announcements Center
   async getAllAnnouncements(): Promise<Announcement[]> {
-    const defaultAnnouncements: Announcement[] = [
-      {
-        id: "ann-1",
-        title: "📢 સોમવારથી પ્રથમ સત્ર પરીક્ષાઓ શરૂ",
-        message: "ધોરણ ૧૦ વિજ્ઞાન વિષયના તમામ વિદ્યાર્થીઓને જણાવવાનું કે સોમવારથી દૈનિક મોક પરીક્ષા નિયત સમયે જ શરૂ થશે.",
-        targetStandard: "10",
-        targetSchool: "all",
-        targetVillage: "all",
-        sentAt: "2026-06-01T10:00:00Z",
-        senderName: "સુપર એડમિન",
-        readRate: 85,
-        readCount: 170,
-        totalCount: 200
-      },
-      {
-        id: "ann-2",
-        title: "📚 સ્કોલરશીપ પ્રોગ્રામ ૨૦૨૬",
-        message: "અધિકૃત રીતે બોર્ડમાં પ્રથમ આવનાર વિદ્યાર્થીઓ માટે ખાસ ઈનામી મંજૂરીઓની જાહેરાત ટૂંક સમયમાં કરાશે.",
-        targetStandard: "all",
-        targetSchool: "all",
-        targetVillage: "all",
-        sentAt: "2026-05-25T14:30:00Z",
-        senderName: "સુપર એડમિન",
-        readRate: 92,
-        readCount: 460,
-        totalCount: 500
-      }
-    ];
+    const defaultAnnouncements: Announcement[] = [];
 
     if (isFirebasePlaceholder) {
       return getLocalStorageKey<Announcement[]>('super_admin_announcements', defaultAnnouncements);
@@ -3285,32 +3426,7 @@ export const SuperAdminRepository = {
 
   // Backups Module
   async getBackups(): Promise<SystemBackup[]> {
-    const defaultBackups: SystemBackup[] = [
-      {
-        id: "bak-1",
-        backupName: "daily_backup_2026_06_03.json",
-        timestamp: "2026-06-03T02:00:00Z",
-        sizeMB: 14.2,
-        status: "Completed",
-        triggeredBy: "Scheduled System Sync"
-      },
-      {
-        id: "bak-2",
-        backupName: "manual_backup_pre_upgrade.json",
-        timestamp: "2026-06-01T15:30:00Z",
-        sizeMB: 13.9,
-        status: "Completed",
-        triggeredBy: "સુપર એડમિન (Super Admin)"
-      },
-      {
-        id: "bak-3",
-        backupName: "daily_backup_2026_05_31.json",
-        timestamp: "2026-05-31T02:00:00Z",
-        sizeMB: 13.5,
-        status: "Completed",
-        triggeredBy: "Scheduled System Sync"
-      }
-    ];
+    const defaultBackups: SystemBackup[] = [];
 
     if (isFirebasePlaceholder) {
       return getLocalStorageKey<SystemBackup[]>('super_admin_backups', defaultBackups);

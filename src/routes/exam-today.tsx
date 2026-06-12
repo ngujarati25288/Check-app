@@ -46,7 +46,7 @@ function ExamToday() {
 
       try {
         setLoading(true);
-        const exams = await ExamRepository.getActiveExams(user.standard || "10");
+        const exams = await ExamRepository.getActiveExams(user.standard || "10", user.medium);
         if (!active) return;
         
         // Let's filter exams that matches this user's standard (since exams have standard or we can resolve matching standard)

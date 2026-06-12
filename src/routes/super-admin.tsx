@@ -33,7 +33,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { AdvancedAnalyticsDashboard } from "@/components/AdvancedAnalyticsDashboard";
 import { useAuth } from "@/components/FirebaseProvider";
-import { SuperAdminRepository, AdminRepository, AnalyticsRepository, PointsRepository } from "@/lib/db";
+import { SuperAdminRepository, AdminRepository, AnalyticsRepository, PointsRepository, MasterDataRepository } from "@/lib/db";
 import { 
   SuperAdminSettings, 
   Announcement, 
@@ -49,7 +49,9 @@ import {
   VillageAnalytics,
   StandardAnalytics,
   LearningTrends,
-  AnalyticsReport
+  AnalyticsReport,
+  SchoolRequest,
+  VillageRequest
 } from "@/types";
 import { sfx } from "@/lib/settings";
 import { toast } from "sonner";
@@ -66,7 +68,7 @@ function SuperAdminLayout() {
   const isSuperAdmin = user?.role === "super_admin";
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "analytics" | "admins" | "students" | "announcements" | "settings" | "backups" | "export" | "leaderboard"
+    "overview" | "analytics" | "admins" | "students" | "announcements" | "settings" | "backups" | "export" | "leaderboard" | "requests"
   >("overview");
 
   // System States
@@ -77,6 +79,8 @@ function SuperAdminLayout() {
   const [backups, setBackups] = useState<SystemBackup[]>([]);
   const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [schoolRequests, setSchoolRequests] = useState<SchoolRequest[]>([]);
+  const [villageRequests, setVillageRequests] = useState<VillageRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -110,6 +114,18 @@ function SuperAdminLayout() {
   const [newUserVillage, setNewUserVillage] = useState("");
   const [newUserRoleState, setNewUserRoleState] = useState("student");
 
+  const uniqueSchools = useMemo(() => {
+    const list = students.map((s) => s.school).filter(Boolean);
+    const unique = Array.from(new Set(list));
+    return unique.length > 0 ? unique : ["જી.એલ. હાઈસ્કૂલ, અમદાવાદ", "સરસ્વતી વિદ્યા મંદિર, આણંદ", "ગર્લ્સ હાઈસ્કૂલ, વડોદરા"];
+  }, [students]);
+
+  const uniqueVillages = useMemo(() => {
+    const list = students.map((s) => s.village).filter(Boolean);
+    const unique = Array.from(new Set(list));
+    return unique.length > 0 ? unique : ["અમદાવાદ", "આણંદ", "વડોદરા", "કોસંબા"];
+  }, [students]);
+
   // Announcement inputs
   const [annTitle, setAnnTitle] = useState("");
   const [annMessage, setAnnMessage] = useState("");
@@ -137,8 +153,10 @@ function SuperAdminLayout() {
   // Leaderboard Custom States
   const [leaderboardLogs, setLeaderboardLogs] = useState<any[]>([]);
   const [isLeaderboardSyncing, setIsLeaderboardSyncing] = useState(false);
+  const [latency, setLatency] = useState<number>(24);
 
   const loadData = async () => {
+    const startTime = performance.now();
     try {
       setLoading(true);
 
@@ -211,6 +229,17 @@ function SuperAdminLayout() {
       setAnalyticsReports(rptsAn);
 
       try {
+        const [schReqs, vilReqs] = await Promise.all([
+          MasterDataRepository.getSchoolRequests(),
+          MasterDataRepository.getVillageRequests()
+        ]);
+        setSchoolRequests(schReqs);
+        setVillageRequests(vilReqs);
+      } catch (err) {
+        console.warn("Failed fetching master requests:", err);
+      }
+
+      try {
         const boardLogs = await PointsRepository.getLeaderboardAuditLogs();
         setLeaderboardLogs(boardLogs);
       } catch (err) {
@@ -221,6 +250,8 @@ function SuperAdminLayout() {
       toast.error("Error loading Super Admin systems.");
     } finally {
       setLoading(false);
+      const endTime = performance.now();
+      setLatency(Math.max(1, Math.round(endTime - startTime)));
     }
   };
 
@@ -647,6 +678,7 @@ function SuperAdminLayout() {
               { id: "analytics", label: "Advanced Analytics", icon: Activity },
               { id: "admins", label: "Admins", icon: Shield },
               { id: "students", label: "Students", icon: Users },
+              { id: "requests", label: "➕ Requests", icon: Plus },
               { id: "leaderboard", label: "🏆 Leaderboard", icon: Trophy },
               { id: "announcements", label: "📢 Custom", icon: Send },
               { id: "settings", label: "Config", icon: Settings },
@@ -711,7 +743,7 @@ function SuperAdminLayout() {
                   </div>
                 </div>
                 <div className="text-right text-[10px] font-mono text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
-                  LATENCY: ~24ms
+                  LATENCY: ~{latency}ms
                 </div>
               </div>
 
@@ -1191,20 +1223,28 @@ function SuperAdminLayout() {
                       </div>
 
                       {/* STATS PREVIEW SUMMARY */}
-                      <div className="grid grid-cols-3 gap-2 bg-muted/60 p-2.5 rounded-2xl text-center text-xs">
-                        <div>
-                          <p className="font-black text-foreground font-mono">15</p>
-                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Exams Taken</p>
-                        </div>
-                        <div>
-                          <p className="font-black text-success font-mono">88%</p>
-                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Accuracy</p>
-                        </div>
-                        <div>
-                          <p className="font-black text-warning font-mono">5</p>
-                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">Unlocks</p>
-                        </div>
-                      </div>
+                      {(() => {
+                        const analytics = studentAnalytics.find(sa => sa.studentId === std.studentId || sa.studentId === std.uid || sa.id === std.uid || sa.id === std.studentId);
+                        const totalExams = analytics?.totalExams ?? 0;
+                        const accuracy = analytics?.averageScore ? `${Math.round(analytics.averageScore)}%` : "0%";
+                        const streak = analytics?.learningStreak ?? 0;
+                        return (
+                          <div className="grid grid-cols-3 gap-2 bg-muted/60 p-2.5 rounded-2xl text-center text-xs">
+                            <div>
+                              <p className="font-black text-foreground font-mono">{totalExams}</p>
+                              <p className="text-[9px] text-muted-foreground uppercase font-semibold">Exams Taken</p>
+                            </div>
+                            <div>
+                              <p className="font-black text-success font-mono">{accuracy}</p>
+                              <p className="text-[9px] text-muted-foreground uppercase font-semibold">Accuracy</p>
+                            </div>
+                            <div>
+                              <p className="font-black text-warning font-mono">{streak}</p>
+                              <p className="text-[9px] text-muted-foreground uppercase font-semibold">Streak Days</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Operational Controls for Super Admin */}
                       <div className="pt-3 border-t border-border/60 mt-3 space-y-2 text-xs">
@@ -1368,9 +1408,9 @@ function SuperAdminLayout() {
                         className="w-full h-10 bg-muted border border-border rounded-xl px-2 text-xs"
                       >
                         <option value="all">All Schools</option>
-                        <option value="જી.એલ. હાઈસ્કૂલ, અમદાવાદ">GL High School</option>
-                        <option value="સરસ્વતી વિદ્યા મંદિર, આણંદ">Saraswati Mandir</option>
-                        <option value="ગર્લ્સ હાઈસ્કૂલ, વડોદરા">Girls High School</option>
+                        {uniqueSchools.map((sch) => (
+                          <option key={sch} value={sch}>{sch}</option>
+                        ))}
                       </select>
                     </div>
 
@@ -1382,9 +1422,9 @@ function SuperAdminLayout() {
                         className="w-full h-10 bg-muted border border-border rounded-xl px-2 text-xs"
                       >
                         <option value="all">All Villages</option>
-                        <option value="અમદાવાદ">Ahmedabad</option>
-                        <option value="વડોદરા">Vadodara</option>
-                        <option value="કોસંબા">Kosamba</option>
+                        {uniqueVillages.map((vil) => (
+                          <option key={vil} value={vil}>{vil}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -1863,6 +1903,175 @@ function SuperAdminLayout() {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "requests" && (
+            <div className="space-y-6 animate-[fade-in_0.35s_ease-out]">
+              {/* Core descriptive card */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-primary-soft text-primary">
+                    <Plus className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm text-foreground">NEW INTEGRATION REQUESTS</h3>
+                    <p className="text-[10px] text-muted-foreground font-gu">નવી શાળાઓ અને ગામ અપ્રુવલ વિનંતીઓ</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground font-gu leading-relaxed">
+                  વિદ્યાર્થીઓ જ્યારે નવા રજીસ્ટ્રેશન ફોર્મમાં પોતાની શાળા કે ગામ ન મેળવી શકે ત્યારે તેઓ આગ્રહ પત્ર / વિનંતી (Request) મૂકે છે. અહીથી સંચાલક તેને ચકાસીને મંજૂર કરી શકે છે જેથી તે મુખ્ય ડેટાબેઝમાં ઉમેરાઈ જાય.
+                </p>
+              </div>
+
+              {/* SECTION 1: SCHOOL REQUESTS */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4 text-left">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">SCHOOL REQUESTS ({schoolRequests.length})</h4>
+                  <span className="text-[10px] text-teal-600 font-bold bg-teal-500/10 px-2.5 py-0.5 rounded-full">
+                    {schoolRequests.filter(r => r.status === "pending").length} PENDING
+                  </span>
+                </div>
+
+                {schoolRequests.length === 0 ? (
+                  <div className="border border-border border-dashed rounded-2xl p-6 text-center text-muted-foreground bg-muted/10 font-gu text-xs">
+                    હજી સુધી કોઈ શાળાની વિનંતીઓ નોંધાયેલ નથી.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {schoolRequests.map((req) => (
+                      <div key={req.requestId} className="bg-muted/30 border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition hover:bg-muted/40">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-foreground">{req.schoolName}</span>
+                            <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                              req.status === "pending" ? "bg-amber-500/10 text-amber-600" :
+                              req.status === "approved" ? "bg-success/10 text-success" :
+                              "bg-destructive/10 text-destructive"
+                            }`}>
+                              {req.status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground font-gu flex flex-wrap gap-x-4 gap-y-1">
+                            <span>📍 ગામ/શહેર: <strong className="text-foreground">{req.village}</strong></span>
+                            <span>👤 વિનંતીકર્તા: <strong className="text-foreground">{req.requestedBy}</strong></span>
+                            {req.createdAt && <span>🗓️ તારીખ: {new Date(req.createdAt).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
+
+                        {req.status === "pending" && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={async () => {
+                                sfx.tap();
+                                try {
+                                  await MasterDataRepository.approveSchoolRequest(req.requestId);
+                                  toast.success("શાળા મંજૂર કરવામાં આવી અને ડેટાબેઝ પ્રક્રિયા સફળ થઈ!");
+                                  await loadData();
+                                } catch (e) {
+                                  toast.error("મંજૂરી પ્રક્રિયા મોકલવામાં સમસ્યા આવી.");
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-success text-success-foreground text-[11px] font-bold transition active:scale-95 cursor-pointer flex items-center gap-1"
+                            >
+                              <Check className="size-3" /> Approve
+                            </button>
+                            <button
+                              onClick={async () => {
+                                sfx.tap();
+                                try {
+                                  await MasterDataRepository.rejectSchoolRequest(req.requestId);
+                                  toast.success("વિનંતી ના-મંજૂર કરવામાં આવી.");
+                                  await loadData();
+                                } catch (e) {
+                                  toast.error("પ્રક્રિયા અસફળ રહી.");
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-destructive text-destructive-foreground text-[11px] font-bold transition active:scale-95 cursor-pointer flex items-center gap-1"
+                            >
+                              <X className="size-3" /> Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: VILLAGE REQUESTS */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4 text-left">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">VILLAGE REQUESTS ({villageRequests.length})</h4>
+                  <span className="text-[10px] text-violet-600 font-bold bg-violet-500/10 px-2.5 py-0.5 rounded-full">
+                    {villageRequests.filter(r => r.status === "pending").length} PENDING
+                  </span>
+                </div>
+
+                {villageRequests.length === 0 ? (
+                  <div className="border border-border border-dashed rounded-2xl p-6 text-center text-muted-foreground bg-muted/10 font-gu text-xs">
+                    હજી સુધી કોઈ ગામની વિનંતીઓ નોંધાયેલ નથી.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {villageRequests.map((req) => (
+                      <div key={req.requestId} className="bg-muted/30 border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition hover:bg-muted/40">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-foreground">{req.villageName}</span>
+                            <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                              req.status === "pending" ? "bg-amber-500/10 text-amber-600" :
+                              req.status === "approved" ? "bg-success/10 text-success" :
+                              "bg-destructive/10 text-destructive"
+                            }`}>
+                              {req.status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground font-gu flex flex-wrap gap-x-4 gap-y-1">
+                            <span>👤 વિનંતીકર્તા: <strong className="text-foreground">{req.requestedBy}</strong></span>
+                            {req.createdAt && <span>🗓️ તારીખ: {new Date(req.createdAt).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
+
+                        {req.status === "pending" && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={async () => {
+                                sfx.tap();
+                                try {
+                                  await MasterDataRepository.approveVillageRequest(req.requestId);
+                                  toast.success("ગામ મંજૂર કરવામાં આવ્યું અને ડેટાબેઝ પ્રક્રિયા સફળ થઈ!");
+                                  await loadData();
+                                } catch (e) {
+                                  toast.error("મંજૂરી પ્રક્રિયા મોકલવામાં સમસ્યા આવી.");
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-success text-success-foreground text-[11px] font-bold transition active:scale-95 cursor-pointer flex items-center gap-1"
+                            >
+                              <Check className="size-3" /> Approve
+                            </button>
+                            <button
+                              onClick={async () => {
+                                sfx.tap();
+                                try {
+                                  await MasterDataRepository.rejectVillageRequest(req.requestId);
+                                  toast.success("વિનંતી ના-મંજૂર કરવામાં આવી.");
+                                  await loadData();
+                                } catch (e) {
+                                  toast.error("પ્રક્રિયા અસફળ રહી.");
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-destructive text-destructive-foreground text-[11px] font-bold transition active:scale-95 cursor-pointer flex items-center gap-1"
+                            >
+                              <X className="size-3" /> Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

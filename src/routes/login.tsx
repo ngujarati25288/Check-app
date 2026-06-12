@@ -12,6 +12,7 @@ import { db, isFirebasePlaceholder } from "@/lib/firebase";
 import { MasterDataRepository, getLocalStorageKey, setLocalStorageKey } from "@/lib/db";
 import { DBUser } from "@/types";
 import { hashSync } from "bcryptjs";
+import { t } from "@/lib/translations";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign In — Daily Learning Exam" }] }),
@@ -27,6 +28,9 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [loginLang, setLoginLang] = useState<string>(() => {
+    return localStorage.getItem("dle:login_lang") || "Gujarati";
+  });
 
   // Forgot Password Flow States
   const [resetStep, setResetStep] = useState<"MOBILE" | "SELECT_STUDENT" | "VERIFY_SCHOOL" | "RESET_PASSWORD" | "SUCCESS">("MOBILE");
@@ -198,11 +202,36 @@ function Login() {
           {/* Visual Hero Block */}
           <div className="gradient-hero text-primary-foreground px-6 pt-12 pb-16 rounded-b-[2.5rem] relative overflow-hidden">
             <div className="absolute -top-10 -right-10 size-48 rounded-full bg-white/10 blur-2xl" />
-            <div className="flex items-center gap-3 relative">
-              <Logo size={56} />
-              <div>
-                <h1 className="text-xl font-bold">Daily Learning Exam</h1>
-                <p className="text-sm text-white/85 font-gu">ગુજરાત બોર્ડના ધોરણ ૧ થી ૧૦ માટે</p>
+            <div className="flex items-center justify-between relative">
+              <div className="flex items-center gap-3">
+                <Logo size={48} />
+                <div>
+                  <h1 className="text-lg font-bold">Daily Learning Exam</h1>
+                  <p className="text-xs text-white/85 font-gu">
+                    {loginLang === "English" 
+                      ? "For Gujarat Board Std 1 to 10" 
+                      : loginLang === "Hindi"
+                      ? "गुजरात बोर्ड कक्षा १ से १० के लिए"
+                      : "ગુજરાત બોર્ડના ધોરણ ૧ થી ૧૦ માટે"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Elegant Language Switcher */}
+              <div className="relative shrink-0 z-30">
+                <select
+                  value={loginLang}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    setLoginLang(selected);
+                    localStorage.setItem("dle:login_lang", selected);
+                  }}
+                  className="bg-white/15 text-white border border-white/25 rounded-2xl px-3 py-1 text-xs font-bold outline-none cursor-pointer focus:bg-background focus:text-foreground transition max-w-[100px]"
+                >
+                  <option value="Gujarati" className="text-foreground">ગુજરાતી</option>
+                  <option value="English" className="text-foreground">English</option>
+                  <option value="Hindi" className="text-foreground">हिन्दी</option>
+                </select>
               </div>
             </div>
           </div>
@@ -210,20 +239,26 @@ function Login() {
           <form onSubmit={handleLoginSubmit} className="px-6 -mt-10 flex flex-col justify-start space-y-4">
             <div className="bg-card border border-border rounded-3xl p-6 shadow-card space-y-4">
               <div className="space-y-1">
-                <h2 className="font-semibold text-lg">Sign In</h2>
-                <p className="text-xs text-muted-foreground font-gu">લૉગિન કરવા માટે સ્ટુડન્ટ આઈડી અને પાસવર્ડ ભરો</p>
+                <h2 className="font-semibold text-lg">{t("login_welcome", loginLang)}</h2>
+                <p className="text-xs text-muted-foreground font-gu">
+                  {loginLang === "English" 
+                    ? "Enter your student ID and security password to login" 
+                    : loginLang === "Hindi"
+                    ? "लॉगिन करने के लिए अपनी विद्यार्थी आईडी और पासवर्ड भरें"
+                    : "લૉગિન કરવા માટે સ્ટુડન્ટ આઈડી અને પાસવર્ડ ભરો"}
+                </p>
               </div>
 
               <div className="space-y-4">
                 {/* Student ID field */}
                 <label className="block">
-                  <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Student ID *</span>
+                  <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">{t("login_student_id", loginLang)}</span>
                   <div className="mt-1 relative flex items-center gap-2 h-12 px-4 rounded-2xl bg-muted/60 border border-border focus-within:border-primary focus-within:bg-card transition">
                     <User className="size-4 text-muted-foreground shrink-0" />
                     <input
                       type="text"
                       required
-                      placeholder="સ્ટુડન્ટ આઈડી (e.g. 9876543210)"
+                      placeholder={loginLang === "English" ? "STDX-XXXXX" : loginLang === "Hindi" ? "विद्यार्थी आईडी दर्ज करें" : "સ્ટુડન્ટ આઈડી ભરો"}
                       value={studentId}
                       onChange={(e) => setStudentId(e.target.value)}
                       className="w-full bg-transparent outline-none text-sm placeholder:text-muted-foreground font-medium"
@@ -234,13 +269,13 @@ function Login() {
                 {/* Password field */}
                 <label className="block">
                   <div className="flex justify-between items-center px-1">
-                    <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Password *</span>
+                    <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">{t("login_password", loginLang)}</span>
                     <button
                       type="button"
                       onClick={openResetModal}
                       className="text-xs text-primary font-semibold hover:underline"
                     >
-                      Forgot Password?
+                      {t("forgot_id", loginLang)}
                     </button>
                   </div>
                   <div className="mt-1 relative flex items-center gap-2 h-12 px-4 rounded-2xl bg-muted/60 border border-border focus-within:border-primary focus-within:bg-card transition">
@@ -248,10 +283,10 @@ function Login() {
                     <input
                       type={showPassword ? "text" : "password"}
                       required
-                      placeholder="તમારો ગુપ્ત પાસવર્ડ (e.g. 123456)"
+                      placeholder="******"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-transparent outline-none text-sm placeholder:text-muted-foreground"
+                      className="w-full bg-transparent outline-none text-sm placeholder:text-muted-foreground font-mono"
                     />
                     <button
                       type="button"
@@ -268,17 +303,16 @@ function Login() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 rounded-2xl gradient-primary text-primary-foreground font-semibold shadow-float active:scale-[0.98] transition flex items-center justify-center gap-2 disabled:opacity-75"
+                className="w-full h-12 rounded-2xl gradient-primary text-primary-foreground font-semibold shadow-float active:scale-[0.98] transition flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
               >
-                {loading ? "ચકાસણી ચાલુ છે..." : "પ્રવેશ કરો (Login)"}
+                {loading ? t("btn_loading", loginLang) : t("btn_signin", loginLang)}
                 <ArrowRight className="size-4" />
               </button>
             </div>
 
             <p className="text-center text-sm text-muted-foreground pt-2">
-              New student?{" "}
-              <Link to="/register" className="text-primary font-bold">
-                નવી નોંધણી (Register)
+              <Link to="/register" className="text-primary font-bold hover:underline">
+                {t("no_account_yet", loginLang)}
               </Link>
             </p>
           </form>

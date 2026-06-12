@@ -5,6 +5,7 @@ import { useAuth } from "@/components/FirebaseProvider";
 import { toast } from "sonner";
 import { MasterDataRepository } from "@/lib/db";
 import { School, Village } from "@/types";
+import { t } from "@/lib/translations";
 
 export const Route = createFileRoute("/register")({
   head: () => ({ meta: [{ title: "Student Registration — Daily Learning Exam" }] }),
@@ -55,6 +56,7 @@ function Register() {
   const [standard, setStandard] = useState("10"); // Default 10
   const [division, setDivision] = useState("A"); // Default A
   const [village, setVillage] = useState("");
+  const [medium, setMedium] = useState("Gujarati"); // Default to Gujarati
 
   // Master lists
   const [schoolsList, setSchoolsList] = useState<School[]>([]);
@@ -113,52 +115,57 @@ function Register() {
     // 1. Student Name Hard Validation
     const nameTrim = fullName.trim();
     if (!nameTrim) {
-      toast.error("કૃપા કરીને પૂરું નામ લખો.");
+      toast.error(t("val_name_empty", medium));
       return;
     }
     if (nameTrim.length < 3) {
-      toast.error("નામ ઓછામાં ઓછું ૩ અક્ષરનું હોવું જોઈએ.");
+      toast.error(medium === "English" ? "Name must be at least 3 characters long." : "નામ ઓછામાં ઓછું ૩ અક્ષરનું હોવું જોઈએ.");
       return;
     }
     if (nameTrim.length > 50) {
-      toast.error("નામ ૫૦ અક્ષરથી વધુ ન હોવું જોઈએ.");
+      toast.error(medium === "English" ? "Name cannot exceed 50 characters." : "નામ ૫૦ અક્ષરથી વધુ ન હોવું જોઈએ.");
       return;
     }
     
     // English letters, Gujarati block, spaces allowed. No numbers or special characters.
     const validNameRegex = /^[a-zA-Z\s\u0a80-\u0aff]+$/;
     if (!validNameRegex.test(nameTrim)) {
-      toast.error("નામમાં ફક્ત ગુજરાતી/અંગ્રેજી અક્ષરો અને સ્પેસ જ માન્ય છે.");
+      toast.error(t("val_name_letters", medium));
       return;
     }
 
     // 2. Password Strength Validation
     if (!password) {
-      toast.error("કૃપા કરીને સેક્યુરિટી પાસવર્ડ સેટ કરો.");
+      toast.error(medium === "English" ? "Please set a security password." : "કૃપા કરીને સેક્યુરિટી પાસવર્ડ સેટ કરો.");
       return;
     }
     if (password.length < 6 || password.length > 20) {
-      toast.error("પાસવર્ડ ૬ થી ૨૦ અક્ષરો વચ્ચેનો હોવો જોઈએ.");
+      toast.error(t("val_password_short", medium));
       return;
     }
 
     // 3. Mobile Number Validation
     if (!/^[6-9]\d{9}$/.test(normalizedMobile)) {
-      toast.error("કૃપા કરીને સાચો ૧૦ આંકડાનો મોબાઈલ નંબર લખો જે ૬, ૭, ૮, કે ૯ થી શરૂ થાય.");
+      toast.error(t("val_mobile_invalid", medium));
       return;
     }
 
     // 4. Dropdowns validation
     if (!school.trim()) {
-      toast.error("કૃપા કરીને યાદીમાંથી તમારી શાળા પસંદ કરો.");
+      toast.error(t("val_school_empty", medium));
       return;
     }
     if (!village.trim()) {
-      toast.error("કૃપા કરીને તમારું ગામ/શહેર પસંદ કરો.");
+      toast.error(t("val_village_empty", medium));
       return;
     }
 
-    console.log("All client-side validations passed. Calling registerStudent...");
+    if (!medium) {
+      toast.error(t("val_medium_empty", medium));
+      return;
+    }
+
+    console.log("All client-side validations passed. Calling registerStudent with medium:", medium);
     try {
       const isSuccess = await registerStudent({
         fullName: nameTrim,
@@ -167,7 +174,8 @@ function Register() {
         school: school.trim(),
         standard,
         division,
-        village: village.trim()
+        village: village.trim(),
+        medium
       });
       console.log("registerStudent completed execution without unhandled exception. success status:", isSuccess);
     } catch (err: any) {
@@ -505,6 +513,27 @@ function Register() {
                 </div>
               </label>
             </div>
+
+            {/* Medium Selector */}
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                {t("label_medium", medium)}
+              </span>
+              <div className="mt-1 relative flex items-center gap-2 h-11 px-3 rounded-2xl bg-muted/60 border border-border focus-within:border-primary focus-within:bg-card transition">
+                <select
+                  value={medium}
+                  onChange={(e) => setMedium(e.target.value)}
+                  className="w-full bg-transparent outline-none text-sm font-semibold text-foreground cursor-pointer"
+                >
+                  <option value="Gujarati" className="text-foreground">
+                    {t("medium_gujarati", medium)}
+                  </option>
+                  <option value="English" className="text-foreground">
+                    {t("medium_english", medium)}
+                  </option>
+                </select>
+              </div>
+            </label>
 
           </div>
 

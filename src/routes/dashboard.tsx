@@ -34,6 +34,7 @@ import { useSettings } from "@/lib/settings";
 import { useAuth } from "@/components/FirebaseProvider";
 import { ExamRepository, ResultRepository, MistakeRepository, AnalyticsRepository, PointsRepository, SubjectRepository, ChapterRepository } from "@/lib/db";
 import { DailyExam, ExamResult, StudentMistake, RevisionAnalytics, StudentPoints } from "@/types";
+import { t } from "@/lib/translations";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Daily Learning Exam" }] }),
@@ -41,10 +42,10 @@ export const Route = createFileRoute("/dashboard")({
 });
 
 const cards = [
-  { to: "/result", label: "પરિણામ", icon: Trophy, color: "success" },
-  { to: "/mistakes", label: "મારી ભૂલો", icon: AlertTriangle, color: "destructive" },
-  { to: "/achievements", label: "સિદ્ધિઓ", icon: Award, color: "primary" },
-  { to: "/progress", label: "પ્રગતિ", icon: TrendingUp, color: "success" },
+  { to: "/result", labelKey: "dash_nav_result", icon: Trophy, color: "success" },
+  { to: "/mistakes", labelKey: "dash_nav_mistakes", icon: AlertTriangle, color: "destructive" },
+  { to: "/achievements", labelKey: "dash_nav_achievements", icon: Award, color: "primary" },
+  { to: "/progress", labelKey: "dash_nav_progress", icon: TrendingUp, color: "success" },
 ] as const;
 
 const colorMap: Record<string, string> = {
@@ -96,7 +97,7 @@ function Dashboard() {
       try {
         setLoading(true);
         // Load active exam
-        const activeExamsList = await ExamRepository.getActiveExams(user.standard || "10");
+        const activeExamsList = await ExamRepository.getActiveExams(user.standard || "10", user.medium);
         if (!active) return;
         if (activeExamsList.length > 0) {
           const firstExam = activeExamsList[0];
@@ -377,7 +378,9 @@ function Dashboard() {
         {/* Greeting */}
         <div className="flex items-center justify-between animate-[fade-in_0.4s_ease-out]">
           <div className="min-w-0 flex-1 mr-2">
-            <p className="text-sm text-muted-foreground font-gu">નમસ્તે, વિદ્યાર્થી 👋</p>
+            <p className="text-sm text-muted-foreground font-gu">
+              {t("dash_greeting_student", user?.medium)}
+            </p>
             <h1 className="text-2xl font-bold truncate flex items-center flex-wrap gap-2">
               <span>{displayName}</span>
               <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-warning-soft text-warning-foreground font-black font-mono">
@@ -385,7 +388,9 @@ function Dashboard() {
               </span>
             </h1>
             <p className="text-xs text-muted-foreground font-gu">
-              ધોરણ {displayStandard} • {displaySchool}
+              {user?.medium === "English" 
+                ? `Standard ${displayStandard} • ${displaySchool}` 
+                : `ધોરણ ${displayStandard} • ${displaySchool}`}
             </p>
           </div>
           <Link
@@ -405,9 +410,11 @@ function Dashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider bg-white/15 rounded-full px-2.5 py-1 font-gu">
-                  <Sparkles className="size-3" /> આજની પ્રગતિ
+                  <Sparkles className="size-3" /> {t("dash_today_progress", user?.medium)}
                 </div>
-                <p className="mt-2 font-gu text-sm text-white/85">Today's learning progress</p>
+                <p className="mt-2 font-gu text-sm text-white/85">
+                  {t("dash_learning_progress", user?.medium)}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-5xl font-extrabold leading-none tracking-tight">
@@ -430,9 +437,9 @@ function Dashboard() {
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <HeroStat icon={<CheckCircle2 className="size-3.5" />} value={`${examsCompletedToday}/${Math.max(1, totalExamsToday)}`} labelGu="પરીક્ષા" />
-              <HeroStat icon={<RotateCcw className="size-3.5" />} value={`${masteredQuestionsVal}/${mistakes.length}`} labelGu="પુનરાવર્તન" />
-              <HeroStat icon={<Flame className="size-3.5" />} value={`${streakVal}`} labelGu="સ્ટ્રીક" />
+              <HeroStat icon={<CheckCircle2 className="size-3.5" />} value={`${examsCompletedToday}/${Math.max(1, totalExamsToday)}`} labelGu={t("dash_exams", user?.medium)} />
+              <HeroStat icon={<RotateCcw className="size-3.5" />} value={`${masteredQuestionsVal}/${mistakes.length}`} labelGu={t("dash_revision", user?.medium)} />
+              <HeroStat icon={<Flame className="size-3.5" />} value={`${streakVal}`} labelGu={t("dash_streak", user?.medium)} />
             </div>
           </div>
         </div>
@@ -451,11 +458,11 @@ function Dashboard() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                    તમારો રેન્ક (Leaderboard Position)
+                    {t("dash_leaderboard_title", user?.medium)}
                   </p>
                   <p className="font-extrabold text-base flex items-center gap-1.5 mt-0.5">
-                    <span>ક્રમ #{leaderboardPos.rank}</span>
-                    <span className="text-[10px] py-0.5 px-1.5 bg-muted rounded-md text-muted-foreground">All-Time</span>
+                    <span>{t("dash_rank_prefix", user?.medium)} #{leaderboardPos.rank}</span>
+                    <span className="text-[10px] py-0.5 px-1.5 bg-muted rounded-md text-muted-foreground">{t("dash_all_time", user?.medium)}</span>
                   </p>
                 </div>
               </div>
@@ -463,22 +470,22 @@ function Dashboard() {
                 <div className="flex items-center gap-1">
                   {leaderboardPos.rankChange && leaderboardPos.rankChange.startsWith("+") && (
                     <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      ▲ સુધારો ({leaderboardPos.rankChange})
+                      {t("dash_rank_up", user?.medium)} ({leaderboardPos.rankChange})
                     </span>
                   )}
                   {leaderboardPos.rankChange && leaderboardPos.rankChange.startsWith("-") && (
                     <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-800">
-                      ▼ ઘટાડો ({leaderboardPos.rankChange})
+                      {t("dash_rank_down", user?.medium)} ({leaderboardPos.rankChange})
                     </span>
                   )}
                   {(!leaderboardPos.rankChange || leaderboardPos.rankChange === "flat") && (
                     <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      ● સમકક્ષ
+                      {t("dash_rank_flat", user?.medium)}
                     </span>
                   )}
                 </div>
                 <span className="text-[9px] text-muted-foreground font-medium mt-1">
-                  અગાઉનો ક્રમ: #{leaderboardPos.previousRank || leaderboardPos.rank}
+                  {t("dash_prev_rank", user?.medium)}: #{leaderboardPos.previousRank || leaderboardPos.rank}
                 </span>
               </div>
             </div>
@@ -500,7 +507,7 @@ function Dashboard() {
                   <>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-primary font-semibold font-gu">
-                        <FileText className="size-3.5" /> {isUpcoming ? "આયોજિત પરીક્ષા (Scheduled)" : "આજની પરીક્ષા"}
+                        <FileText className="size-3.5" /> {isUpcoming ? t("dash_scheduled_exam", user?.medium) : t("dash_today_exam_title", user?.medium)}
                       </div>
                       {isUpcoming && (
                         <span className="px-2 py-0.5 text-[8px] bg-amber-500 text-white rounded-full font-bold uppercase animate-pulse">
@@ -526,22 +533,22 @@ function Dashboard() {
 
                     {isUpcoming ? (
                       <div className="mt-4 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-semibold font-gu text-xs flex items-center justify-center gap-2 shadow-sm animate-pulse">
-                        ⌛ શરૂ થવા આડેનો સમય: {(() => {
+                        {t("dash_start_time_left", user?.medium)} {(() => {
                           const diff = examStartTime!.getTime() - currentTime.getTime();
-                          if (diff <= 0) return "શરૂ કરો";
+                          if (diff <= 0) return t("exam_start", user?.medium);
                           const h = Math.floor(diff / (1000 * 60 * 60));
                           const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                           const s = Math.floor((diff % (1000 * 60)) / 1000);
                           const parts = [];
-                          if (h > 0) parts.push(`${h} કલાક`);
-                          if (m > 0 || h > 0) parts.push(`${m} મિનિટ`);
-                          parts.push(`${s} સેકન્ડ`);
+                          if (h > 0) parts.push(`${h} ${t("dash_hours", user?.medium)}`);
+                          if (m > 0 || h > 0) parts.push(`${m} ${t("dash_minutes", user?.medium)}`);
+                          parts.push(`${s} ${t("dash_seconds", user?.medium)}`);
                           return parts.join(" ");
                         })()}
                       </div>
                     ) : (
                       <div className="mt-4 h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold font-gu text-sm flex items-center justify-center gap-2 shadow-float">
-                        પરીક્ષા શરૂ કરો <ArrowRight className="size-4" />
+                        {t("dash_start_exam_now", user?.medium)} <ArrowRight className="size-4" />
                       </div>
                     )}
                   </>
@@ -551,7 +558,9 @@ function Dashboard() {
           </Link>
         ) : (
           <div className="rounded-3xl bg-card border border-border p-6 shadow-card text-center relative overflow-hidden animate-[slide-up_0.4s_ease-out]">
-            <p className="text-sm text-muted-foreground font-gu">આજે કોઈ પરીક્ષા ઉપલબ્ધ નથી</p>
+            <p className="text-sm text-muted-foreground font-gu">
+              {t("dash_no_exam_today", user?.medium)}
+            </p>
           </div>
         )}
 
@@ -566,13 +575,15 @@ function Dashboard() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-warning-foreground font-semibold font-gu">
-                    આ અઠવાડિયાનો ચેલેન્જ
+                    {t("dash_weekly_challenge", user?.medium)}
                   </p>
-                  <p className="font-semibold font-gu text-sm leading-tight">{weeklyChallenge.titleGu}</p>
+                  <p className="font-semibold font-gu text-sm leading-tight">
+                    {user?.medium === "English" ? weeklyChallenge.title : weeklyChallenge.titleGu}
+                  </p>
                 </div>
               </div>
               <span className="text-[10px] font-gu bg-warning/15 text-warning-foreground px-2 py-1 rounded-full shrink-0">
-                {weeklyChallenge.daysLeft} દિવસ બાકી
+                {weeklyChallenge.daysLeft} {t("dash_days_left", user?.medium)}
               </span>
             </div>
             <div className="mt-3 flex items-center gap-3">
@@ -587,7 +598,7 @@ function Dashboard() {
               </span>
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground font-gu flex items-center gap-1">
-              <Award className="size-3 text-success" /> {weeklyChallenge.rewardGu}
+              <Award className="size-3 text-success" /> {user?.medium === "English" ? weeklyChallenge.reward : weeklyChallenge.rewardGu}
             </p>
           </div>
         </div>
@@ -603,9 +614,13 @@ function Dashboard() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] uppercase tracking-wider text-warning-foreground font-semibold">Priority</p>
-              <p className="font-semibold font-gu text-sm leading-tight">આજે પુનરાવર્તન બાકી</p>
+              <p className="font-semibold font-gu text-sm leading-tight">
+                {t("rev_box_title", user?.medium)}
+              </p>
               <p className="text-xs text-muted-foreground font-gu mt-0.5">
-                <span className="font-bold text-foreground">{pendingQuestionsVal} પ્રશ્નો</span> બાકી
+                <span className="font-bold text-foreground">
+                  {pendingQuestionsVal} {user?.medium === "English" ? "Questions" : "પ્રશ્નો"}
+                </span> {user?.medium === "English" ? "pending" : "બાકી"}
               </p>
             </div>
             <ChevronRight className="size-5 text-muted-foreground" />
@@ -618,7 +633,7 @@ function Dashboard() {
         {/* Quick Actions */}
         <div>
           <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wider font-gu">
-            ઝડપી મેનુ
+            {t("dash_quick_action_title", user?.medium)}
           </h2>
           <div className="grid grid-cols-4 gap-3">
             {cards.map((c, i) => {
@@ -633,7 +648,9 @@ function Dashboard() {
                   <div className={`size-9 rounded-2xl flex items-center justify-center ${colorMap[c.color]}`}>
                     <Icon className="size-4" />
                   </div>
-                  <p className="mt-2 font-semibold text-[11px] font-gu leading-tight">{c.label}</p>
+                  <p className="mt-2 font-semibold text-[11px] font-gu leading-tight">
+                    {t(c.labelKey, user?.medium)}
+                  </p>
                 </Link>
               );
             })}
@@ -647,15 +664,17 @@ function Dashboard() {
               <Users className="size-4" />
             </div>
             <div>
-              <p className="font-semibold font-gu">માસિક પ્રગતિ</p>
+              <p className="font-semibold font-gu">
+                {user?.medium === "English" ? "Monthly Progress" : "માસિક પ્રગતિ"}
+              </p>
               <p className="text-[11px] text-muted-foreground">Monthly summary</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <SummaryStat labelGu="કુલ પરીક્ષા" value={totalExamsVal} />
-            <SummaryStat labelGu="સરેરાશ %" value={`${avgPercentageVal}%`} />
-            <SummaryStat labelGu="હાલનો ક્રમ" value={leaderboardPos ? `#${leaderboardPos.rank}` : "#1"} />
-            <SummaryStat labelGu="પુનરાવર્તન" value={masteredQuestionsVal} />
+            <SummaryStat labelGu={t("dash_exams", user?.medium)} value={totalExamsVal} />
+            <SummaryStat labelGu={t("result_percentage", user?.medium)} value={`${avgPercentageVal}%`} />
+            <SummaryStat labelGu={t("dash_prev_rank", user?.medium)} value={leaderboardPos ? `#${leaderboardPos.rank}` : "#1"} />
+            <SummaryStat labelGu={t("dash_revision", user?.medium)} value={masteredQuestionsVal} />
           </div>
         </div>
       </div>

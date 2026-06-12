@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { initSettings } from "@/lib/settings";
 import { useAuth } from "./FirebaseProvider";
 import { SuperAdminRepository } from "@/lib/db";
+import { t } from "@/lib/translations";
 
 interface AppShellProps {
   children: ReactNode;
@@ -23,18 +24,18 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
   const [maintenanceMessage, setMaintenanceMessage] = useState("");
 
   const dynamicNavItems = [
-    { to: "/dashboard", label: "મુખ્ય", icon: Home },
+    { to: "/dashboard", label: t("nav_home", user?.medium), icon: Home },
     ...(user?.role === "super_admin" ? [
-      { to: "/super-admin", label: "નિયંત્રણ", icon: ShieldAlert },
-      { to: "/admin", label: "સંચાલન", icon: FileText },
+      { to: "/super-admin", label: t("nav_superadmin", user?.medium), icon: ShieldAlert },
+      { to: "/admin", label: t("nav_admin", user?.medium), icon: FileText },
     ] : user?.role === "admin" ? [
-      { to: "/admin", label: "સંચાલન", icon: FileText },
+      { to: "/admin", label: t("nav_admin", user?.medium), icon: FileText },
     ] : [
-      { to: "/exam-today", label: "પરીક્ષા", icon: FileText },
-      { to: "/revision", label: "પુનરાવર્તન", icon: RotateCcw },
-      { to: "/leaderboard", label: "ક્રમ", icon: Trophy },
+      { to: "/exam-today", label: t("nav_exam", user?.medium), icon: FileText },
+      { to: "/revision", label: t("nav_revision", user?.medium), icon: RotateCcw },
+      { to: "/leaderboard", label: t("nav_leaderboard", user?.medium), icon: Trophy },
     ]),
-    { to: "/profile", label: "પ્રોફાઇલ", icon: User },
+    { to: "/profile", label: t("nav_profile", user?.medium), icon: User },
   ];
 
   useEffect(() => {

@@ -946,6 +946,7 @@ function AdminPanel() {
         const difIdx = header.indexOf("difficulty");
         const subIdx = header.indexOf("subjectid");
         const chIdx = header.indexOf("chapterid");
+        const medIdx = header.indexOf("medium");
 
         const parsed: Question[] = [];
         const duplicates: string[] = [];
@@ -1011,6 +1012,26 @@ function AdminPanel() {
             continue;
           }
 
+          let rawMedium = "Gujarati";
+          if (medIdx !== -1 && cells[medIdx]) {
+            const mVal = cells[medIdx].trim().toLowerCase();
+            if (mVal.startsWith("eng") || mVal === "e") {
+              rawMedium = "English";
+            } else if (mVal.startsWith("guj") || mVal === "g") {
+              rawMedium = "Gujarati";
+            } else if (mVal.startsWith("hin") || mVal === "h") {
+              rawMedium = "Hindi";
+            } else {
+              rawMedium = cells[medIdx].trim();
+            }
+          } else {
+            // Intelligent fallback detection
+            const hasGujarati = /[\u0a80-\u0aff]/.test(questionText);
+            if (!hasGujarati && /[a-zA-Z]{5,}/.test(questionText)) {
+              rawMedium = "English";
+            }
+          }
+
           parsed.push({
             questionId: "q_bulk_" + Date.now() + "_" + i + "_" + Math.floor(Math.random() * 100),
             subjectId: subjIdValue,
@@ -1023,6 +1044,7 @@ function AdminPanel() {
             correctAnswer: rawCorrect as "A" | "B" | "C" | "D",
             explanation: explanationText,
             difficulty: rawDifficulty,
+            medium: rawMedium,
             status: "active"
           });
         }
@@ -2401,12 +2423,12 @@ function AdminPanel() {
                                 
                                 <p className="text-xs font-bold leading-relaxed">{q.question}</p>
                                 
-                                {finalType === "MCQ" && (
+                                {(finalType === "MCQ" || finalType === "TrueFalse" || finalType === "FillBlank") && (
                                   <div className="grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground pl-2 border-l-2 border-border">
                                     <p>A. {q.optionA}</p>
                                     <p>B. {q.optionB}</p>
-                                    <p>C. {q.optionC}</p>
-                                    <p>D. {q.optionD}</p>
+                                    {(q.optionC && q.optionC !== "" && finalType !== "TrueFalse") && <p>C. {q.optionC}</p>}
+                                    {(q.optionD && q.optionD !== "" && finalType !== "TrueFalse") && <p>D. {q.optionD}</p>}
                                   </div>
                                 )}
 

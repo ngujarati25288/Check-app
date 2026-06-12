@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { 
   PlusCircle, Search, Trash2, Edit3, CheckCircle2, XCircle, 
   AlertCircle, Upload, BookOpen, Layers, HelpCircle, Check, 
-  Loader2, Eye, Sparkles, Filter, FileText, CheckCircle, RefreshCw, X, ArrowRight, Calendar, Clock
+  Loader2, Eye, Sparkles, Filter, FileText, CheckCircle, RefreshCw, X, ArrowRight, Calendar, Clock,
+  Download, Copy
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Question, Subject, Chapter, QuestionDifficulty, UserRole, DailyExam } from "@/types";
@@ -40,6 +41,65 @@ export function QuestionBankManager({
   const [isCommitting, setIsCommitting] = useState(false);
   const [activeImportMode, setActiveImportMode] = useState<"file" | "text">("file");
   const [pastedCsvText, setPastedCsvText] = useState("");
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  const downloadSampleCSV = (medium: "English" | "Gujarati") => {
+    const headers = "Standard,Subject,Chapter,Type,Medium,Question,Option A,Option B,Option C,Option D,Correct Answer,Explanation,Difficulty\n";
+    let rows = "";
+    if (medium === "English") {
+      rows += `10,Science,Life Processes,MCQ,English,Which of the following is crucial for photosynthesis?,Nitrogen,Carbon dioxide,Oxygen,Hydrogen,B,Plants absorb carbon dioxide for photosynthesis,medium\n`;
+      rows += `10,Science,Life Processes,TrueFalse,English,Photosynthesis occurs in plants during both day and night?,True,False,,,B,Photosynthesis can only occur in the presence of sunlight,easy\n`;
+      rows += `10,Science,Life Processes,FillBlank,English,The upper chambers of the human heart are called _________.,Atria,Ventricles,Valves,Aorta,A,The top chambers are called atria and the bottom ones ventricles,medium\n`;
+      rows += `10,Science,Life Processes,MatchFollowing,English,"Match the columns: (1) Chlorophyll (2) Salivary gland (3) Stomach - (X) Amylase (Y) Pepsin (Z) Pigment","1-Z, 2-X, 3-Y","1-X, 2-Y, 3-Z","1-Y, 2-Z, 3-X","1-Z, 2-Y, 3-X",A,Chlorophyll is a pigment, salivary gland secretes amylase and stomach secretes pepsin,hard\n`;
+    } else {
+      rows += `10,Science,Life Processes,MCQ,Gujarati,પ્રકાશસંશ્લેષણ પ્રક્રિયા માટે નીચેનામાંથી કયો વાયુ જરૂરી છે?,નાઇટ્રોજન,કાર્બન ડાયોક્સાઇડ,ઓક્સિજન,હાઇડ્રોજન,B,વનસ્પતિ પ્રકાશસંશ્લેષણ માટે કાર્બન ડાયોક્સાઇડ હવામાંથી લે છે,medium\n`;
+      rows += `10,Science,Life Processes,TrueFalse,Gujarati,વનસ્પતિ માં પ્રકાશસંશ્લેષણ દિવસ અને રાત બંને સમયે થાય છે?,સાચું,ખોટું,,,B,પ્રકાશસંશ્લેષણ ફક્ત સૂર્યપ્રકાશની હાજરીમાં જ થાય છે,easy\n`;
+      rows += `10,Science,Life Processes,FillBlank,Gujarati,હૃદયના ઉપરના ખંડોને _________ કહે છે.,કર્ણકો,ક્ષેપકો,વાલ્વ,મહાધમની,A,ઉપરના બે ખંડો કર્ણકો અને નીચેના બે ખંડો ક્ષેપકો છે,medium\n`;
+      rows += `10,Science,Life Processes,MatchFollowing,Gujarati,"યોગ્ય જોડકા જોડો: (1) કલોરોફિલ (2) લાળગ્રંથિ (3) જઠર - (X) એમાયલેઝ (Y) પેપ્સીન (Z) રંજકદ્રવ્ય","1-Z, 2-X, 3-Y","1-X, 2-Y, 3-Z","1-Y, 2-Z, 3-X","1-Z, 2-Y, 3-X",A,કલોરોફિલ રંજકદ્રવ્ય છે, લાળગ્રંથિ એમાયલેઝ સ્ત્રવે છે અને જઠર પેપ્સીન સ્ત્રવે છે,hard\n`;
+    }
+    const csvContent = "\ufeff" + headers + rows;
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `sample_questions_${medium.toLowerCase()}_formats.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success(`${medium} માધ્યમ ફાઇલ ડાઉનલોડ થઈ ગઈ છે!`);
+  };
+
+  const aiPromptText = `You are a professional educational material writer. Generate balanced educational questions spanning multiple formats: Multiple Choice (MCQ), True/False (TrueFalse), Fill-in-the-blanks (FillBlank), and Match the Columns (MatchFollowing - jodka). Output the result strictly in raw CSV format (using double quotes for text where necessary, and no markdown wrapping or text before/after).
+
+The CSV must contain these exact headers:
+Standard,Subject,Chapter,Type,Medium,Question,Option A,Option B,Option C,Option D,Correct Answer,Explanation,Difficulty
+
+Rules for different formats:
+1. MCQ: Normal question with 4 choices (Option A, B, C, D).
+2. TrueFalse: Statement in the Question. Option A must be "સાચું" (or True), Option B "ખોટું" (or False). Option C and D must be kept empty. Correct Answer is A or B.
+3. FillBlank: Use "_________" inside the Question string. Provide options. Correct Answer is the option letter with correct word.
+4. MatchFollowing (Jodka Jogo): List items in Question like "જોડકા જોડો: (1) કલોરોફિલ (2) જઠર - (X) પેપ્સીન (Y) રંજકદ્રવ્ય". In options, draft matching combinations like "1-Y, 2-X", "1-X, 2-Y" etc. Option A must be correct answer combo.
+
+Example Gujarati Rows:
+10,Science,Life Processes,MCQ,Gujarati,"પ્રકાશસંશ્લેષણ મુખ્યત્વે વનસ્પતિના કયા અંગ દ્વારા થાય છે?","મૂળ","ફળ","પર્ણ","પ્રકાંડ","C","પ્રકાશસંશ્લેષણ પર્ણમાં આવેલા કલોરોફિલની મદદથી થાય છે","medium"
+10,Science,Life Processes,TrueFalse,Gujarati,"હૃદયના ડાબા કર્ણકમાં ઓક્સિજનયુક્ત રુધિર આવે છે.","સાચું","ખોટું",,,A,"ફેફસામાંથી ઓક્સિજનયુક્ત રુધિર સૌપ્રથમ ડાબા કર્ણકમાં આવે છે","easy"
+10,Science,Life Processes,FillBlank,Gujarati,"મનુષ્યની લાળગ્રંથિમાંથી _________ ઉત્સેચક સ્ત્રવે છે.","પેપ્સીન","ટ્રિપ્સીન","એમાયલેઝ","લિપેઝ","C","લાળરસમાં એમાયલેઝ નામનો ઉત્સેચક હોય છે","medium"
+10,Science,Life Processes,MatchFollowing,Gujarati,"જોડકા જોડો: (1) ધમની (2) શિરા - (X) શુદ્ધ રુધિર (Y) અશુદ્ધ રુધિર","1-X, 2-Y","1-Y, 2-X","1-X, 2-X","1-Y, 2-Y",A,"ધમની શુદ્ધ રુધિરનું વહન કરે છે અને શિરા અશુદ્ધ રુધિરનું વહન કરે છે","hard"
+
+Example English Rows:
+10,Science,Life Processes,MCQ,English,"Which plant organ is primary for photosynthesis?","Roots","Fruits","Leaves","Stem","C","Photosynthesis occurs primary in leaves.","medium"
+10,Science,Life Processes,TrueFalse,English,"The left atrium of heart receives deoxygenated blood.","True","False",,,B,"The left atrium receives oxygenated blood from lungs.","easy"
+10,Science,Life Processes,FillBlank,English,"Saliva contains an enzyme called salivary _________.","Pepsin","Trypsin","Amylase","Lipase","C","Salivary amylase breaks down starch.","medium"
+10,Science,Life Processes,MatchFollowing,English,"Match: (1) Artery (2) Vein - (X) Pure Blood (Y) Impure Blood","1-X, 2-Y","1-Y, 2-X","1-X, 2-X","1-Y, 2-Y",A,"Arteries carry pure blood and veins carry impure blood.","hard"
+
+Important: Output strictly valid raw CSV text with headers. No markdown block wraps.`;
+
+  const copyAiPrompt = () => {
+    navigator.clipboard.writeText(aiPromptText);
+    setCopiedPrompt(true);
+    toast.success("AI Prompt ક્લિપબોર્ડ પર કોપી થઈ ગઈ છે!");
+    setTimeout(() => setCopiedPrompt(false), 2000);
+  };
 
   // Active modal controls
   const [activeBundle, setActiveBundle] = useState<any | null>(null);
@@ -79,6 +139,7 @@ export function QuestionBankManager({
   // Group questions into Bundles automatically of Standard | Subject | Chapter
   const bundlesMap: Record<string, {
     standard: string;
+    medium?: string;
     subjectId: string;
     subjectName: string;
     chapterId: string;
@@ -98,11 +159,13 @@ export function QuestionBankManager({
     const matchingChapterObj = chapters.find(c => c.chapterId === q.chapterId);
     const chapterName = matchingChapterObj ? matchingChapterObj.chapterName : q.chapterId;
 
-    const bundleKey = `${standard}_${q.subjectId}_${q.chapterId}`;
+    const qMedium = q.medium || "Gujarati";
+    const bundleKey = `${standard}_${q.subjectId}_${q.chapterId}_${qMedium}`;
 
     if (!bundlesMap[bundleKey]) {
       bundlesMap[bundleKey] = {
         standard,
+        medium: qMedium,
         subjectId: q.subjectId,
         subjectName,
         chapterId: q.chapterId,
@@ -182,6 +245,8 @@ export function QuestionBankManager({
         map["explanation"] = h;
       } else if (nh === "difficulty" || h.includes("મુશ્કેલી")) {
         map["difficulty"] = h;
+      } else if (nh === "medium" || nh === "lang" || nh === "language" || h.includes("માધ્યમ")) {
+        map["medium"] = h;
       }
     });
 
@@ -338,19 +403,68 @@ export function QuestionBankManager({
         const expl = rowObj[headerMap["explanation"]] || "";
         const diff = (rowObj[headerMap["difficulty"]] || "medium").trim().toLowerCase() as QuestionDifficulty;
 
+        let rowMedium = "Gujarati"; // Default to Gujarati
+        if (headerMap["medium"]) {
+          const mVal = (rowObj[headerMap["medium"]] || "").trim().toLowerCase();
+          if (mVal.startsWith("eng") || mVal === "e") {
+            rowMedium = "English";
+          } else if (mVal.startsWith("guj") || mVal === "g") {
+            rowMedium = "Gujarati";
+          } else if (mVal.startsWith("hin") || mVal === "h") {
+            rowMedium = "Hindi";
+          } else if (mVal) {
+            rowMedium = mVal.charAt(0).toUpperCase() + mVal.slice(1);
+          }
+        } else {
+          // Intelligent language detection: Gujarati (or other Indic languages) letters check
+          const hasGujarati = /[\u0a80-\u0aff]/.test(questionText);
+          if (!hasGujarati && /[a-zA-Z]{5,}/.test(questionText)) {
+            rowMedium = "English";
+          }
+        }
+
+        let qType: "MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" = "MCQ";
+        if (headerMap["questionType"]) {
+          const tVal = (rowObj[headerMap["questionType"]] || "").trim().toLowerCase();
+          if (tVal.includes("true") || tVal.includes("false") || tVal === "tf" || tVal.includes("ખરા") || tVal.includes("ખોટા") || tVal.includes("ખરા-ખોટા") || tVal.includes("ખરા ખોટા")) {
+            qType = "TrueFalse";
+          } else if (tVal.includes("blank") || tVal.includes("fill") || tVal === "fb" || tVal.includes("ખાલી") || tVal.includes("જગ્યા")) {
+            qType = "FillBlank";
+          } else if (tVal.includes("match") || tVal.includes("following") || tVal === "mf" || tVal.includes("જોડકા") || tVal.includes("જોડો")) {
+            qType = "MatchFollowing";
+          }
+        } else {
+          // Auto-detect based on option strings or blanks
+          const aLower = optA.toLowerCase().trim();
+          const bLower = optB.toLowerCase().trim();
+          if (
+            aLower === "true" || aLower === "false" ||
+            aLower === "yes" || aLower === "no" ||
+            aLower === "સાચું" || aLower === "ખોટું" ||
+            aLower === "સાચુ" || aLower === "ખોટુ" ||
+            aLower === "ખરું" || aLower === "ખોટું"
+          ) {
+            qType = "TrueFalse";
+          } else if (questionText.includes("______") || questionText.includes("ખાલી જગ્યા")) {
+            qType = "FillBlank";
+          }
+        }
+
         if (questionText.trim()) {
           items.push({
             standard: std,
             subject: cleanedSubject,
             chapter: cleanedChapter,
             question: questionText.trim(),
-            optionA: optA.trim() || "Option A",
-            optionB: optB.trim() || "Option B",
-            optionC: optC.trim() || "Option C",
-            optionD: optD.trim() || "Option D",
+            optionA: optA.trim() || (qType === "TrueFalse" ? "સાચું" : "Option A"),
+            optionB: optB.trim() || (qType === "TrueFalse" ? "ખોટું" : "Option B"),
+            optionC: qType === "TrueFalse" ? "" : (optC.trim() || "Option C"),
+            optionD: qType === "TrueFalse" ? "" : (optD.trim() || "Option D"),
             correctAnswer: ["A", "B", "C", "D"].includes(correct) ? correct : "A",
             explanation: expl.trim(),
-            difficulty: ["easy", "medium", "hard"].includes(diff) ? diff : "medium"
+            difficulty: ["easy", "medium", "hard"].includes(diff) ? diff : "medium",
+            medium: rowMedium,
+            questionType: qType
           });
         }
       }
@@ -444,6 +558,8 @@ export function QuestionBankManager({
           correctAnswer: item.correctAnswer,
           explanation: item.explanation,
           difficulty: item.difficulty,
+          medium: item.medium || "Gujarati",
+          questionType: item.questionType || "MCQ",
           active: true,
           verified: true,
           approvalStatus: "approved",
@@ -699,7 +815,8 @@ export function QuestionBankManager({
         examType: "Scheduled",
         questionIds: paperQuestionIds,
         createdAt: new Date().toISOString(),
-        standard: activeBundle.standard
+        standard: activeBundle.standard,
+        medium: activeBundle.medium || "Gujarati"
       };
 
       const success = await AdminRepository.createExam(
@@ -763,6 +880,56 @@ export function QuestionBankManager({
             >
               <Sparkles className="size-3.5" /> રૉ CSV ટેક્સ્ટ પેસ્ટ
             </button>
+          </div>
+        </div>
+
+        {/* Sample Templates & AI Prompt Helper Box */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-teal-500/5 dark:bg-teal-500/10 border border-teal-500/20 p-4 rounded-2xl text-xs">
+          <div className="space-y-2">
+            <p className="font-extrabold text-teal-800 dark:text-teal-400 flex items-center gap-1.5">
+              <Download className="size-4 text-teal-600" /> નમૂનારૂપ એક્સેલ/CSV ડાઉનલોડ કરો (Download Sample Templates)
+            </p>
+            <p className="text-muted-foreground text-[11px] leading-relaxed">
+              અમારી પાસે ગુજરાતી અને અંગ્રેજી માધ્યમની સેમ્પલ CSV ફાઇલો તૈયાર છે. આ ફાઇલ ડાઉનલોડ કરી તેનો ક્રમ અને હેડર્સ સમજી શકો છો.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => downloadSampleCSV("Gujarati")}
+                className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 active:scale-[0.98] transition text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs"
+              >
+                <Download className="size-3.5" /> ગુજરાતી માધ્યમ સેમ્પલ (.csv)
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadSampleCSV("English")}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition text-white font-bold rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-xs"
+              >
+                <Download className="size-3.5" /> English Sample (.csv)
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2 border-t md:border-t-0 md:border-l border-teal-500/20 pt-3 md:pt-0 md:pl-4">
+            <div className="flex items-center gap-1.5 justify-between">
+              <p className="font-extrabold text-teal-800 dark:text-teal-400 flex items-center gap-1.5">
+                <Sparkles className="size-4 text-emerald-600 animate-pulse" /> AI પ્રશ્ન પ્રોમ્પ્ટ સહાયક (AI Prompt Copier)
+              </p>
+              <button
+                type="button"
+                onClick={copyAiPrompt}
+                className="text-[10px] bg-teal-600/10 dark:bg-teal-400/10 hover:bg-teal-600 hover:text-white transition text-teal-700 dark:text-teal-300 px-2.5 py-1 rounded-md font-extrabold border border-teal-500/30 flex items-center gap-1 cursor-pointer"
+              >
+                {copiedPrompt ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                {copiedPrompt ? "કોપી થઈ ગઈ!" : "કોપી કરો"}
+              </button>
+            </div>
+            <p className="text-muted-foreground text-[11px] leading-relaxed">
+              Gemini કે ChatGPT માંથી નવો પ્રશ્ન સંગ્રહ સીધો મેળવવા માટે આ પ્રોમ્પ્ટ કોપી કરી AI ને આપો. તે ઓટોમેટિકલી ગુજરાતી/અંગ્રેજી માધ્યમ અનુસાર પરફેક્ટ હેડર્સ સાથે પ્રશ્નો આપશે!
+            </p>
+            <div className="relative bg-black/5 dark:bg-black/20 p-2.5 rounded-lg border border-border font-mono text-[9px] text-muted-foreground select-all h-16 overflow-y-auto leading-normal">
+              {aiPromptText}
+            </div>
           </div>
         </div>
 
@@ -866,6 +1033,7 @@ export function QuestionBankManager({
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-900 border-b border-border text-slate-500 uppercase font-bold tracking-wider text-[10px]">
                 <th className="py-4 px-6 text-center w-20">Std</th>
+                <th className="py-4 px-6">Medium</th>
                 <th className="py-4 px-6">Subject</th>
                 <th className="py-4 px-6">Chapter</th>
                 <th className="py-4 px-6 text-center w-28">Questions</th>
@@ -876,7 +1044,7 @@ export function QuestionBankManager({
             <tbody className="divide-y divide-border">
               {bundleList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-16 text-center text-muted-foreground">
+                  <td colSpan={7} className="py-16 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <span className="text-3xl">📂</span>
                       <p className="font-semibold text-sm">કોઈ સક્રિય ક્વેશ્ચન બંડલ્સ મળ્યા નથી</p>
@@ -887,12 +1055,23 @@ export function QuestionBankManager({
               ) : (
                 bundleList.map((bundle) => (
                   <tr 
-                    key={`${bundle.standard}_${bundle.subjectId}_${bundle.chapterId}`}
+                    key={`${bundle.standard}_${bundle.subjectId}_${bundle.chapterId}_${bundle.medium || "Gujarati"}`}
                     className="hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-colors"
                   >
                     <td className="py-4 px-6 text-center">
                       <span className="bg-teal-500/10 text-teal-700 dark:text-teal-400 font-extrabold px-3 py-1 rounded-xl text-xs inline-block">
                         {bundle.standard}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-block ${
+                        bundle.medium === "English" 
+                          ? "bg-blue-500/10 text-blue-700 dark:text-blue-400" 
+                          : bundle.medium === "Hindi"
+                          ? "bg-purple-500/10 text-purple-700 dark:text-purple-400"
+                          : "bg-teal-500/10 text-teal-700 dark:text-teal-400"
+                      }`}>
+                        {bundle.medium || "Gujarati"}
                       </span>
                     </td>
                     <td className="py-4 px-6 font-extrabold text-slate-800 dark:text-slate-100 text-[13px]">
@@ -978,6 +1157,7 @@ export function QuestionBankManager({
                     <thead>
                       <tr className="bg-muted text-muted-foreground text-[10px] uppercase font-bold border-b border-border">
                         <th className="p-3">ધોરણ/વિષય</th>
+                        <th className="p-3">માધ્યમ</th>
                         <th className="p-3">પ્રશ્ન (Question Body)</th>
                         <th className="p-3">ઓપ્શન્સ</th>
                         <th className="p-3 text-center">સાચો જવાબ</th>
@@ -988,6 +1168,17 @@ export function QuestionBankManager({
                         <tr key={idx} className="hover:bg-muted/35">
                           <td className="p-3 whitespace-nowrap font-medium text-muted-foreground text-[10px]">
                             Std {p.standard} - {p.subject}
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-block ${
+                              p.medium === "English" 
+                                ? "bg-blue-500/10 text-blue-700 dark:text-blue-400" 
+                                : p.medium === "Hindi"
+                                ? "bg-purple-500/10 text-purple-700 dark:text-purple-400"
+                                : "bg-teal-500/10 text-teal-700 dark:text-teal-400"
+                            }`}>
+                              {p.medium || "Gujarati"}
+                            </span>
                           </td>
                           <td className="p-3 max-w-sm font-semibold truncate">
                             {p.question}

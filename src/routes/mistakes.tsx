@@ -359,8 +359,12 @@ function MyMistakes() {
                       <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs text-muted-foreground font-sans pl-1">
                         <div className={m.correctAnswer === "A" ? "text-success font-semibold" : ""}>A. {m.optionA}</div>
                         <div className={m.correctAnswer === "B" ? "text-success font-semibold" : ""}>B. {m.optionB}</div>
-                        <div className={m.correctAnswer === "C" ? "text-success font-semibold" : ""}>C. {m.optionC}</div>
-                        <div className={m.correctAnswer === "D" ? "text-success font-semibold" : ""}>D. {m.optionD}</div>
+                        {(m.optionC && m.optionC.trim() !== "" && m.optionC !== "Option C" && m.questionType !== "TrueFalse") && (
+                          <div className={m.correctAnswer === "C" ? "text-success font-semibold" : ""}>C. {m.optionC}</div>
+                        )}
+                        {(m.optionD && m.optionD.trim() !== "" && m.optionD !== "Option D" && m.questionType !== "TrueFalse") && (
+                          <div className={m.correctAnswer === "D" ? "text-success font-semibold" : ""}>D. {m.optionD}</div>
+                        )}
                       </div>
                     )}
 

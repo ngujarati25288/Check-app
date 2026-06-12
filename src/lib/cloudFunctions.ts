@@ -360,7 +360,9 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
   const updatedRecords = records.map((item, idx) => {
     const calculatedRank = idx + 1;
     const previous = oldLeaderboard[item.studentId];
-    const previousRank = previous ? (previous.currentRank || previous.rank) : calculatedRank;
+    const previousRank = previous 
+      ? (typeof previous.currentRank === "number" ? previous.currentRank : (typeof previous.rank === "number" ? previous.rank : calculatedRank))
+      : calculatedRank;
     
     // FIX 6: Rank movement logging (+3 when moving from 8 to 5, negative when dropped, "flat" if same)
     let rankChange = "flat";
@@ -396,6 +398,16 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
           updatedAt: serverTimestamp()
         });
       }
+
+      // Delete old records of users who are no longer active
+      const activeStudentIds = new Set(students.map(s => s.uid));
+      for (const oldStudentId of Object.keys(oldLeaderboard)) {
+        if (!activeStudentIds.has(oldStudentId)) {
+          const docRef = doc(db, collName, oldStudentId);
+          batch.delete(docRef);
+        }
+      }
+
       await batch.commit();
     } catch (e: any) {
       errorsList.push(`Failed writing to ${collName}: ${e.message}`);
@@ -594,6 +606,12 @@ export async function calculateSubjectLeaderboards(): Promise<SubjectLeaderboard
     } catch (_) {}
   } else {
     try {
+      const snap = await getDocs(collection(db, "subject_leaderboards"));
+      const oldSubjectRecs: string[] = [];
+      snap.forEach(d => {
+        oldSubjectRecs.push(d.id);
+      });
+
       const batch = writeBatch(db);
       // Top 200 records to scale performance optimization
       const listToSave = allSubjectRecords.slice(0, 200);
@@ -605,6 +623,20 @@ export async function calculateSubjectLeaderboards(): Promise<SubjectLeaderboard
           updatedAt: serverTimestamp()
         });
       }
+
+      // Delete old subject records of users who are no longer active
+      const activeStudentIds = new Set(students.map(s => s.uid));
+      for (const oldId of oldSubjectRecs) {
+        const underscoreIndex = oldId.indexOf("_");
+        if (underscoreIndex !== -1) {
+          const oldStudentId = oldId.substring(underscoreIndex + 1);
+          if (!activeStudentIds.has(oldStudentId)) {
+            const docRef = doc(db, "subject_leaderboards", oldId);
+            batch.delete(docRef);
+          }
+        }
+      }
+
       await batch.commit();
     } catch (e) {
       console.error("Failed saving subject leaderboards to firestore:", e);

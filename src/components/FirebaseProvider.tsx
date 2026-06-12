@@ -33,6 +33,7 @@ interface AuthContextType {
     standard: string;
     division: string;
     village: string;
+    medium: string;
   }) => Promise<boolean>;
   signOut: () => Promise<void>;
   isStudent: () => boolean;
@@ -98,10 +99,19 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setUser = (profile: DBUser | null) => {
     if (profile) {
       const liveStreak = getLiveStreak(profile.streak || 0, profile.lastActiveDate);
-      if (liveStreak !== profile.streak) {
+      let updated = liveStreak !== profile.streak;
+
+      let finalMedium = profile.medium;
+      if (!finalMedium) {
+        finalMedium = "Gujarati";
+        updated = true;
+      }
+
+      if (updated) {
         profile = {
           ...profile,
-          streak: liveStreak
+          streak: liveStreak,
+          medium: finalMedium
         };
         try {
           localStorage.setItem('dle:user_session', JSON.stringify(profile));
@@ -359,7 +369,27 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const loginWithStudentId = async (studentId: string, passwordPlain: string): Promise<boolean> => {
     setLoading(true);
     try {
-      const uIdInput = studentId.trim();
+      // 1. Convert Gujarati numerals to English digits
+      const guDoc: { [key: string]: string } = {
+        '૦': '0', '૧': '1', '૨': '2', '૩': '3', '૪': '4',
+        '૫': '5', '૬': '6', '૭': '7', '૮': '8', '૯': '9'
+      };
+      let normalizedId = studentId.replace(/[૦-૯]/g, (match) => guDoc[match] || match);
+
+      // 2. Trim and remove ANY blank spaces or tabs typed within the ID (extremely common error)
+      normalizedId = normalizedId.replace(/\s+/g, '').trim();
+
+      // 3. Robust casing and hyphen correction: e.g. std-10-00001 -> STD10-00001, Std 10-00001 -> STD10-00001
+      if (normalizedId.toLowerCase().startsWith("std")) {
+        let suffix = normalizedId.substring(3);
+        if (suffix.startsWith("-")) {
+          suffix = suffix.substring(1);
+        }
+        normalizedId = "STD" + suffix.toUpperCase();
+      }
+
+      const uIdInput = normalizedId;
+
       if (!uIdInput || !passwordPlain) {
         toast.error("કૃપા કરીને રજીસ્ટ્રેશન આઈડી અને પાસવર્ડ ભરો.");
         setLoading(false);
@@ -369,6 +399,15 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       let matchedUser: DBUser | null = null;
       if (isFirebasePlaceholder) {
         matchedUser = await UserRepository.getProfile("user_" + uIdInput);
+        if (!matchedUser) {
+          matchedUser = await UserRepository.getProfileByStudentId(uIdInput);
+        }
+        if (!matchedUser && uIdInput.toLowerCase().startsWith("std")) {
+          matchedUser = await UserRepository.getProfileByStudentId(uIdInput.toUpperCase());
+        }
+        if (!matchedUser && /^[0-9]{10}$/.test(uIdInput)) {
+          matchedUser = await UserRepository.getProfileByMobile(uIdInput);
+        }
       } else {
         // Find profile checking Student ID first (as typed), then case-insensitive student ID, then mobile number
         let profileById = await UserRepository.getProfileByStudentId(uIdInput);
@@ -607,6 +646,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     standard: string;
     division: string;
     village: string;
+    medium: string;
   }): Promise<boolean> => {
     setLoading(true);
     registerInProgress.current = true;
@@ -669,7 +709,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         village: fields.village,
         role: "student",
         status: "Approved",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        medium: fields.medium || "Gujarati"
       };
 
       console.log("5. UserRepository.createProfile start", { ...newProfile, passwordHash: "[REDACTED]" });

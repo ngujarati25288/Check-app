@@ -100,6 +100,19 @@ function Result() {
     );
   }
 
+  const isEnglish = user?.medium === "English";
+  const getSuccessMessage = () => {
+    if (isEnglish) {
+      if (percent >= 90) return "Excellent! You performed outstandingly.";
+      if (percent >= 80) return "Very nice! You are improving continuously.";
+      if (percent >= 70) return "Good! A little more effort and you'll be at the top.";
+      if (percent >= 60) return "Keep moving — revise and resolve.";
+      if (percent >= 50) return "Analyze your mistakes and try again.";
+      return "Don't give up — learn a little every day.";
+    }
+    return message;
+  };
+
   return (
     <AppShell title="Result" titleGu="પરિણામ" back="/dashboard">
       {showConfetti && <Confetti />}
@@ -114,12 +127,16 @@ function Result() {
             {celebrate ? (
               <>
                 <h2 className="mt-3 text-2xl font-extrabold font-gu animate-[scale-in_0.5s_ease-out]">
-                  🎉 અદ્ભુત!
+                  {isEnglish ? "🎉 Outstanding!" : "🎉 અદ્ભુત!"}
                 </h2>
-                <p className="mt-1 text-sm font-gu text-white/90">🌟 તમે ખૂબ સારું પ્રદર્શન કર્યું!</p>
+                <p className="mt-1 text-sm font-gu text-white/90">
+                  {isEnglish ? "🌟 You performed exceptionally well!" : "🌟 તમે ખૂબ સારું પ્રદર્શન કર્યું!"}
+                </p>
               </>
             ) : (
-              <p className="mt-3 text-sm font-gu text-white/85">શાબાશ! તમે સારું પ્રદર્શન કર્યું</p>
+              <p className="mt-3 text-sm font-gu text-white/85">
+                {isEnglish ? "Well done! You performed well" : "શાબાશ! તમે સારું પ્રદર્શન કર્યું"}
+              </p>
             )}
             <div className="mt-4 flex justify-center">
               <ProgressRing value={percent} size={150} stroke={12} sublabel="Score" />
@@ -140,7 +157,7 @@ function Result() {
               <Sparkles className="size-5" />
             </div>
             <p className="text-sm font-gu font-semibold leading-snug">
-              🏆 શાનદાર પરિણામ! તમે Top Performer છો.
+              {isEnglish ? "🏆 Outstanding result! You are a Top Performer." : "🏆 શાનદાર પરિણામ! તમે Top Performer છો."}
             </p>
           </div>
         )}
@@ -150,10 +167,12 @@ function Result() {
             <TrendingUp className="size-5" />
           </div>
           <div>
-            <p className="text-sm font-gu font-semibold leading-snug">{message}</p>
+            <p className="text-sm font-gu font-semibold leading-snug">{getSuccessMessage()}</p>
             {improvement > 0 && (
               <p className="text-xs text-muted-foreground font-gu mt-1">
-                તમે ગયા અઠવાડિયા કરતાં {improvement}% વધુ ગુણ મેળવ્યા.
+                {isEnglish 
+                  ? `You scored ${improvement}% higher than last week.` 
+                  : `તમે ગયા અઠવાડિયા કરતાં ${improvement}% વધુ ગુણ મેળવ્યા.`}
               </p>
             )}
           </div>

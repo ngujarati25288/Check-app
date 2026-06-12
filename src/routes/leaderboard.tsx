@@ -34,6 +34,7 @@ interface CompiledLeaderboardItem {
   standard: string;
   school: string;
   village: string;
+  medium?: string;
   points: number;
   rankingScore: number;
   masteredQuestions: number;
@@ -58,6 +59,7 @@ function Leaderboard() {
   const [selectedSchool, setSelectedSchool] = useState<string>("");
   const [selectedVillage, setSelectedVillage] = useState<string>("");
   const [selectedSubject, setSelectedSubject] = useState<string>("");
+  const [selectedMedium, setSelectedMedium] = useState<string>("");
 
   const handleManualRefresh = async () => {
     try {
@@ -76,6 +78,7 @@ function Leaderboard() {
             standard: match?.standard || "10",
             school: match?.school || "DL High School",
             village: match?.village || "Village",
+            medium: match?.medium || "Gujarati",
             points: match?.points || 0,
             rankingScore: item.rankingScore,
             masteredQuestions: match?.masteredQuestions || 0,
@@ -119,6 +122,7 @@ function Leaderboard() {
               standard: match?.standard || "10",
               school: match?.school || "DL High School",
               village: match?.village || "Village",
+              medium: match?.medium || "Gujarati",
               points: match?.points || 0,
               rankingScore: item.rankingScore,
               masteredQuestions: match?.masteredQuestions || 0,
@@ -155,12 +159,16 @@ function Leaderboard() {
   const uniqueVillages = Array.from(
     new Set(fullList.map((item) => item.village).filter(Boolean))
   ).sort();
+  const uniqueMediums = Array.from(
+    new Set(fullList.map((item) => item.medium).filter(Boolean))
+  ).sort();
 
   // Apply filters in memory
   const filteredList = fullList.filter((item) => {
     if (selectedStandard && item.standard !== selectedStandard) return false;
     if (selectedSchool && item.school !== selectedSchool) return false;
     if (selectedVillage && item.village !== selectedVillage) return false;
+    if (selectedMedium && item.medium !== selectedMedium) return false;
     return true;
   }).map((item, index) => ({
     ...item,
@@ -170,13 +178,14 @@ function Leaderboard() {
   const top3 = filteredList.slice(0, 3);
   const rest = filteredList.slice(3);
 
-  const hasAnyFilter = !!(selectedStandard || selectedSchool || selectedVillage || selectedSubject);
+  const hasAnyFilter = !!(selectedStandard || selectedSchool || selectedVillage || selectedSubject || selectedMedium);
 
   const resetFilters = () => {
     setSelectedStandard("");
     setSelectedSchool("");
     setSelectedVillage("");
     setSelectedSubject("");
+    setSelectedMedium("");
   };
 
   const getRankChangeIcon = (change?: string) => {
@@ -337,10 +346,10 @@ function Leaderboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
             {/* Standard Filter */}
             <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Standard</label>
+              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Standard (ધોરણ)</label>
               <select
                 value={selectedStandard}
                 onChange={(e) => setSelectedStandard(e.target.value)}
@@ -355,9 +364,24 @@ function Leaderboard() {
               </select>
             </div>
 
+            {/* Medium Filter */}
+            <div className="space-y-1">
+              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Medium (માધ્યમ)</label>
+              <select
+                value={selectedMedium}
+                onChange={(e) => setSelectedMedium(e.target.value)}
+                className="w-full bg-muted text-xs h-9.5 px-2 rounded-xl border border-border focus:ring-1 focus:ring-primary focus:outline-none"
+              >
+                <option value="">All Mediums</option>
+                <option value="Gujarati">Gujarati (ગુજરાતી)</option>
+                <option value="English">English (અંગ્રેજી)</option>
+                <option value="Hindi">Hindi (હિન્દી)</option>
+              </select>
+            </div>
+
             {/* Subject Filter */}
             <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Subject</label>
+              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Subject (વિષય)</label>
               <select
                 value={selectedSubject}
                 onChange={(e) => setSelectedSubject(e.target.value)}
@@ -375,7 +399,7 @@ function Leaderboard() {
 
             {/* School Filter */}
             <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase block">School</label>
+              <label className="text-[10px] text-muted-foreground font-medium uppercase block">School (શાળા)</label>
               <select
                 value={selectedSchool}
                 onChange={(e) => setSelectedSchool(e.target.value)}
@@ -392,7 +416,7 @@ function Leaderboard() {
 
             {/* Village Filter */}
             <div className="space-y-1">
-              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Village</label>
+              <label className="text-[10px] text-muted-foreground font-medium uppercase block">Village (ગામ)</label>
               <select
                 value={selectedVillage}
                 onChange={(e) => setSelectedVillage(e.target.value)}

@@ -30,6 +30,7 @@ export interface DBUser {
   lastTokenUpdate?: string;
   createdAt: any; // Server timestamp or Date string
   updatedAt?: any;
+  medium?: string; // "Gujarati" | "English" (supports full localization fallback to Gujarati)
 }
 
 export interface NotificationHistoryItem {
@@ -93,6 +94,7 @@ export interface Question {
 
   // Custom metadata
   standard?: string;
+  medium?: string; // "Gujarati" | "English" (Store medium with every question)
   questionType?: "MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" | "OneWordAnswer" | "ShortAnswer" | "LongAnswer" | "ImageBasedQuestion";
   options?: string[];
   marks?: number;
@@ -131,6 +133,7 @@ export interface DailyExam {
   status: ExamStatus;
   createdAt: any;
   standard?: string; // Standard associated with this exam (e.g. "7", "10")
+  medium?: string; // "Gujarati" | "English" (Store medium with exam records)
   publishAt?: any; // Timestamp / Date - when the exam should be visible to students
   startAt?: any; // Timestamp / Date - when the exam becomes active
   endAt?: any; // Timestamp / Date - when the exam closes
@@ -171,6 +174,7 @@ export interface ExamResult {
   submitTime?: string;
   attemptNumber?: number;
   questionWiseAnswers?: QuestionWiseAnswer[]; // Spaced-repetition detailed analysis payload
+  medium?: string;
 }
 
 export interface StudentMistake {
@@ -200,6 +204,8 @@ export interface StudentMistake {
   nextRevisionDate?: string; 
   lastRevisionDate?: string;
   lastRevisedAt?: any;
+  medium?: string;
+  questionType?: string;
   consecutiveCorrectCount?: number;
   revisionLevel?: number;
   masteredAt?: any;

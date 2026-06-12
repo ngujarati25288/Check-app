@@ -160,6 +160,16 @@ function Profile() {
 
             <div className="flex items-center justify-between pb-2 border-b border-dashed">
               <div className="flex items-center gap-2.5 text-muted-foreground">
+                <BookOpen className="size-4 shrink-0" />
+                <span className="font-gu">માધ્યમ (Learning Medium)</span>
+              </div>
+              <span className="text-right text-foreground font-bold">
+                {user?.medium === "English" ? "English Medium" : "Gujarati Medium"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-dashed">
+              <div className="flex items-center gap-2.5 text-muted-foreground">
                 <School className="size-4 shrink-0" />
                 <span className="font-gu">શાળા નું નામ (School Name)</span>
               </div>

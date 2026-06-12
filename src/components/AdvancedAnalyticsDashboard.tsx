@@ -99,30 +99,32 @@ export function AdvancedAnalyticsDashboard({
     }
   };
 
+  const isDemoActive = useMemo(() => studentAnalytics.some(st => st.id.startsWith("demo-st-")), [studentAnalytics]);
+
   // 1. Calculations & Summaries for Overview
   const stats = useMemo(() => {
-    const totalStudents = studentAnalytics.length || 1;
+    const totalStudents = studentAnalytics.length;
     const avgScore = studentAnalytics.length > 0 
-      ? Math.round(studentAnalytics.reduce((acc, st) => acc + st.averageScore, 0) / totalStudents)
-      : 74;
+      ? Math.round(studentAnalytics.reduce((acc, st) => acc + (st.averageScore || 0), 0) / studentAnalytics.length)
+      : (isDemoActive ? 74 : 0);
 
     const highRiskStudents = studentAnalytics.filter(st => st.riskLevel === "high");
     const mediumRiskStudents = studentAnalytics.filter(st => st.riskLevel === "medium");
 
     const topSchool = schoolAnalytics.length > 0
-      ? [...schoolAnalytics].sort((a, b) => b.averageScore - a.averageScore)[0]?.schoolName
-      : "સરસ્વતી વિદ્યાલય";
+      ? [...schoolAnalytics].sort((a, b) => (b.averageScore || 0) - (a.averageScore || 0))[0]?.schoolName
+      : (isDemoActive ? "સરકારી પ્રાથમિક શાળા, વાસણા" : "-");
 
     const topVillage = villageAnalytics.length > 0
-      ? [...villageAnalytics].sort((a, b) => b.averagePerformance - a.averagePerformance)[0]?.villageName
-      : "વડતાલ";
+      ? [...villageAnalytics].sort((a, b) => (b.averagePerformance || 0) - (a.averagePerformance || 0))[0]?.villageName
+      : (isDemoActive ? "વાસણા" : "-");
 
     const weakSubject = subjectAnalytics.length > 0
-      ? [...subjectAnalytics].sort((a, b) => a.averageScore - b.averageScore)[0]?.subjectName
-      : "Mathematics";
+      ? [...subjectAnalytics].sort((a, b) => (a.averageScore || 0) - (b.averageScore || 0))[0]?.subjectName
+      : (isDemoActive ? "Mathematics" : "-");
 
     return {
-      totalStudents,
+      totalStudents: totalStudents || (isDemoActive ? 6 : 0),
       avgScore,
       highRiskCount: highRiskStudents.length,
       mediumRiskCount: mediumRiskStudents.length,
@@ -130,7 +132,7 @@ export function AdvancedAnalyticsDashboard({
       topVillage,
       weakSubject
     };
-  }, [studentAnalytics, schoolAnalytics, villageAnalytics, subjectAnalytics]);
+  }, [studentAnalytics, schoolAnalytics, villageAnalytics, subjectAnalytics, isDemoActive]);
 
   // Reactive trends chart data based on day toggle
   const trendsChartData = useMemo(() => {
@@ -282,6 +284,25 @@ export function AdvancedAnalyticsDashboard({
           </button>
         </div>
       </div>
+
+      {isDemoActive ? (
+        <div id="demo-mode-banner" className="bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-3xl p-5 flex flex-col sm:flex-row items-start gap-4 shadow-sm">
+          <span className="p-2 w-10 h-10 shrink-0 bg-amber-500/10 rounded-2xl flex items-center justify-center text-lg">
+            💡
+          </span>
+          <div className="space-y-1">
+            <h4 className="font-bold text-xs tracking-wide">ડેમો પ્રદર્શન મોડ પ્રવૃત્ત છે (Demo Preview Mode Active)</h4>
+            <p className="text-[11px] text-muted-foreground font-gu leading-relaxed">
+              સિસ્ટમમાં કોઈ વિદ્યાર્થી દ્વારા હજી સુધી વાસ્તવિક ઓનલાઈન ટેસ્ટ સબમિટ કરવામાં આવી નથી, તેથી ડેશબોર્ડનું માળખું દર્શાવવા માટે આ સિમ્યુલેટેડ ડેમો ડેટા ચાર્ટ પ્રદર્શિત થઈ રહ્યો છે. વિદ્યાર્થી રોલમાંથી નવો ટેસ્ટ પૂર્ણ કરતાની સાથે જ આખો ડેટા રિયલ આંકડાઓમાં બદલાઈ વાસ્તવિક પ્રગતિ બતાવશે.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div id="live-mode-banner" className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 rounded-3xl p-4 flex items-center gap-3 shadow-xs">
+          <div className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="text-xs font-bold font-gu leading-none">લાઇવ રીયલ-ટાઇમ પ્રગતિ વિશ્લેષણ સક્રિય છે (Live production data active)</span>
+        </div>
+      )}
 
       {/* Primary Analytics Navigation */}
       <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none border-b border-border">
@@ -602,52 +623,6 @@ export function AdvancedAnalyticsDashboard({
                           ch.riskLevel === "medium" ? "bg-amber-500" : "bg-emerald-600"
                         }`}>
                           {ch.riskLevel}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Question Level Analytics */}
-          <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
-            <div>
-              <h3 className="font-extrabold text-sm uppercase tracking-wider">High Risk / Confusing Questions Bank</h3>
-              <p className="text-xs text-muted-foreground mt-0.5 font-gu">ભૂલ સુધારણા અને રિવિઝન સફળતા દર</p>
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-border">
-              <table className="w-full text-left font-sans text-xs border-collapse">
-                <thead className="bg-muted">
-                  <tr className="border-b border-border text-[10px] uppercase font-extrabold text-muted-foreground tracking-wider">
-                    <th className="py-3 px-4">Question Text</th>
-                    <th className="py-3 px-4">Subject & Chapter</th>
-                    <th className="py-3 px-4 text-center">Times Asked</th>
-                    <th className="py-3 px-4 text-center">Correct Rate</th>
-                    <th className="py-3 px-4 text-center">Fail Rate</th>
-                    <th className="py-3 px-4 text-center">Question Category</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {questionAnalytics.map((q) => (
-                    <tr key={q.id} className="hover:bg-muted/20 transition">
-                      <td className="py-3.5 px-4 font-bold md:max-w-md truncate">{q.questionText}</td>
-                      <td className="py-3.5 px-4 text-muted-foreground">
-                        <span className="block font-bold">{q.subjectName}</span>
-                        <span className="text-[10px]">{q.chapterName}</span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-semibold">{q.timesAsked}</td>
-                      <td className="py-3.5 px-4 text-center text-emerald-600 font-semibold">{q.correctPercent}%</td>
-                      <td className="py-3.5 px-4 text-center text-red-600 font-semibold">{q.wrongPercent}%</td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className={`inline-block px-2.5 py-1 rounded-full text-[9px] font-black uppercase text-white ${
-                          q.category === "difficult" ? "bg-red-600" :
-                          q.category === "confusing" ? "bg-indigo-600" :
-                          q.category === "improved" ? "bg-emerald-600" : "bg-teal-600"
-                        }`}>
-                          {q.category}
                         </span>
                       </td>
                     </tr>

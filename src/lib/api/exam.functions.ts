@@ -758,35 +758,40 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
 }
 
 export const ACHIEVEMENT_DEFINITIONS = [
-  // Exams
-  { id: "exam_1", category: "exam", badgeName: "Learner", targetValue: 1, points: 50, emoji: "🎓", title: "પ્રથમ પરીક્ષા", titleEn: "First Exam", description: "Complete your first exam", descriptionGu: "મારી પ્રથમ પરીક્ષા પૂર્ણ કરો" },
-  { id: "exam_10", category: "exam", badgeName: "Consistency Hero", targetValue: 10, points: 100, emoji: "📝", title: "૧૦ પરીક્ષાઓ", titleEn: "10 Exams Completed", description: "Complete 10 exams", descriptionGu: "૧૦ પરીક્ષાઓ પૂર્ણ કરો" },
-  { id: "exam_25", category: "exam", badgeName: "Consistency Hero", targetValue: 25, points: 150, emoji: "🎖️", title: "૨૫ પરીક્ષાઓ", titleEn: "25 Exams Completed", description: "Complete 25 exams", descriptionGu: "૨૫ પરીક્ષાઓ પૂર્ણ કરો" },
-  { id: "exam_50", category: "exam", badgeName: "Consistency Hero", targetValue: 50, points: 200, emoji: "🏅", title: "૫૦ પરીક્ષાઓ", titleEn: "50 Exams Completed", description: "Complete 50 exams", descriptionGu: "૫૦ પરીક્ષાઓ પૂર્ણ કરો" },
-  { id: "exam_100", category: "exam", badgeName: "Consistency Hero", targetValue: 100, points: 250, emoji: "🏆", title: "૧૦૦ પરીક્ષાઓ", titleEn: "100 Exams Completed", description: "Complete 100 exams", descriptionGu: "૧૦૦ પરીક્ષાઓ પૂર્ણ કરો" },
+  // Exams (Marvel Iron Man / Naruto Shinobi Rank theme)
+  { id: "exam_1", category: "exam", badgeName: "Arc Reactor", targetValue: 1, points: 50, emoji: "🤖", title: "આયર્ન મેન આર્ક રિએક્ટર", titleEn: "Arc Reactor Powered", description: "Powered up! Complete your first exam like Tony Stark starts his armor", descriptionGu: "મારી પ્રથમ પરીક્ષા પૂર્ણ કરીને આયર્ન મેનની જેમ પાવર-અપ બનો!" },
+  { id: "exam_10", category: "exam", badgeName: "Genin Ninja", targetValue: 10, points: 100, emoji: "🍃", title: "ગેનિન નીન્જા લાયસન્સ", titleEn: "Genin Ninja Graduate", description: "Complete 10 exams to graduate from the Ninja Academy", descriptionGu: "૧૦ પરીક્ષાઓ સાથે શિનોબી એકેડેમી પાસ કરીને ગેનિન પદવી મેળવો!" },
+  { id: "exam_25", category: "exam", badgeName: "Sharingan Eye", targetValue: 25, points: 150, emoji: "👁️‍🗨️", title: "શારિંગન સક્રિય", titleEn: "Sharingan Activated", description: "Complete 25 exams to unlock the legendary Sharingan visual prowess", descriptionGu: "૨૫ પરીક્ષાઓ આપીને ઉચીહા કુળનું સુપ્રસિદ્ધ શારિંગન ચક્ષુ સક્રિય કરો!" },
+  { id: "exam_50", category: "exam", badgeName: "Captain Shield", targetValue: 50, points: 200, emoji: "🛡️", title: "કેપ્ટન અમેરિકા શીલ્ડ", titleEn: "Vibranium Shield Force", description: "Complete 50 exams to possess the unbreakable Vibranium shield of focus", descriptionGu: "૫૦ પરીક્ષાઓ સાથે કેપ્ટન અમેરિકા જેવી અતૂટ વાાઇબ્રેનિયમ ઢાલ મેળવો!" },
+  { id: "exam_100", category: "exam", badgeName: "Hokage Supreme", targetValue: 100, points: 250, emoji: "🍥", title: "લિજેન્ડરી હોકાગે ટાઇટલ", titleEn: "Hokage Elite Supreme", description: "Complete 100 exams! You are now respected as the protector of the village", descriptionGu: "૧૦૦ પરીક્ષાઓ સફળતાપૂર્વક પૂર્ણ કરી તમે સર્વોચ્ચ હોકાગે બન્યા છો!" },
 
-  // Revision
-  { id: "rev_1", category: "revision", badgeName: "Revision Champion", targetValue: 1, points: 30, emoji: "🔄", title: "પ્રથમ પુનરાવર્તન", titleEn: "First Revision", description: "Review your first question", descriptionGu: "પ્રથમ વાર પ્રશ્નનું પુનરાવર્તન કરો" },
-  { id: "rev_25", category: "revision", badgeName: "Revision Champion", targetValue: 25, points: 80, emoji: "⚙️", title: "૨૫ પુનરાવર્તનો", titleEn: "25 Revisions", description: "Review 25 wrong questions", descriptionGu: "૨૫ ભૂલવાળા પ્રશ્નોનું પુનરાવર્તન કરો" },
-  { id: "rev_100", category: "revision", badgeName: "Revision Champion", targetValue: 100, points: 150, emoji: "🔥", title: "૧૦૦ પુનરાવર્તનો", titleEn: "100 Revisions", description: "Review 100 wrong questions", descriptionGu: "૧૦૦ ભૂલવાળા પ્રશ્નોનું પુનરાવર્તન કરો" },
-  { id: "rev_500", category: "revision", badgeName: "Revision Champion", targetValue: 500, points: 300, emoji: "👑", title: "૫૦૦ પુનરાવર્તનો", titleEn: "500 Revisions", description: "Review 500 wrong questions", descriptionGu: "૫૦૦ ભૂલવાળા પ્રશ્નોનું પુનરાવર્તન કરો" },
+  // Revision (Deadpool Heal / Naruto Rasegan focus theme)
+  { id: "rev_1", category: "revision", badgeName: "Chunin Rank", targetValue: 1, points: 30, emoji: "🦊", title: "ચીનીન શિનોબી પદવી", titleEn: "Chunin Shinobi", description: "Review your first question to demonstrate tactical adaptability", descriptionGu: "ભૂલ સુધારીને પ્રથમ વાર પ્રશ્નનું પુનરાવર્તન કરો" },
+  { id: "rev_25", category: "revision", badgeName: "Deadpool Regenerate", targetValue: 25, points: 80, emoji: "⚔️", title: "ડેડપૂલ ઓટો-હીલિંગ", titleEn: "Deadpool Instant Heal", description: "Review 25 wrong questions to regenerate your stamina instantly", descriptionGu: "૨૫ પ્રશ્નોના રિવિઝન વડે ડેડપૂલની જેમ તમારી બધી ભૂલોને ત્વરિત સુધારો!" },
+  { id: "rev_100", category: "revision", badgeName: "Rasengan Orb", targetValue: 100, points: 150, emoji: "🌀", title: "રાસેંગન ચક્ર એનર્જી", titleEn: "Rasengan Chakra Focus", description: "Review 100 wrong questions to mold the swirling sphere of ultimate focus", descriptionGu: "૧૦૦ રિવિઝન પૂરા કરીને પ્રચંડ રાસેંગન ચક્ર શક્તિ હસ્તગત કરો!" },
+  { id: "rev_500", category: "revision", badgeName: "Infinite Tsukuyomi", targetValue: 500, points: 300, emoji: "🔴", title: "અનંત સુકુયોમી કિંગ", titleEn: "Infinite Tsukuyomi Overlord", description: "Review 500 wrong questions to command absolute control over your destiny", descriptionGu: "૫૦૦ રિવિઝન પૂરા કરીને બ્રહ્માંડના સર્વજ્ઞાની કિંગ સાબિત થાઓ!" },
 
-  // Mastery
-  { id: "master_1", category: "mastery", badgeName: "Mastery Expert", targetValue: 1, points: 50, emoji: "⭐", title: "પ્રથમ માસ્ટરી", titleEn: "First Mastered Question", description: "Master 1 question by answering correctly 3 times consecutively", descriptionGu: "૩ વાર સાચો જવાબ આપીને ૧ પ્રશ્ન માસ્ટર કરો" },
-  { id: "master_10", category: "mastery", badgeName: "Mastery Expert", targetValue: 10, points: 100, emoji: "🌟", title: "૧૦ માસ્ટરી પ્રશ્નો", titleEn: "10 Mastered Questions", description: "Master 10 wrong questions", descriptionGu: "૧૦ ભૂલવાળા પ્રશ્નો માસ્ટર કરો" },
-  { id: "master_50", category: "mastery", badgeName: "Mastery Expert", targetValue: 50, points: 200, emoji: "✨", title: "૫૦ માસ્ટરી પ્રશ્નો", titleEn: "50 Mastered Questions", description: "Master 50 wrong questions", descriptionGu: "૫૦ ભૂલવાળા પ્રશ્નો માસ્ટર કરો" },
-  { id: "master_100", category: "mastery", badgeName: "Mastery Expert", targetValue: 100, points: 300, emoji: "🧠", title: "૧૦૦ માસ્ટરી પ્રશ્નો", titleEn: "100 Mastered Questions", description: "Master 100 wrong questions", descriptionGu: "૧૦૦ ભૂલવાળા પ્રશ્નો માસ્ટર કરો" },
+  // Mastery (Shadow Clone / Thor / Susanoo armor theme)
+  { id: "master_1", category: "mastery", badgeName: "Spidey Crawl", targetValue: 1, points: 50, emoji: "🕸️", title: "સ્પાઈડર બાઇટ શક્તિ", titleEn: "First Mastered Spark", description: "Master 1 question consecutively to stick to the ceiling of achievements", descriptionGu: "૧ ભૂલવાળો પ્રશ્ન સતત ૩ વાર સાચો આપી ગ્રીપ મેળવો!" },
+  { id: "master_10", category: "mastery", badgeName: "Shadow Clone", targetValue: 10, points: 100, emoji: "👥", title: "શેડો ક્લોન ટેકનિક", titleEn: "Multi Shadow Clone Jutsu", description: "Master 10 wrong questions to clone your focus in multiple directions", descriptionGu: "૧૦ કઠિન પ્રશ્નો માસ્ટર કરી નરુટોની જેમ મલ્ટી શેડો ક્લોન જ્યુત્સુ જગાવો!" },
+  { id: "master_50", category: "mastery", badgeName: "Thor Hammer", targetValue: 50, points: 200, emoji: "⚡", title: "થોરનું ઓરિજિનલ મ્યોલનીર", titleEn: "Mjolnir Thunder Worthy", description: "Master 50 wrong questions. You are now worthy to lift the Mighty Thor's hammer!", descriptionGu: "૫૦ માસ્ટર્ડ પ્રશ્નો સાથે થોરનું અતુલ્ય મ્યોલનીર હથિયાર હલનચલન કરાવો!" },
+  { id: "master_100", category: "mastery", badgeName: "Perfect Susanoo", targetValue: 100, points: 300, emoji: "🟣", title: "સુસાનો અલ્ટીમેટ ડિફેન્સ", titleEn: "Ultimate Susanoo Armor", description: "Master 100 wrong questions to summon the unbreakable giant titan warrior armor", descriptionGu: "૧૦૦ કઠિન પ્રશ્નો સર કરી ઉચીહા અલ્ટીમેટ સુસાનો રક્ષા કવચ સક્રિય કરો!" },
 
-  // Streak
-  { id: "streak_3", category: "streak", badgeName: "Consistency Hero", targetValue: 3, points: 30, emoji: "🌱", title: "૩ દિવસ સ્ટ્રીક", titleEn: "3-Day Learning Streak", description: "Maintain a learning streak of 3 consecutive days", descriptionGu: "૩ દિવસ સુધી સતત અભ્યાસ જાળવો" },
-  { id: "streak_7", category: "streak", badgeName: "Consistency Hero", targetValue: 7, points: 50, emoji: "⚡", title: "૭ દિવસ સ્ટ્રીક", titleEn: "7-Day Learning Streak", description: "Maintain a learning streak of 7 consecutive days", descriptionGu: "૭ દિવસ સુધી સતત અભ્યાસ જાળવો" },
-  { id: "streak_30", category: "streak", badgeName: "Consistency Hero", targetValue: 30, points: 150, emoji: "💥", title: "૩૦ દિવસ સ્ટ્રીક", titleEn: "30-Day Learning Streak", description: "Maintain a learning streak of 30 consecutive days", descriptionGu: "૩૦ દિવસ સુધી સતત અભ્યાસ જાળવો" },
-  { id: "streak_100", category: "streak", badgeName: "Consistency Hero", targetValue: 100, points: 300, emoji: "🚀", title: "૧૦૦ દિવસ સ્ટ્રીક", titleEn: "100-Day Learning Streak", description: "Maintain a learning streak of 100 consecutive days", descriptionGu: "૧૦૦ દિવસ સુધી સતત અભ્યાસ જાળવો" },
+  // Streak (Spider Sense / Black Panther / Kurama 九尾 theme)
+  { id: "streak_3", category: "streak", badgeName: "Spider Sense", targetValue: 3, points: 30, emoji: "🕷️", title: "સ્પાઈડી-સેન્સ રક્ષણ", titleEn: "Spidey Sense On", description: "Learn 3 days in a row. Your senses are tingling for danger!", descriptionGu: "સતત ૩ દિવસ પરીક્ષા આપીને તમારું સ્પાઈડર સેન્સ સજાગ કરો!" },
+  { id: "streak_7", category: "streak", badgeName: "Wakanda vibranium", targetValue: 7, points: 50, emoji: "🐆", title: "વાઇબ્રેનિયમ બ્લેક પેન્થર", titleEn: "Vibranium Kinetic Charge", description: "Learn 7 days in a row. Fuel your mind with Wakandan ultimate kinetic energy!", descriptionGu: "સતત ૭ દિવસની તાલીમ સાથે બ્લેક પેન્થર જેવી વાઇબ્રેનિયમ તાકાત મેળવો!" },
+  { id: "streak_30", category: "streak", badgeName: "Kurama Chakra", targetValue: 30, points: 150, emoji: "🔥", title: "કુરામા નાઇન-ટેલ્સ મોડ", titleEn: "Kurama Nine-Tails Mode", description: "Learn 30 days in a row to sync with the powerful Nine-Tailed fox chakra", descriptionGu: "સતત ૩૦ દિવસ સુધી અભ્યાસ જાળવી નરુટોના સુપર પાવર કુરમા મોડમાં પધારો!" },
+  { id: "streak_100", category: "streak", badgeName: "Eye of Agamotto", targetValue: 100, points: 300, emoji: "👁️", title: "ડોક્ટર સ્ટ્રેન્જ ટાઇમ સ્ટોન", titleEn: "Eye of Agamotto Time Control", description: "Learn 100 days in a row. You can now rewind time and rewrite physics", descriptionGu: "સતત ૧૦૦ દિવસ લર્નિંગ કરી ડોક્ટર સ્ટ્રેન્જના ટાઇમ સ્ટોન સાથે સમય પર કાબૂ મેળવો!" },
 
-  // Performance
-  { id: "perf_90", category: "performance", badgeName: "Top Performer", targetValue: 90, points: 50, emoji: "🎯", title: "૯૦% ઉત્કૃષ્ટ સ્કોર", titleEn: "90% Plus Score", description: "Score 90% or above in any exam", descriptionGu: "કોઈપણ પ્રોગ્રેસ પરીક્ષામાં ૯૦% કે તેથી વધુ મેળવો" },
-  { id: "perf_95", category: "performance", badgeName: "Top Performer", targetValue: 95, points: 100, emoji: "💎", title: "૯૫% સુપિરિયર સ્કોર", titleEn: "95% Plus Score", description: "Score 95% or above in any exam", descriptionGu: "કોઈપણ પ્રોગ્રેસ પરીક્ષામાં ૯૫% કે તેથી વધુ મેળવો" },
-  { id: "perf_100", category: "performance", badgeName: "Top Performer", targetValue: 100, points: 150, emoji: "🥇", title: "૧૦૦% પરફેક્ટ સ્કોર", titleEn: "Perfect 100% Score", description: "Score 100% in any exam", descriptionGu: "કોઈપણ પરીક્ષામાં પૂરેપૂરા સાચા જવાબો આપો" }
+  // Subject performance-based (Avengers / Legendary Shinobi Specific Ranks)
+  { id: "sub_science", category: "subject_science", badgeName: "Iron Lab", targetValue: 90, points: 150, emoji: "🧬", title: "ટોની સ્ટાર્ક સાયન્સ લેબ", titleEn: "Tony Stark Science Lab", description: "Score 90%+ in any Science (વિજ્ઞાન) exam. Ultimate genius engineer level!", descriptionGu: "વિજ્ઞાન પરીક્ષામાં ૯૦% કે વધુ સ્કોર મેળવી આયર્નમેન જેવા સાયન્ટિસ્ટ બનો!" },
+  { id: "sub_math", category: "subject_math", badgeName: "Yellow Flash", targetValue: 90, points: 150, emoji: "⚡", title: "મિનાતો યલો ફ્લેશ સ્પીડ", titleEn: "Minato's Yellow Flash Speed", description: "Score 90%+ in a Mathematics (ગણિત) exam. Run calculations at the speed of light!", descriptionGu: "ગણિત પરીક્ષામાં ૯૦% કે વધુ લાવી લાઇટનિંગ ફ્લેશ કિંગ શિનોબી બનો!" },
+  { id: "sub_english", category: "subject_english", badgeName: "Web of Words", targetValue: 90, points: 120, emoji: "🕸️", title: "સ્પાઈડરમેન વેબ ઓફ લેંગ્વેજ", titleEn: "Spiderman's Web of Words", description: "Score 90%+ in an English (અંગ્રેજી) exam. Perfectly knit your language web!", descriptionGu: "અંગ્રેજી ભાષા પરીક્ષામાં ૯૦% કે વધુ લાવી સ્પાઈડરમેન જેવું અતૂટ ભાષા જાળું ગૂંથો!" },
+  { id: "sub_gujarati", category: "subject_gujarati", badgeName: "Will of Fire", targetValue: 90, points: 120, emoji: "☄️", title: "નરુટો વિલ ઓફ ફાયર", titleEn: "Naruto's Will of Fire", description: "Score 90%+ in a Gujarati (ગુજરાતી) exam. Embody the passion for your native roots!", descriptionGu: "માતૃભાષા ગુજરાતી પરીક્ષામાં ૯૦% કે વધુ લાવી નરુટોના વિલ ઓફ ફાયર શિનોબી બનો!" },
+  { id: "sub_social", category: "subject_social", badgeName: "Patriot Force", targetValue: 90, points: 120, emoji: "🗺️", title: "કેપ્ટન અમેરિકા હિસ્ટ્રી ક્રોનિકલ", titleEn: "Captain America History Shield", description: "Score 90%+ in Social Science (સામાજિક વિજ્ઞાન) exam. Absolute tactical historian!", descriptionGu: "સામાજિક વિજ્ઞાનમાં ૯૦% કે તેથી વધુ મેળવી પૃથ્વીના રખેવાળ સુપર સોલ્જર સાબિત થાઓ!" },
+
+  // General performance
+  { id: "perf_100", category: "performance", badgeName: "Sand Shield", targetValue: 100, points: 200, emoji: "⏳", title: "ગારા એબ્સોલ્યુટ સેન્ડ ડિફેન્સ", titleEn: "Gaara Absolute Sand Shield", description: "Score a perfect 100% in any exam. Zero mistakes, total protection", descriptionGu: "કોઈપણ પ્રોગ્રેસ પરીક્ષામાં પૂરેપૂરા ૧૦૦% ગુણ મેળવી ગારા જેવું અભેદ રેત કવચ મેળવો!" }
 ];
 
 export async function awardPointsAndCheckAchievementsSecure(
@@ -960,6 +965,16 @@ export async function awardPointsAndCheckAchievementsSecure(
     } else if (def.category === "streak" && streakValue >= def.targetValue) {
       shouldUnlock = true;
     } else if (def.category === "performance" && highestScore >= def.targetValue) {
+      shouldUnlock = true;
+    } else if (def.category === "subject_science" && resultsList.some(r => r.subject?.toLowerCase() === "science" && (r.percentage || 0) >= def.targetValue)) {
+      shouldUnlock = true;
+    } else if (def.category === "subject_math" && resultsList.some(r => (r.subject?.toLowerCase() === "mathematics" || r.subject?.toLowerCase() === "maths") && (r.percentage || 0) >= def.targetValue)) {
+      shouldUnlock = true;
+    } else if (def.category === "subject_english" && resultsList.some(r => r.subject?.toLowerCase() === "english" && (r.percentage || 0) >= def.targetValue)) {
+      shouldUnlock = true;
+    } else if (def.category === "subject_gujarati" && resultsList.some(r => r.subject?.toLowerCase() === "gujarati" && (r.percentage || 0) >= def.targetValue)) {
+      shouldUnlock = true;
+    } else if (def.category === "subject_social" && resultsList.some(r => (r.subject?.toLowerCase() === "social science" || r.subject?.toLowerCase() === "social_science") && (r.percentage || 0) >= def.targetValue)) {
       shouldUnlock = true;
     }
 

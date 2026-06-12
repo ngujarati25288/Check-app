@@ -696,7 +696,14 @@ function Revision() {
                                           { label: "B", val: q.optionB },
                                           { label: "C", val: q.optionC },
                                           { label: "D", val: q.optionD },
-                                        ].map((opt) => {
+                                        ].filter(opt => {
+                                          if (!opt.val || opt.val.trim() === "" || opt.val === "Option C" || opt.val === "Option D") {
+                                            if (q.questionType === "TrueFalse" || !opt.val || opt.val.trim() === "") {
+                                              return false;
+                                            }
+                                          }
+                                          return true;
+                                        }).map((opt) => {
                                           const isCorrectAnswer = opt.label === q.correctAnswer;
                                           return (
                                             <div

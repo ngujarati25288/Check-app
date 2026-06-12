@@ -59,7 +59,7 @@ function Exam() {
 
       try {
         setLoading(true);
-        const exams = await ExamRepository.getActiveExams(user.standard || "10");
+        const exams = await ExamRepository.getActiveExams(user.standard || "10", user.medium);
         if (!active) return;
         if (exams.length === 0) {
           toast.error("આજે કોઈ પરીક્ષા ઉપલબ્ધ નથી.");
@@ -280,7 +280,8 @@ function Exam() {
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
               subject: activeExam.subjectId === "sub1" ? "Science" : activeExam.subjectId === "sub2" ? "Mathematics" : "Social Science",
-              chapter: q.chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers"
+              chapter: q.chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers",
+              medium: user.medium || "Gujarati"
             });
           }
         });
@@ -300,7 +301,8 @@ function Exam() {
           obtainedMarks: correct,
           percentage: percentage,
           submittedAt: new Date().toISOString(),
-          ...deviceInfo
+          ...deviceInfo,
+          medium: user.medium || "Gujarati"
         };
 
         await ResultRepository.saveResult(examResult);
@@ -436,6 +438,11 @@ function Exam() {
 
               <div className="mt-6 space-y-3">
                 {[q.optionA, q.optionB, q.optionC, q.optionD].map((opt, i) => {
+                  if (!opt || opt.trim() === "" || opt === "Option C" || opt === "Option D") {
+                    if (q.questionType === "TrueFalse" || !opt || opt.trim() === "") {
+                      return null;
+                    }
+                  }
                   const selected = answers[index] === i;
                   return (
                     <button
