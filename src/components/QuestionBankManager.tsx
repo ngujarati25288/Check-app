@@ -10,6 +10,96 @@ import { Question, Subject, Chapter, QuestionDifficulty, UserRole, DailyExam } f
 import { AdminRepository } from "@/lib/db";
 import { toast } from "sonner";
 
+const DEFAULT_GUJARATI_SUBJECTS = [
+  "ગણિત",
+  "વિજ્ઞાન",
+  "સામાજિક વિજ્ઞાન",
+  "ગુજરાતી",
+  "અંગ્રેજી",
+  "હિન્દી",
+  "સંસ્કૃત",
+  "ભૌતિક વિજ્ઞાન",
+  "રસાયણ વિજ્ઞાન",
+  "જીવ વિજ્ઞાન",
+  "નામાના મૂળતત્વો",
+  "આંકડાશાસ્ત્ર",
+  "અર્થશાસ્ત્ર",
+  "વાણિજ્ય વ્યવસ્થા"
+];
+
+const DEFAULT_ENGLISH_SUBJECTS = [
+  "Mathematics",
+  "Science",
+  "Social Science",
+  "English",
+  "Gujarati",
+  "Hindi",
+  "Sanskrit",
+  "Physics",
+  "Chemistry",
+  "Biology",
+  "Accountancy",
+  "Statistics",
+  "Economics",
+  "Business Administration"
+];
+
+function getSubjectsByStandardAndMedium(standard: string, medium: "Gujarati" | "English"): string[] {
+  const stdNum = parseInt(standard, 10);
+  if (medium === "Gujarati") {
+    if (stdNum >= 11 && stdNum <= 12) {
+      return [
+        "ભૌતિક વિજ્ઞાન",
+        "રસાયણ વિજ્ઞાન",
+        "જીવ વિજ્ઞાન",
+        "ગણિત",
+        "નામાના મૂળતત્વો",
+        "આંકડાશાસ્ત્ર",
+        "અર્થશાસ્ત્ર",
+        "વાણિજ્ય વ્યવસ્થા",
+        "ગુજરાતી",
+        "અંગ્રેજી"
+      ];
+    } else {
+      return [
+        "ગણિત",
+        "વિજ્ઞાન",
+        "સામાજિક વિજ્ઞાન",
+        "ગુજરાતી",
+        "અંગ્રેજી",
+        "હિન્દી",
+        "સંસ્કૃત"
+      ];
+    }
+  } else {
+    if (stdNum >= 11 && stdNum <= 12) {
+      return [
+        "Physics",
+        "Chemistry",
+        "Biology",
+        "Mathematics",
+        "Accountancy",
+        "Statistics",
+        "Economics",
+        "Business Administration",
+        "English",
+        "Gujarati"
+      ];
+    } else {
+      return [
+        "Mathematics",
+        "Science",
+        "Social Science",
+        "English",
+        "Gujarati",
+        "Hindi",
+        "Sanskrit"
+      ];
+    }
+  }
+}
+
+
 interface QuestionBankManagerProps {
   subjects: Subject[];
   chapters: Chapter[];
@@ -32,6 +122,7 @@ export function QuestionBankManager({
   // State variables for our simplified layout
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStd, setFilterStd] = useState("All");
+  const [filterOwnerId, setFilterOwnerId] = useState("All");
   
   // CSV Import States
   const [isUploading, setIsUploading] = useState(false);
@@ -42,6 +133,159 @@ export function QuestionBankManager({
   const [activeImportMode, setActiveImportMode] = useState<"file" | "text">("file");
   const [pastedCsvText, setPastedCsvText] = useState("");
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  // AI Question Generation States
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiFileType, setAiFileType] = useState<"pdf" | "image" | null>(null);
+  const [aiSelectedFiles, setAiSelectedFiles] = useState<File[]>([]);
+  const [aiMedium, setAiMedium] = useState<"Gujarati" | "English">("Gujarati");
+  const [aiStandard, setAiStandard] = useState("10");
+  const [aiSubjectSelector, setAiSubjectSelector] = useState("ગણિત");
+  const [aiCustomSubjectFlag, setAiCustomSubjectFlag] = useState(false);
+  const [aiCustomSubjectName, setAiCustomSubjectName] = useState("");
+  const [aiChapterSelector, setAiChapterSelector] = useState("Ch-1");
+  const [aiCustomChapterFlag, setAiCustomChapterFlag] = useState(false);
+  const [aiCustomChapterName, setAiCustomChapterName] = useState("");
+  const [aiQuestionType, setAiQuestionType] = useState<"MCQ" | "True/False" | "Fill Blank" | "Mixed">("MCQ");
+  const [aiQuestionCount, setAiQuestionCount] = useState("10");
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+
+  // Auto-sync Subjects & Chapters based on selected medium and standard
+  useEffect(() => {
+    const list = getSubjectsByStandardAndMedium(aiStandard, aiMedium);
+    if (list.length > 0) {
+      setAiSubjectSelector(list[0]);
+    }
+    setAiChapterSelector("Ch-1");
+    setAiCustomSubjectFlag(false);
+    setAiCustomChapterFlag(false);
+  }, [aiMedium, aiStandard]);
+
+  // Handler to update or delete items from the edit preview modal list
+  const handleUpdatePreviewItem = (index: number, updatedFields: Partial<any>) => {
+    const updated = [...parsedItems];
+    updated[index] = { ...updated[index], ...updatedFields };
+    setParsedItems(updated);
+  };
+
+  const handleDeletePreviewItem = (index: number) => {
+    const updated = parsedItems.filter((_, idx) => idx !== index);
+    setParsedItems(updated);
+  };
+
+  const handleAiGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (aiSelectedFiles.length === 0) {
+      toast.warning("કૃપા કરીને પહેલા વાંચવા માટે પીડીએફ અથવા ઈમેજ ફાઇલ અપલોડ કરો.");
+      return;
+    }
+
+    const finalSubject = aiCustomSubjectFlag ? aiCustomSubjectName.trim() : aiSubjectSelector;
+    const finalChapter = aiCustomChapterFlag ? aiCustomChapterName.trim() : aiChapterSelector;
+
+    if (!finalSubject) {
+      toast.warning("કૃપા કરીને વિષય પસંદ કરો અથવા નવો વિષય લખો.");
+      return;
+    }
+    if (!finalChapter) {
+      toast.warning("કૃપા કરીને પ્રકરણ પસંદ કરો અથવા નવું પ્રકરણ લખો.");
+      return;
+    }
+
+    setIsAiGenerating(true);
+    const progressToast = toast.loading("Gemini AI દસ્તાવેજ વાંચીને પ્રશ્નો બનાવી રહ્યું છે... કૃપા કરીને થોડી સેકન્ડ્સ રાહ જુઓ...");
+
+    try {
+      const filePromises = aiSelectedFiles.map((file) => {
+        return new Promise<{ fileBase64: string, fileMimeType: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64String = (reader.result as string).split(",")[1];
+            const fileMime = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+            resolve({ fileBase64: base64String, fileMimeType: fileMime });
+          };
+          reader.onerror = () => reject(new Error(`ફાઇલ ${file.name} વાંચવામાં ભૂલ આવી.`));
+          reader.readAsDataURL(file);
+        });
+      });
+
+      const filesPayload = await Promise.all(filePromises);
+
+      const response = await fetch("/api/generate-questions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          userId: currentUser?.uid || "admin",
+          role: currentUser?.role || "admin",
+          files: filesPayload,
+          medium: aiMedium,
+          standard: aiStandard,
+          subject: finalSubject,
+          chapter: finalChapter,
+          questionType: aiQuestionType,
+          questionCount: aiQuestionCount
+        })
+      });
+
+      if (!response.ok) {
+        const textResponse = await response.text();
+        let errMsg = "સર્વર પ્રશ્ન બનાવવામાં નિષ્ફળ રહ્યું.";
+        try {
+          const errRes = JSON.parse(textResponse);
+          errMsg = errRes.error || errMsg;
+        } catch {
+          if (textResponse.includes("<html") || textResponse.includes("<!DOCTYPE")) {
+            errMsg = `સર્વર એરર ${response.status}: સર્વરમાં કોઈ આંતરિક ભૂલ આવી છે અથવા અપલોડ ફાઇલની કદ મર્યાદા વધારે છે. (HTML Error)`;
+          } else {
+            errMsg = `સર્વર એરર ${response.status}: ${textResponse.substring(0, 200)}`;
+          }
+        }
+        throw new Error(errMsg);
+      }
+
+      const textData = await response.text();
+      let resData;
+      try {
+        resData = JSON.parse(textData);
+      } catch (jsonErr) {
+        throw new Error(`સર્વર તરફથી અમાન્ય રિસ્પોન્સ (JSON parsing error): ${textData.substring(0, 150)}`);
+      }
+      if (resData.success && resData.questions) {
+        const mappedAiItems = resData.questions.map((q: any) => ({
+          standard: aiStandard,
+          subject: finalSubject,
+          chapter: finalChapter,
+          question: q.question,
+          optionA: q.optionA,
+          optionB: q.optionB,
+          optionC: q.optionC,
+          optionD: q.optionD,
+          correctAnswer: q.correctAnswer || "A",
+          explanation: q.explanation || "",
+          difficulty: q.difficulty || "medium",
+          medium: aiMedium,
+          questionType: q.optionC === "" ? "TrueFalse" : (q.question.includes("_____") ? "FillBlank" : "MCQ"),
+          source: "AI Generated"
+        }));
+
+        toast.dismiss(progressToast);
+        setParsedItems(mappedAiItems);
+        setShowAiModal(false);
+        setAiSelectedFiles([]);
+        setShowImportPreview(true);
+        toast.success(`અભિનંદન! ${mappedAiItems.length} પ્રશ્નો સફળતાપૂર્વક મેળવાયા છે અને પૂર્વાવલોકન માટે તૈયાર છે!`);
+      } else {
+        throw new Error("અમાન્ય રિસ્પોન્સ મળ્યો.");
+      }
+    } catch (error: any) {
+      toast.dismiss(progressToast);
+      toast.error(error?.message || "AI પ્રશ્ન નિર્માણ અટકી ગયું.");
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
 
   const downloadSampleCSV = (medium: "English" | "Gujarati") => {
     const headers = "Standard,Subject,Chapter,Type,Medium,Question,Option A,Option B,Option C,Option D,Correct Answer,Explanation,Difficulty\n";
@@ -189,6 +433,17 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
     }
   });
 
+  // Extract unique owner admins for filtering (for Super Admin)
+  const uniqueOwners = React.useMemo(() => {
+    const ownersMap: Record<string, string> = {};
+    questions.forEach(q => {
+      if (q.ownerAdminId) {
+        ownersMap[q.ownerAdminId] = q.ownerAdminName || "Unknown Admin";
+      }
+    });
+    return Object.entries(ownersMap).map(([id, name]) => ({ id, name }));
+  }, [questions]);
+
   const bundleList = Object.values(bundlesMap).filter(b => {
     // Exclude bundles that are already scheduled as daily exams
     const isScheduled = (exams || []).some(exam => {
@@ -200,13 +455,14 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
     });
     if (isScheduled) return false;
 
-    // Filters search & standard selection
+    // Filters search, standard selection & owner selection
     const matchStandard = filterStd === "All" || b.standard === filterStd;
+    const matchOwner = filterOwnerId === "All" || b.questions.some(q => q.ownerAdminId === filterOwnerId);
     const matchText = searchQuery === "" || 
       b.subjectName.toLowerCase().includes(searchQuery.toLowerCase()) || 
       b.chapterName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       b.standard.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchStandard && matchText;
+    return matchStandard && matchOwner && matchText;
   });
 
   // Extract unique standards list
@@ -563,7 +819,12 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
           active: true,
           verified: true,
           approvalStatus: "approved",
-          createdAt: new Date().toISOString()
+          ownerAdminId: currentUser?.uid || "admin",
+          ownerAdminName: currentUser?.fullName || "Admin",
+          createdByUid: currentUser?.uid || "admin",
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser?.uid || "admin",
+          source: item.source || "CSV Import"
         };
       });
 
@@ -619,6 +880,9 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
       active: true,
       verified: true,
       approvalStatus: "approved",
+      ownerAdminId: isEdit ? (editingQuestion.ownerAdminId || currentUser?.uid || "admin") : (currentUser?.uid || "admin"),
+      ownerAdminName: isEdit ? (editingQuestion.ownerAdminName || currentUser?.fullName || "Admin") : (currentUser?.fullName || "Admin"),
+      createdByUid: isEdit ? (editingQuestion.createdByUid || currentUser?.uid || "admin") : (currentUser?.uid || "admin"),
       createdAt: isEdit ? editingQuestion.createdAt : new Date().toISOString()
     };
 
@@ -846,6 +1110,47 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
   return (
     <div className="space-y-6">
       
+      {/* AI MULTI-MODAL QUESTION GENERATOR ZONE */}
+      {currentUser && (currentUser.role === "admin" || currentUser.role === "super_admin") && (
+        <div className="bg-gradient-to-r from-violet-600/10 via-purple-600/5 to-pink-600/10 border border-purple-500/30 rounded-3xl p-6 shadow-md space-y-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-2 border-b border-purple-500/10">
+            <div className="space-y-1 text-center md:text-left">
+              <h3 className="text-base font-extrabold text-purple-900 dark:text-purple-400 flex items-center justify-center md:justify-start gap-2">
+                <Sparkles className="size-5 text-purple-600 animate-pulse" /> AI મલ્ટી-મોડલ ક્વેશ્ચન જનરેટર (AI Question Generator Engine)
+              </h3>
+              <p className="text-xs text-muted-foreground max-w-xl">
+                તમારી પીડીએફ દસ્તાવેજ અથવા પુસ્તકના પાનાની તસવીરો (Images) માંથી આપમેળે સચોટ પ્રશ્નો બનાવો. Gemini AI ફક્ત અપલોડેડ સામગ્રીમાંથી જ પ્રશ્નો બનાવશે.
+              </p>
+            </div>
+            
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setAiFileType("pdf");
+                  setAiSelectedFiles([]);
+                  setShowAiModal(true);
+                }}
+                className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl text-xs transition active:scale-[0.98] shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileText className="size-4" /> AI Generate from PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiFileType("image");
+                  setAiSelectedFiles([]);
+                  setShowAiModal(true);
+                }}
+                className="px-4 py-2.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white font-bold rounded-xl text-xs transition active:scale-[0.98] shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <Layers className="size-4" /> AI Generate from Images
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CSV UPLOADER ZONE */}
       <div className="bg-gradient-to-r from-teal-500/5 to-emerald-500/5 border border-dashed border-teal-500/30 rounded-3xl p-6 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-2 border-b border-teal-500/10">
@@ -1003,22 +1308,40 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <span className="text-[10px] whitespace-nowrap uppercase tracking-wider font-bold text-muted-foreground">ધોરણ / Std:</span>
-          <select
-            value={filterStd}
-            onChange={(e) => setFilterStd(e.target.value)}
-            className="px-3 py-2 bg-muted/60 border border-border rounded-xl text-xs font-semibold focus:outline-none"
-          >
-            <option value="All">All Standards</option>
-            {uniqueStandards.map(std => (
-              <option key={std} value={std}>Std {std}</option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+          {currentUser?.role === "super_admin" && uniqueOwners.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] whitespace-nowrap uppercase tracking-wider font-bold text-muted-foreground">Owner:</span>
+              <select
+                value={filterOwnerId}
+                onChange={(e) => setFilterOwnerId(e.target.value)}
+                className="px-3 py-2 bg-muted/60 border border-border rounded-xl text-xs font-semibold focus:outline-none"
+              >
+                <option value="All">All Owners</option>
+                {uniqueOwners.map(owner => (
+                  <option key={owner.id} value={owner.id}>{owner.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] whitespace-nowrap uppercase tracking-wider font-bold text-muted-foreground">ધોરણ / Std:</span>
+            <select
+              value={filterStd}
+              onChange={(e) => setFilterStd(e.target.value)}
+              className="px-3 py-2 bg-muted/60 border border-border rounded-xl text-xs font-semibold focus:outline-none"
+            >
+              <option value="All">All Standards</option>
+              {uniqueStandards.map(std => (
+                <option key={std} value={std}>Std {std}</option>
+              ))}
+            </select>
+          </div>
           
           <button 
             onClick={() => onRefresh()}
-            className="p-2 bg-primary-soft hover:bg-primary/20 text-primary rounded-xl active:scale-[0.95] transition"
+            className="p-2 bg-primary-soft hover:bg-primary/20 text-primary rounded-xl active:scale-[0.95] transition cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className="size-4" />
@@ -1075,7 +1398,12 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                       </span>
                     </td>
                     <td className="py-4 px-6 font-extrabold text-slate-800 dark:text-slate-100 text-[13px]">
-                      {bundle.subjectName}
+                      <div>{bundle.subjectName}</div>
+                      {currentUser?.role === "super_admin" && (
+                        <div className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold mt-0.5">
+                          Owner: {bundle.questions[0]?.ownerAdminName || "System Migration"}
+                        </div>
+                      )}
                     </td>
                     <td className="py-4 px-6 font-medium text-slate-600 dark:text-slate-300">
                       {bundle.chapterName}
@@ -1113,6 +1441,295 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
         </div>
       </div>
 
+      {/* MODAL 0: AI QUESTION GENERATOR INPUT FORM */}
+      <AnimatePresence>
+        {showAiModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-background border border-border rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl relative overflow-hidden"
+            >
+              <button 
+                onClick={() => {
+                  if (!isAiGenerating) {
+                    setShowAiModal(false);
+                    setAiSelectedFiles([]);
+                  }
+                }}
+                className="absolute top-4 right-4 p-2 hover:bg-muted rounded-full"
+                type="button"
+              >
+                <X className="size-4" />
+              </button>
+
+              <div className="p-6 border-b border-border bg-gradient-to-r from-purple-500/10 to-pink-500/10 font-bold">
+                <h3 className="text-base font-extrabold flex items-center gap-2 text-purple-700">
+                  <Sparkles className="size-5 text-purple-600 animate-pulse" /> AI પ્રશ્ન નિર્માતા ({aiFileType === "pdf" ? "Gen from PDF" : "Gen from Images"})
+                </h3>
+                <p className="text-xs text-muted-foreground font-semibold mt-1">
+                  नीચેની વિગતો ભરો અને ફાઇલ સબમિટ કરો. Gemini AI ફક્ત અપલોડ કરેલ દસ્તાવેજના આધારે જ પ્રશ્નો બનાવશે.
+                </p>
+              </div>
+
+              <form onSubmit={handleAiGenerate} className="p-6 overflow-y-auto space-y-4 max-h-[60dvh] text-xs font-semibold">
+                {/* File picker with Drag and Drop area */}
+                <div className="space-y-2">
+                  <label className="text-[10px] text-muted-foreground uppercase tracking-wider block">
+                    {aiFileType === "pdf" ? "PDF દસ્તાવેજ અપલોડ કરો" : "ઈમેજ ફાઇલ પસંદ કરો (મહત્તમ 8 લિમિટ)"}
+                  </label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-purple-500/25 dark:border-purple-500/40 hover:border-purple-600 rounded-2xl p-5 bg-purple-500/5 hover:bg-purple-500/10 transition cursor-pointer text-center relative">
+                    <Upload className="size-5 text-purple-600 mb-1.5" />
+                    <span className="font-bold text-muted-foreground block text-[11px]">
+                      {aiFileType === "pdf" && aiSelectedFiles.length > 0 
+                        ? aiSelectedFiles[0].name 
+                        : `અહીં ફાઇલ ખેંચો અથવા ક્લિક કરો (${aiFileType === "pdf" ? "Only .pdf" : ".jpg, .png, image/*"})`}
+                    </span>
+                    <span className="text-[9px] text-muted-foreground/60 block mt-0.5">
+                      {aiFileType === "image" 
+                        ? `પસંદ કરેલ: ${aiSelectedFiles.length}/8 ઇમેજ (મહત્તમ 15MB/ફાઇલ)` 
+                        : "મહત્તમ ફાઇલ કદ: 15MB"}
+                    </span>
+                    <input
+                      type="file"
+                      multiple={aiFileType === "image"}
+                      required={aiSelectedFiles.length === 0}
+                      accept={aiFileType === "pdf" ? "application/pdf" : "image/*"}
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+
+                        if (aiFileType === "pdf") {
+                          const file = files[0];
+                          if (!file.name.endsWith(".pdf")) {
+                            toast.error("કૃપા કરીને ફક્ત પીડીએફ (.pdf) ફાઇલ પસંદ કરો.");
+                            return;
+                          }
+                          setAiSelectedFiles([file]);
+                        } else {
+                          const validImages = files.filter(f => f.type.startsWith("image/"));
+                          if (validImages.length === 0) {
+                            toast.error("કૃપા કરીને ફક્ત ઈમેજ ફાઇલો પસંદ કરો.");
+                            return;
+                          }
+                          if (aiSelectedFiles.length + validImages.length > 8) {
+                            toast.error("મહત્તમ 8 ઇમેજ જ અપલોડ કરી શકાય છે.");
+                            return;
+                          }
+                          setAiSelectedFiles((prev) => {
+                            const newFiles = [...prev, ...validImages];
+                            if (newFiles.length > 8) {
+                              toast.error("મહત્તમ 8 ઇમેજ જ અપલોડ કરી શકાય છે.");
+                              return prev;
+                            }
+                            return newFiles;
+                          });
+                        }
+                      }}
+                    />
+                  </label>
+
+                  {/* List of uploaded files with clear-all and delete button */}
+                  {aiSelectedFiles.length > 0 && (
+                    <div className="bg-purple-500/5 border border-purple-500/10 rounded-2xl p-3 space-y-1.5 max-h-[150px] overflow-y-auto">
+                      <div className="flex justify-between items-center text-[10px] text-purple-700/80 uppercase border-b border-purple-500/10 pb-1">
+                        <span>પસંદ કરેલ ફાઇલો ({aiSelectedFiles.length}/8)</span>
+                        <button
+                          type="button"
+                          onClick={() => setAiSelectedFiles([])}
+                          className="text-purple-600 hover:underline"
+                        >
+                          બધી સાફ કરો (Clear All)
+                        </button>
+                      </div>
+                      <div className="space-y-1">
+                        {aiSelectedFiles.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between bg-muted/60 px-3 py-1.5 rounded-xl text-xs font-medium">
+                            <span className="truncate max-w-[80%] text-muted-foreground">
+                              {index + 1}. {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAiSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+                              }}
+                              className="text-red-500 hover:text-red-700 transition"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Grid for Medium + Standard */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">માધ્યમ (Medium)</label>
+                    <select
+                      value={aiMedium}
+                      onChange={(e) => setAiMedium(e.target.value as any)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-border"
+                    >
+                      <option value="Gujarati">Gujarati Medium</option>
+                      <option value="English">English Medium</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">ધોરણ (Standard)</label>
+                    <select
+                      value={aiStandard}
+                      onChange={(e) => setAiStandard(e.target.value)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-border font-bold"
+                    >
+                      {["5", "6", "7", "8", "9", "10", "11", "12"].map((std) => (
+                        <option key={std} value={std}>Std {std}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Subject Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider block">વિષય (Subject)</label>
+                    <button
+                      type="button"
+                      onClick={() => setAiCustomSubjectFlag(!aiCustomSubjectFlag)}
+                      className="text-[10px] text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      {aiCustomSubjectFlag ? "✍️ લિસ્ટમાંથી પસંદ કરો" : "✍️ નવો વિષય બનાવો (New Subject)"}
+                    </button>
+                  </div>
+
+                  {aiCustomSubjectFlag ? (
+                    <input
+                      type="text"
+                      required
+                      placeholder="દાખલા તરીકે: Science, Maths..."
+                      value={aiCustomSubjectName}
+                      onChange={(e) => setAiCustomSubjectName(e.target.value)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-purple-500/40 font-bold focus:border-purple-600"
+                    />
+                  ) : (
+                    <select
+                      value={aiSubjectSelector}
+                      onChange={(e) => setAiSubjectSelector(e.target.value)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-border font-bold"
+                    >
+                      {getSubjectsByStandardAndMedium(aiStandard, aiMedium).map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Chapter Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider block">પ્રકરણ (Chapter)</label>
+                    <button
+                      type="button"
+                      onClick={() => setAiCustomChapterFlag(!aiCustomChapterFlag)}
+                      className="text-[10px] text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      {aiCustomChapterFlag ? "✍️ લિસ્ટમાંથી પસંદ કરો" : "✍️ નવું પ્રકરણ બનાવો (New Chapter)"}
+                    </button>
+                  </div>
+
+                  {aiCustomChapterFlag ? (
+                    <input
+                      type="text"
+                      required
+                      placeholder="દાખલા તરીકે: CH-1 રાસાયણિક પ્રક્રિયાઓ..."
+                      value={aiCustomChapterName}
+                      onChange={(e) => setAiCustomChapterName(e.target.value)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-purple-500/40 font-bold focus:border-purple-600"
+                    />
+                  ) : (
+                    <select
+                      value={aiChapterSelector}
+                      onChange={(e) => setAiChapterSelector(e.target.value)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-border font-bold"
+                    >
+                      {Array.from({ length: 30 }, (_, i) => `Ch-${i + 1}`).map((ch) => (
+                        <option key={ch} value={ch}>{ch}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Question Type & Count */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">પ્રશ્ન પ્રકાર (Question Type)</label>
+                    <select
+                      value={aiQuestionType}
+                      onChange={(e) => setAiQuestionType(e.target.value as any)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-border font-bold"
+                    >
+                      <option value="MCQ">MCQ (ચાર વિકલ્પો)</option>
+                      <option value="True/False">સાચું / ખોટું (True/False)</option>
+                      <option value="Fill Blank">ખાલી જગ્યા પૂરો (Fill Blank)</option>
+                      <option value="Mixed">Mixed (બધા મિશ્ર પ્રશ્નો)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">પ્રશ્નોની સંખ્યા (Questions Count)</label>
+                    <select
+                      value={aiQuestionCount}
+                      onChange={(e) => setAiQuestionCount(e.target.value)}
+                      className="w-full bg-background border px-3 py-2.5 rounded-xl border-border font-extrabold text-teal-600"
+                    >
+                      <option value="10">10 પ્રશ્નો</option>
+                      <option value="20">20 પ્રશ્નો</option>
+                      <option value="40">40 પ્રશ્નો</option>
+                      <option value="60">60 પ્રશ્નો</option>
+                    </select>
+                  </div>
+                </div>
+              </form>
+
+              <div className="p-6 border-t border-border flex justify-end gap-3 bg-muted/20">
+                <button
+                  type="button"
+                  disabled={isAiGenerating}
+                  onClick={() => {
+                    setShowAiModal(false);
+                    setAiSelectedFiles([]);
+                  }}
+                  className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAiGenerating || aiSelectedFiles.length === 0}
+                  onClick={handleAiGenerate}
+                  className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md disabled:opacity-55 cursor-pointer"
+                >
+                  {isAiGenerating ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" /> પ્રશ્નો બનાવી રહ્યું છે...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-3.5" /> પ્રશ્નો બનાવો (AI Generate)
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL 1: PREVIEW CSV BEFORE SAVE */}
       <AnimatePresence>
         {showImportPreview && (
@@ -1121,28 +1738,29 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-background border border-border rounded-3xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl relative"
+              className="bg-background border border-border rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl relative"
             >
               <button 
                 onClick={() => setShowImportPreview(false)}
                 className="absolute top-4 right-4 p-2 hover:bg-muted rounded-full"
+                type="button"
               >
                 <X className="size-4" />
               </button>
 
               <div className="p-6 border-b border-border">
                 <h3 className="text-base font-extrabold flex items-center gap-2 text-teal-600">
-                  <CheckCircle2 className="size-5" /> CSV આયાત પૂર્વાવલોકન (Import Preview)
+                  <CheckCircle2 className="size-5" /> પ્રશ્નો પૂર્વાવલોકન અને સંપાદન (Questions Preview & Editor)
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  ડેટા તપાસો. સેવ બટન ક્લિક કરતાની સાથે જ નીચે દર્શાવેલ વિષય અને પ્રકરણો પણ ઓટોમેટિકલી બની જશે.
+                  ડેટા ચકાસો. તમે કોઈપણ ભૂલ હોય તો પ્રશ્નો, જવાબો અથવા વિકલ્પો સુધારી શકો છો અથવા જે પ્રશ્ન ઉપયોગી ન હોય તેને કાયમ માટે કાઢી શકો છો.
                 </p>
               </div>
 
               {/* Scrollable grid of preview items */}
-              <div className="p-6 overflow-y-auto space-y-4 max-h-[50dvh] text-xs">
+              <div className="p-6 overflow-y-auto space-y-4 max-h-[58dvh] text-xs">
                 <div className="bg-teal-500/5 rounded-2xl p-4 border border-teal-500/10 space-y-2">
-                  <p className="font-bold text-teal-800 dark:text-teal-400">શોધાયેલ મટીરીયલ લિસ્ટ (Auto-Detected Entities):</p>
+                  <p className="font-bold text-teal-800 dark:text-teal-400">શોધાયેલ વિષય અને ધોરણ લિસ્ટ (Detected Targets):</p>
                   <div className="flex flex-wrap gap-2 pt-1 font-semibold">
                     {Array.from(new Set(parsedItems.map(p => `Std ${p.standard} | ${p.subject} | ${p.chapter}`))).map((item, idx) => (
                       <span key={idx} className="bg-teal-500/10 text-teal-800 dark:text-teal-300 px-3 py-1 rounded-full text-[10px]">
@@ -1152,68 +1770,131 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                   </div>
                 </div>
 
-                <div className="border border-border rounded-2xl overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-muted text-muted-foreground text-[10px] uppercase font-bold border-b border-border">
-                        <th className="p-3">ધોરણ/વિષય</th>
-                        <th className="p-3">માધ્યમ</th>
-                        <th className="p-3">પ્રશ્ન (Question Body)</th>
-                        <th className="p-3">ઓપ્શન્સ</th>
-                        <th className="p-3 text-center">સાચો જવાબ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {parsedItems.slice(0, 50).map((p, idx) => (
-                        <tr key={idx} className="hover:bg-muted/35">
-                          <td className="p-3 whitespace-nowrap font-medium text-muted-foreground text-[10px]">
-                            Std {p.standard} - {p.subject}
-                          </td>
-                          <td className="p-3 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-block ${
-                              p.medium === "English" 
-                                ? "bg-blue-500/10 text-blue-700 dark:text-blue-400" 
-                                : p.medium === "Hindi"
-                                ? "bg-purple-500/10 text-purple-700 dark:text-purple-400"
-                                : "bg-teal-500/10 text-teal-700 dark:text-teal-400"
-                            }`}>
-                              {p.medium || "Gujarati"}
-                            </span>
-                          </td>
-                          <td className="p-3 max-w-sm font-semibold truncate">
-                            {p.question}
-                          </td>
-                          <td className="p-3 text-muted-foreground font-mono text-[10px]">
-                            A: {p.optionA.slice(0,12)}.. B: {p.optionB.slice(0,12)}..
-                          </td>
-                          <td className="p-3 text-center font-bold text-teal-600">
-                            {p.correctAnswer}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <div className="space-y-4">
+                  {parsedItems.map((p, idx) => (
+                    <div key={idx} className="border border-border/75 rounded-2xl p-4 space-y-3 relative bg-card shadow-xs">
+                      
+                      {/* Top Header Row within Card with Delete Option */}
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold border-b pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-teal-600 bg-teal-500/10 px-2 py-0.5 rounded-md">#{idx + 1}</span>
+                          <span>Std {p.standard} | {p.medium || "Gujarati"} Medium</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePreviewItem(idx)}
+                          className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 hover:text-rose-700 bg-rose-500/10 rounded-lg font-bold flex items-center gap-1 active:scale-[0.96] transition"
+                        >
+                          <Trash2 className="size-3" /> કાઢી નાખો (Delete)
+                        </button>
+                      </div>
 
-                {parsedItems.length > 50 && (
-                  <p className="text-center text-muted-foreground text-[10px] font-semibold">
-                    + અન્ય {parsedItems.length - 50} પ્રશ્નો મેળવેલ છે...
-                  </p>
-                )}
+                      {/* Question Content Input */}
+                      <div>
+                        <label className="text-[9px] text-muted-foreground block mb-0.5 uppercase tracking-wider font-bold">પ્રશ્નની વિગત (Question Text)</label>
+                        <textarea
+                          rows={2}
+                          value={p.question}
+                          onChange={(e) => handleUpdatePreviewItem(idx, { question: e.target.value })}
+                          className="w-full bg-background border rounded-lg p-2 text-xs font-bold focus:border-teal-500 outline-none"
+                        />
+                      </div>
+
+                      {/* Options & Choices Forms */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[9px] text-muted-foreground block mb-0.5 font-bold">વિકલ્પ A (Option A)</label>
+                          <input
+                            type="text"
+                            value={p.optionA}
+                            onChange={(e) => handleUpdatePreviewItem(idx, { optionA: e.target.value })}
+                            className="w-full bg-background border rounded-lg p-2 text-xs font-semibold focus:border-teal-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-muted-foreground block mb-0.5 font-bold">વિકલ્પ B (Option B)</label>
+                          <input
+                            type="text"
+                            value={p.optionB}
+                            onChange={(e) => handleUpdatePreviewItem(idx, { optionB: e.target.value })}
+                            className="w-full bg-background border rounded-lg p-2 text-xs font-semibold focus:border-teal-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-muted-foreground block mb-0.5 font-bold">વિકલ્પ C (Option C - MCQ માટે)</label>
+                          <input
+                            type="text"
+                            disabled={p.questionType === "TrueFalse"}
+                            placeholder={p.questionType === "TrueFalse" ? "ખરા-ખોટામાં સક્રિય નથી" : "વિકલ્પ C ભરો"}
+                            value={p.optionC}
+                            onChange={(e) => handleUpdatePreviewItem(idx, { optionC: e.target.value })}
+                            className="w-full bg-background disabled:bg-muted border rounded-lg p-2 text-xs font-semibold focus:border-teal-500 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-muted-foreground block mb-0.5 font-bold">વિકલ્પ D (Option D - MCQ માટે)</label>
+                          <input
+                            type="text"
+                            disabled={p.questionType === "TrueFalse"}
+                            placeholder={p.questionType === "TrueFalse" ? "ખરા-ખોટામાં સક્રિય નથી" : "વિકલ્પ D ભરો"}
+                            value={p.optionD}
+                            onChange={(e) => handleUpdatePreviewItem(idx, { optionD: e.target.value })}
+                            className="w-full bg-background disabled:bg-muted border rounded-lg p-2 text-xs font-semibold focus:border-teal-500 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Correct Option selector (A, B, C, D) + Explanation & Difficulty */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                        <div>
+                          <label className="text-[9px] text-muted-foreground block mb-1 uppercase tracking-wider font-extrabold text-teal-700">સાચો જવાબ (Correct Option):</label>
+                          <div className="flex gap-1.5">
+                            {["A", "B", "C", "D"].map((letter) => (
+                              <button
+                                key={letter}
+                                type="button"
+                                disabled={p.questionType === "TrueFalse" && (letter === "C" || letter === "D")}
+                                onClick={() => handleUpdatePreviewItem(idx, { correctAnswer: letter })}
+                                className={`size-8 rounded-lg font-extrabold text-xs border transition flex items-center justify-center cursor-pointer ${
+                                  p.correctAnswer === letter
+                                    ? "bg-teal-600 border-teal-600 text-white shadow-xs"
+                                    : "hover:bg-muted font-medium text-muted-foreground"
+                                }`}
+                              >
+                                {letter}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="text-[9px] text-muted-foreground block mb-0.5 font-bold">સમજૂતી (Explanation Details)</label>
+                          <input
+                            type="text"
+                            value={p.explanation || ""}
+                            onChange={(e) => handleUpdatePreviewItem(idx, { explanation: e.target.value })}
+                            placeholder="સાચો વિકલ્પ હોવાનું શૈક્ષણિક કારણ..."
+                            className="w-full bg-background border rounded-lg p-2 text-xs font-medium focus:border-teal-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="p-6 border-t border-border flex justify-end gap-3 bg-muted/20">
                 <button
                   type="button"
                   onClick={() => setShowImportPreview(false)}
-                  className="px-4 py-2 bg-muted rounded-xl text-xs font-semibold"
+                  className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-xl text-xs font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCommitImport}
-                  disabled={isCommitting}
-                  className="px-5 py-2.5 bg-teal-600 font-bold hover:bg-teal-700 text-white rounded-xl text-xs flex items-center gap-2"
+                  disabled={isCommitting || parsedItems.length === 0}
+                  className="px-5 py-2.5 bg-teal-600 font-bold hover:bg-teal-700 text-white rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer"
                 >
                   {isCommitting ? (
                     <>
@@ -1253,8 +1934,13 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                   <span className="bg-teal-500 text-white font-extrabold px-2.5 py-0.5 rounded-full text-[10px]">
                     Std {activeBundle.standard}
                   </span>
-                  <h3 className="text-base font-extrabold line-clamp-1">
-                    {activeBundle.subjectName} — {activeBundle.chapterName}
+                  <h3 className="text-base font-extrabold line-clamp-1 flex flex-wrap items-center gap-2">
+                    <span>{activeBundle.subjectName} — {activeBundle.chapterName}</span>
+                    {currentUser?.role === "super_admin" && (
+                      <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-teal-600 dark:text-teal-400 font-bold px-2 py-0.5 rounded-md border border-border inline-block">
+                        Owner: {activeBundle.questions[0]?.ownerAdminName || "System Migration"}
+                      </span>
+                    )}
                   </h3>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">

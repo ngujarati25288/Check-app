@@ -129,16 +129,22 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const handleBootstrapIfEligible = async (fUser: FirebaseUser): Promise<DBUser | null> => {
     try {
-      const isSuperAdminEmail = fUser.email === "n.gujarati25288@gmail.com" || fUser.email === "8511125288@daily-learning-exam.com";
+      const envEmails = import.meta.env.VITE_SUPER_ADMIN_EMAILS || "";
+      const allowedEmails = envEmails 
+        ? envEmails.split(",").map((e: string) => e.trim().toLowerCase()) 
+        : ["n.gujarati25288@gmail.com", "8511125288@daily-learning-exam.com"];
+      const isSuperAdminEmail = fUser.email ? allowedEmails.includes(fUser.email.toLowerCase()) : false;
 
       if (isSuperAdminEmail) {
-        const isNayan = fUser.email === "8511125288@daily-learning-exam.com";
+        const superAdminMobile = import.meta.env.VITE_SUPER_ADMIN_MOBILE || "8511125288";
+        const superAdminPassword = import.meta.env.VITE_SUPER_ADMIN_PASSWORD || "Nayan@25288";
+        const isNayan = fUser.email === `${superAdminMobile}@daily-learning-exam.com` || fUser.email === "8511125288@daily-learning-exam.com";
         const newSuperAdmin: DBUser = {
           uid: fUser.uid,
-          studentId: isNayan ? "8511125288" : undefined,
-          passwordHash: isNayan ? hashSync("Nayan@25288", 10) : undefined,
+          studentId: isNayan ? superAdminMobile : undefined,
+          passwordHash: isNayan ? hashSync(superAdminPassword, 10) : undefined,
           fullName: isNayan ? "સુપર એડમિનિસ્ટ્રેટર (Super Admin)" : (fUser.displayName || "Super Admin"),
-          mobile: isNayan ? "8511125288" : (fUser.phoneNumber || "9999999999"),
+          mobile: isNayan ? superAdminMobile : (fUser.phoneNumber || "9999999999"),
           school: "મુખ્ય વહીવટી મથક",
           standard: "10",
           division: "A",
@@ -168,7 +174,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const isEmpty = await UserRepository.isUsersCollectionEmpty();
       if (isEmpty) {
-        toast.error("Only n.gujarati25288@gmail.com is allowed to bootstrap the system.");
+        toast.error("Only authorized administrative accounts are allowed to bootstrap the system.");
         try { await firebaseSignOut(auth); } catch {}
         return null;
       } else {
@@ -365,6 +371,27 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [user?.uid, user?.status, user?.role]);
 
+  // Helper to ensure profile learning medium is backward-compatible and migrated
+  const ensureProfileMediumValue = async (profile: DBUser): Promise<DBUser> => {
+    if (!profile.medium) {
+      profile.medium = "Gujarati";
+      try {
+        await UserRepository.updateProfile(profile.uid, { medium: "Gujarati" });
+        if (isFirebasePlaceholder) {
+          const usersList = getLocalStorageKey<DBUser[]>('users', []);
+          const idx = usersList.findIndex(u => u.uid === profile.uid);
+          if (idx !== -1) {
+            usersList[idx].medium = "Gujarati";
+            setLocalStorageKey('users', usersList);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed soft migrating medium on login event:", err);
+      }
+    }
+    return profile;
+  };
+
   // Student ID and Password Login implementation
   const loginWithStudentId = async (studentId: string, passwordPlain: string): Promise<boolean> => {
     setLoading(true);
@@ -422,12 +449,14 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         // On-the-fly self-healing bootstrap for known demo users if not present in Firestore yet
         if (!profileById) {
+          const superAdminMobile = import.meta.env.VITE_SUPER_ADMIN_MOBILE || "8511125288";
+          const superAdminPass = import.meta.env.VITE_SUPER_ADMIN_PASSWORD || "Nayan@25288";
           const defaultDemoUsers = [
             {
-              studentId: "8511125288",
-              passwordPlain: "Nayan@25288",
+              studentId: superAdminMobile,
+              passwordPlain: superAdminPass,
               fullName: "સુપર એડમિનિસ્ટ્રેટર (Super Admin)",
-              mobile: "8511125288",
+              mobile: superAdminMobile,
               school: "મુખ્ય વહીવટી મથક",
               standard: "10",
               division: "A",
@@ -592,9 +621,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       // Successful verification path
-      setUser(matchedUser);
-      localStorage.setItem('dle:user_session', JSON.stringify(matchedUser));
-      toast.success(`આપનું સ્વાગત છે, ${matchedUser.fullName || "વિદ્યાર્થી"}!`);
+      const migratedUser = await ensureProfileMediumValue(matchedUser);
+      setUser(migratedUser);
+      localStorage.setItem('dle:user_session', JSON.stringify(migratedUser));
+      toast.success(`આપનું સ્વાગત છે, ${migratedUser.fullName || "વિદ્યાર્થી"}!`);
       
       // Navigate to main application board
       if (matchedUser.role === 'admin' || matchedUser.role === 'super_admin') {
@@ -810,9 +840,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         if (profile) {
-          setUser(profile);
-          localStorage.setItem('dle:user_session', JSON.stringify(profile));
-          toast.success(`આપનું સ્વાગત છે, ${profile.fullName}!`);
+          const migratedProfile = await ensureProfileMediumValue(profile);
+          setUser(migratedProfile);
+          localStorage.setItem('dle:user_session', JSON.stringify(migratedProfile));
+          toast.success(`આપનું સ્વાગત છે, ${migratedProfile.fullName}!`);
           if (profile.role === 'admin' || profile.role === 'super_admin') {
             navigate({ to: '/admin' });
           } else {
@@ -843,9 +874,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       if (profile) {
-        setUser(profile);
-        localStorage.setItem('dle:user_session', JSON.stringify(profile));
-        toast.success(`આપનું સ્વાગત છે, ${profile.fullName}!`);
+        const migratedProfile = await ensureProfileMediumValue(profile);
+        setUser(migratedProfile);
+        localStorage.setItem('dle:user_session', JSON.stringify(migratedProfile));
+        toast.success(`આપનું સ્વાગત છે, ${migratedProfile.fullName}!`);
         if (profile.role === 'admin' || profile.role === 'super_admin') {
           navigate({ to: '/admin' });
         } else {

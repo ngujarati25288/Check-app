@@ -42,6 +42,7 @@ import {
   Check
 } from "lucide-react";
 import { useAuth } from "@/components/FirebaseProvider";
+import { isFirebasePlaceholder } from "@/lib/firebase";
 import { AdminRepository, AnalyticsRepository } from "@/lib/db";
 import { 
   DBUser, 
@@ -233,7 +234,7 @@ function AdminPanel() {
         AdminRepository.getAllStudents(),
         AdminRepository.getAllSubjects(),
         AdminRepository.getAllChapters(),
-        AdminRepository.getAllQuestions(),
+        AdminRepository.getAllQuestions(user?.role, user?.uid),
         AdminRepository.getAllExams(),
         AdminRepository.getAllResults(),
         AdminRepository.getAuditLogs(),
@@ -344,7 +345,7 @@ function AdminPanel() {
       });
 
       // Keep static defaults for empty database situation so experience isn't blank
-      if (Object.keys(derivedSubsMap).length === 0) {
+      if (isFirebasePlaceholder && Object.keys(derivedSubsMap).length === 0) {
         const defaultSubs = [
           { subjectId: "sub1", subjectName: "Science", standard: "10", status: "active" as const, createdAt: new Date().toISOString() },
           { subjectId: "sub2", subjectName: "Mathematics", standard: "10", status: "active" as const, createdAt: new Date().toISOString() },

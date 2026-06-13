@@ -5,7 +5,31 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: "express-api-plugin",
+        configureServer(server) {
+          server.middlewares.use(async (req, res, next) => {
+            if (req.url && req.url.startsWith("/api")) {
+              try {
+                const express = await import("express");
+                const { default: apiRouter } = await import("./src/api-router.ts");
+                const app = express.default();
+                app.use("/api", apiRouter);
+                app(req as any, res as any, next as any);
+              } catch (err) {
+                console.error("Vite middleware Express forwarding error:", err);
+                next(err);
+              }
+            } else {
+              next();
+            }
+          });
+        }
+      }
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),

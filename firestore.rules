@@ -108,35 +108,44 @@ service cloud.firestore {
       // Students can ONLY read their own profile. Admins and Super Admins can browse all user profiles.
       allow get: if isCurrentUser(userId) || isAdmin() || isSuperAdmin();
       
-      // Allow queries on the users collection for duplicate checks, code generation, and lookup
-      allow list: if true;
+      // Block unrestricted listing. Only admin/super_admin can list all users.
+      // Unauthenticated requests must be limited (limit <= 100) to prevent bulk database dumps.
+      // Logged in students can ONLY query their own profile document.
+      allow list: if isAdmin() || isSuperAdmin() ||
+                     (!isSignedIn() && request.query.limit != null && request.query.limit <= 100) ||
+                     (isSignedIn() && resource.data.uid == request.auth.uid);
       
       // Prevent self-registration elevation of privilege, except for authorized Super Admin bootstrap
       allow create: if (
+        isCurrentUser(userId) &&
+        isValidUser(incoming()) &&
+        incoming().role == 'super_admin' &&
+        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com'))
+      ) || isAdmin() || isSuperAdmin() || (
+        // Standard student self-registration
         isCurrentUser(userId) && 
         isValidUser(incoming()) && 
-        (
-          incoming().role == 'student' || 
-          (incoming().role == 'super_admin' && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com'))
-        ) && 
-        incoming().status in ['pending', 'Approved', 'approved']
-      ) || isAdmin() || isSuperAdmin();
+        incoming().role == 'student' &&
+        (!('permissions' in incoming().keys())) &&
+        (!('admin' in incoming().keys())) &&
+        (!('isAdmin' in incoming().keys()))
+      );
         
       // Students can modify their non-identity fields. Admins and Super Admins can update any field.
-      // Additionally allow unauthenticated password reset if they ONLY modify passwordHash and updatedAt.
-      allow update: if (
-        incoming().diff(existing()).affectedKeys().hasOnly(['passwordHash', 'updatedAt']) &&
-        incoming().passwordHash is string &&
-        incoming().passwordHash.size() <= 100
-      ) || (isEmailVerified() && (
-        (isCurrentUser(userId) && (
-          incoming().diff(existing()).affectedKeys().hasOnly([
-            'fullName', 'mobile', 'school', 'standard', 'division', 'village', 'fcmToken', 'lastTokenUpdate', 'updatedAt', 'streak', 'lastActiveDate', 'role'
-          ])
-        )) || 
-        isAdmin() || 
-        isSuperAdmin()
-      ));
+      // Strict protection of passwordHash, role, status, and permissions. Privilege escalation is blocked.
+      allow update: if isAdmin() || isSuperAdmin() || 
+                    (
+                      isCurrentUser(userId) &&
+                      isValidUser(incoming()) &&
+                      incoming().role == existing().role &&
+                      incoming().status == existing().status &&
+                      (!('permissions' in incoming().keys()) || (incoming().permissions == existing().permissions)) &&
+                      (!('admin' in incoming().keys()) || (incoming().admin == existing().admin)) &&
+                      (!('isAdmin' in incoming().keys()) || (incoming().isAdmin == existing().isAdmin)) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly([
+                        'fullName', 'mobile', 'school', 'standard', 'division', 'village', 'fcmToken', 'lastTokenUpdate', 'passwordHash', 'updatedAt', 'streak', 'lastActiveDate'
+                      ])
+                    );
       
       allow delete: if isSuperAdmin();
     }
@@ -159,12 +168,36 @@ service cloud.firestore {
     // ----------------------------------------------------
     match /questions/{questionId} {
       // Approved users can fetch individual questions.
-      allow get: if isApproved();
+      allow get: if isApproved() && (
+        isSuperAdmin() || 
+        !isAdmin() || 
+        resource.data.ownerAdminId == request.auth.uid
+      );
 
       // Approved users can search/query the question bank.
-      allow list: if isApproved();
+      allow list: if isApproved() && (
+        isSuperAdmin() || 
+        !isAdmin() || 
+        resource.data.ownerAdminId == request.auth.uid
+      );
 
-      allow write: if isAdmin() || isSuperAdmin();
+      // Admins can create if they set themselves as owner
+      allow create: if isSuperAdmin() || (
+        isAdmin() && 
+        incoming().ownerAdminId == request.auth.uid
+      );
+
+      // Admins can write if they are the owner and preserve ownership
+      allow update: if isSuperAdmin() || (
+        isAdmin() && 
+        existing().ownerAdminId == request.auth.uid && 
+        incoming().ownerAdminId == request.auth.uid
+      );
+
+      allow delete: if isSuperAdmin() || (
+        isAdmin() && 
+        existing().ownerAdminId == request.auth.uid
+      );
     }
 
     // ----------------------------------------------------

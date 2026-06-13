@@ -1,16 +1,101 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Lock, Sparkles, Star, Trophy, Award, BookOpen, RefreshCw, StarOff } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/FirebaseProvider";
 import { PointsRepository, UserAchievementsRepository } from "@/lib/db";
 import { ACHIEVEMENT_DEFINITIONS } from "@/lib/api/exam.functions";
 import { StudentPoints, UserAchievement } from "@/types";
+import { motion, AnimatePresence } from "motion/react";
 
 export const Route = createFileRoute("/achievements")({
   head: () => ({ meta: [{ title: "Achievements" }] }),
   component: Achievements,
 });
+
+// Colorful dynamic designs and high-fidelity educational GIFs for children's gamification
+export function getCategoryDesign(category: string, unlocked: boolean) {
+  if (!unlocked) {
+    return {
+      gradient: "from-slate-100 to-slate-200 dark:from-slate-850 dark:to-slate-900 border-dashed border-2 border-slate-200 dark:border-slate-800",
+      badgeBg: "bg-slate-200/50 dark:bg-slate-800/80 text-slate-400 grayscale opacity-40",
+      glowColor: "shadow-none",
+      gifUrl: null,
+      particleEmoji: "🔒",
+      textColor: "text-muted-foreground",
+      badgeClass: "border border-border",
+      glowRing: "",
+      btnColor: "bg-muted/30 text-muted-foreground"
+    };
+  }
+
+  // Active colorful configs for achievements
+  if (category === "exam") {
+    return {
+      gradient: "from-yellow-400/15 via-amber-400/10 to-orange-500/10 dark:from-yellow-950/20 dark:to-orange-950/15 border-amber-400/30",
+      badgeBg: "bg-gradient-to-tr from-yellow-400 via-amber-500 to-orange-500 text-white shadow-lg",
+      glowColor: "shadow-[0_0_15px_-2px_rgba(251,191,36,0.5)]",
+      gifUrl: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbnZ5MHlyOHJxdm12aGsyZHFjMTJkYXBoazY0NjF0cHhsZmxpc2FvbyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/9Y6n9TR7X09EOPX978/giphy.gif", // twinkling glowing golden star
+      particleEmoji: "⭐",
+      textColor: "text-amber-800 dark:text-amber-300",
+      badgeClass: "border border-amber-300 ring-4 ring-yellow-400/20 animate-pulse",
+      glowRing: "absolute -inset-0.5 rounded-3xl bg-amber-400/10 blur-md opacity-70 animate-pulse",
+      btnColor: "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-extrabold"
+    };
+  }
+  if (category === "revision") {
+    return {
+      gradient: "from-emerald-400/15 via-teal-400/10 to-green-500/10 dark:from-emerald-950/20 dark:to-green-950/15 border-emerald-400/30",
+      badgeBg: "bg-gradient-to-tr from-emerald-500 via-teal-500 to-green-600 text-white shadow-lg",
+      glowColor: "shadow-[0_0_15px_-2px_rgba(16,185,129,0.5)]",
+      gifUrl: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3g2bjBpZHVudTBpaXV0dWtwYms2M2gxbWNjbjRmMjdqOXhwdms5NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/Zg7clvqHE3y64uxbAz/giphy.gif", // sparkling victory ribbon
+      particleEmoji: "🎉",
+      textColor: "text-emerald-800 dark:text-emerald-300",
+      badgeClass: "border border-emerald-300 ring-4 ring-emerald-400/20",
+      glowRing: "absolute -inset-0.5 rounded-3xl bg-emerald-400/10 blur-md opacity-70 animate-pulse",
+      btnColor: "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-extrabold"
+    };
+  }
+  if (category === "mastery") {
+    return {
+      gradient: "from-purple-400/15 via-indigo-400/10 to-fuchsia-500/10 dark:from-purple-950/20 dark:to-fuchsia-950/15 border-purple-400/30",
+      badgeBg: "bg-gradient-to-tr from-purple-600 via-indigo-500 to-fuchsia-500 text-white shadow-lg",
+      glowColor: "shadow-[0_0_15px_-2px_rgba(168,85,247,0.5)]",
+      gifUrl: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnFkMWxtOGsyMmx5bnBjcndid3cycGswMzg3YXRrMTdqcXVhZmlwaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/l41YvS7f6M098uYve/giphy.gif", // magic crystal/sparkles
+      particleEmoji: "🔮",
+      textColor: "text-purple-800 dark:text-purple-300",
+      badgeClass: "border border-purple-300 ring-4 ring-purple-400/20",
+      glowRing: "absolute -inset-0.5 rounded-3xl bg-purple-500/10 blur-md opacity-70 animate-pulse",
+      btnColor: "bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 font-extrabold"
+    };
+  }
+  if (category === "streak") {
+    return {
+      gradient: "from-orange-400/15 via-rose-400/10 to-red-500/10 dark:from-orange-950/20 dark:to-red-950/15 border-orange-400/30",
+      badgeBg: "bg-gradient-to-tr from-orange-500 via-rose-500 to-red-500 text-white shadow-lg",
+      glowColor: "shadow-[0_0_15px_-2px_rgba(249,115,22,0.5)]",
+      gifUrl: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWxhdmdvMXRqbGZreDdmMHUzY2MwaW02b3Z0bDNzOGgxc2kwd3loMCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/X8gDMs99P8wJk2L6M0/giphy.gif", // cartoon fire sparkler
+      particleEmoji: "🔥",
+      textColor: "text-orange-800 dark:text-orange-300",
+      badgeClass: "border border-orange-300 ring-4 ring-orange-500/20",
+      glowRing: "absolute -inset-0.5 rounded-3xl bg-orange-400/10 blur-md opacity-70 animate-pulse",
+      btnColor: "bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400 font-extrabold"
+    };
+  }
+
+  // Subject and General category config
+  return {
+    gradient: "from-cyan-400/15 via-blue-400/10 to-indigo-500/10 dark:from-cyan-950/20 dark:to-indigo-950/15 border-cyan-400/30",
+    badgeBg: "bg-gradient-to-tr from-cyan-500 via-blue-500 to-indigo-500 text-white shadow-lg",
+    glowColor: "shadow-[0_0_15px_-2px_rgba(6,182,212,0.5)]",
+    gifUrl: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnRsbGZqZG52dzI0N2dyYmptMTI1bmF6dnF0dzgyY3ozcTVpcHBpdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/f09fHq6C8C70Cg85Gv/giphy.gif", // orbiting galaxy particles
+    particleEmoji: "☄️",
+    textColor: "text-cyan-800 dark:text-cyan-300",
+    badgeClass: "border border-cyan-300 ring-4 ring-cyan-400/20",
+    glowRing: "absolute -inset-0.5 rounded-3xl bg-cyan-400/10 blur-md opacity-70 animate-pulse",
+    btnColor: "bg-cyan-100 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-400 font-extrabold"
+  };
+}
 
 function Achievements() {
   const { user } = useAuth();
@@ -74,6 +159,23 @@ function Achievements() {
       category: def.category,
       badgeName: def.badgeName
     };
+  });
+
+  const [activeTab, setActiveTab] = useState<"all" | "exam" | "revision" | "mastery" | "streak" | "subject">("all");
+
+  const categories = [
+    { id: "all", labelGu: "બધા", labelEn: "All", emoji: "⚡" },
+    { id: "exam", labelGu: "પરીક્ષા", labelEn: "Exams", emoji: "🤖" },
+    { id: "revision", labelGu: "પુનરાવર્તન", labelEn: "Revisions", emoji: "🩹" },
+    { id: "mastery", labelGu: "પ્રભુત્વ", labelEn: "Mastery", emoji: "🌀" },
+    { id: "streak", labelGu: "સ્ટ્રીક્સ", labelEn: "Streaks", emoji: "🔥" },
+    { id: "subject", labelGu: "વિષયો", labelEn: "Subjects", emoji: "🧬" },
+  ] as const;
+
+  const filteredAchievements = mappedAchievements.filter((a) => {
+    if (activeTab === "all") return true;
+    if (activeTab === "subject") return a.category.startsWith("subject_");
+    return a.category === activeTab;
   });
 
   const unlockedCount = mappedAchievements.filter((a) => a.unlocked).length;
@@ -164,48 +266,125 @@ function Achievements() {
           તમારી મહેનત જ તમારી સફળતા છે.
         </p>
 
-        {/* Badges Grid */}
-        <div className="grid grid-cols-2 gap-3">
-          {mappedAchievements.map((a, i) => (
-            <div
-              key={a.id}
-              className={`relative rounded-3xl border p-4 shadow-card animate-[slide-up_0.35s_ease-out] ${
-                a.unlocked
-                  ? "bg-card border-primary/20"
-                  : "bg-muted/40 border-border opacity-70"
-              }`}
-              style={{ animationDelay: `${i * 30}ms`, animationFillMode: "backwards" }}
-            >
-              {!a.unlocked && (
-                <div className="absolute top-3 right-3 size-7 rounded-full bg-muted flex items-center justify-center">
-                  <Lock className="size-3.5 text-muted-foreground" />
-                </div>
-              )}
-              {a.unlocked && (
-                <div className="absolute top-3 right-3 text-xs font-semibold px-2 py-0.5 rounded-full bg-warning-soft text-warning-foreground font-mono">
-                  +{a.points}p
-                </div>
-              )}
-              <div
-                className={`size-14 rounded-2xl flex items-center justify-center text-3xl ${
-                  a.unlocked ? "bg-primary-soft" : "bg-muted grayscale opacity-60"
+        {/* Categories Tab Bar */}
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none -mx-5 px-5 select-none">
+          {categories.map((cat) => {
+            const isActive = activeTab === cat.id;
+            const stats = (() => {
+              const items = mappedAchievements.filter((a) => {
+                if (cat.id === "all") return true;
+                if (cat.id === "subject") return a.category.startsWith("subject_");
+                return a.category === cat.id;
+              });
+              const uCount = items.filter((a) => a.unlocked).length;
+              return `${uCount}/${items.length}`;
+            })();
+
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setActiveTab(cat.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 shadow-sm ${
+                  isActive
+                    ? "bg-primary text-primary-foreground scale-95"
+                    : "bg-card border border-border text-muted-foreground hover:bg-muted/50"
                 }`}
               >
-                {a.icon}
-              </div>
-              <p className="mt-3 font-semibold text-sm font-gu leading-tight">{a.title}</p>
-              <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{a.desc}</p>
-              {a.unlocked ? (
-                <div className="mt-2.5 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success-soft text-success font-semibold">
-                  ✓ Unlocked
+                <span>{cat.emoji}</span>
+                <div className="text-left">
+                  <p className="leading-none text-[11px] font-gu">{cat.labelGu}</p>
+                  <p className="text-[9px] opacity-80 leading-tight mt-0.5">{cat.labelEn} • {stats}</p>
                 </div>
-              ) : (
-                <div className="mt-2.5 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-semibold">
-                  Locked ({a.points} pts)
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Badges Grid with Gamified Sparkles & Gifs */}
+        <div className="grid grid-cols-2 gap-3.5 pb-8">
+          {filteredAchievements.map((a, i) => {
+            const d = getCategoryDesign(a.category, a.unlocked);
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: Math.min(i * 0.04, 0.45) }}
+                whileHover={a.unlocked ? { scale: 1.03, y: -2 } : {}}
+                key={a.id}
+                className={`relative rounded-3xl border p-4 flex flex-col justify-between transition-all duration-300 overflow-hidden ${d.glowColor} bg-gradient-to-br ${d.gradient} ${
+                  a.unlocked ? "border-primary/30" : "opacity-60"
+                }`}
+              >
+                {/* Glowing ring under active elements */}
+                {a.unlocked && <div className={d.glowRing} />}
+
+                {/* Sparkling Background Gif effect */}
+                {a.unlocked && d.gifUrl && (
+                  <div className="absolute inset-0 pointer-events-none opacity-20 dark:opacity-25 mix-blend-screen overflow-hidden rounded-3xl">
+                    <img 
+                      src={d.gifUrl} 
+                      alt="sparkle" 
+                      className="w-full h-full object-cover scale-110"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                )}
+
+                <div className="relative z-10">
+                  {/* Lock Indicator or Score badge */}
+                  {!a.unlocked ? (
+                    <div className="absolute top-0 right-0 size-7 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center border border-border">
+                      <Lock className="size-3 text-slate-400 dark:text-slate-500" />
+                    </div>
+                  ) : (
+                    <div className="absolute top-0 right-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-yellow-400 text-amber-950 font-mono shadow-xs border border-yellow-300 animate-bounce">
+                      +{a.points} Pts
+                    </div>
+                  )}
+
+                  {/* Icon Container with animation */}
+                  <div className="flex items-center gap-1.5">
+                    <motion.div
+                      animate={a.unlocked ? { rotate: [0, 5, -5, 0], scale: [1, 1.05, 1] } : {}}
+                      transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+                      className={`size-14 rounded-2xl flex items-center justify-center text-3.5xl ${d.badgeBg} ${d.badgeClass}`}
+                    >
+                      {a.icon}
+                    </motion.div>
+                  </div>
+
+                  <p className={`mt-3 font-extrabold text-[13px] font-gu leading-tight tracking-tight ${a.unlocked ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400"}`}>
+                    {a.title}
+                  </p>
+                  
+                  <p className="text-[10px] text-muted-foreground/85 mt-1 leading-snug line-clamp-3" title={a.desc}>
+                    {a.desc}
+                  </p>
                 </div>
-              )}
-            </div>
-          ))}
+
+                <div className="mt-4 relative z-10">
+                  {a.unlocked ? (
+                    <div className="flex items-center gap-1">
+                      <span className="inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-extrabold font-mono border border-emerald-500/25">
+                        ✓ UNLOCKED
+                      </span>
+                      <motion.span 
+                        animate={{ opacity: [0.4, 1, 0.4] }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                        className="text-xs"
+                      >
+                        {d.particleEmoji}
+                      </motion.span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-0.5 text-[9px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold border border-border">
+                      🔒 LOCKED ({a.points} pts)
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </AppShell>

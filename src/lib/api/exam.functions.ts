@@ -738,13 +738,7 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
     }
   }
 
-  // 3. Update student streak on active dynamic action
-  await updateStudentStreakSecure(studentId, todayStr, isFirebasePlaceholder);
-
-  // 4. Recalculate revision analytics
-  await updateRevisionAnalyticsInternal(studentId, isFirebasePlaceholder);
-
-  // Trigger Points & Achievements Securing
+  // 3. Update student streak on active dynamic acti  // Trigger Points & Achievements Securing
   try {
     await awardPointsAndCheckAchievementsSecure(studentId, "revision");
     if (updatedMistake.mastered) {
@@ -757,42 +751,247 @@ export async function recordRevisionAttemptSecure({ data }: { data: RecordRevisi
   return updatedMistake;
 }
 
-export const ACHIEVEMENT_DEFINITIONS = [
-  // Exams (Marvel Iron Man / Naruto Shinobi Rank theme)
-  { id: "exam_1", category: "exam", badgeName: "Arc Reactor", targetValue: 1, points: 50, emoji: "🤖", title: "આયર્ન મેન આર્ક રિએક્ટર", titleEn: "Arc Reactor Powered", description: "Powered up! Complete your first exam like Tony Stark starts his armor", descriptionGu: "મારી પ્રથમ પરીક્ષા પૂર્ણ કરીને આયર્ન મેનની જેમ પાવર-અપ બનો!" },
-  { id: "exam_10", category: "exam", badgeName: "Genin Ninja", targetValue: 10, points: 100, emoji: "🍃", title: "ગેનિન નીન્જા લાયસન્સ", titleEn: "Genin Ninja Graduate", description: "Complete 10 exams to graduate from the Ninja Academy", descriptionGu: "૧૦ પરીક્ષાઓ સાથે શિનોબી એકેડેમી પાસ કરીને ગેનિન પદવી મેળવો!" },
-  { id: "exam_25", category: "exam", badgeName: "Sharingan Eye", targetValue: 25, points: 150, emoji: "👁️‍🗨️", title: "શારિંગન સક્રિય", titleEn: "Sharingan Activated", description: "Complete 25 exams to unlock the legendary Sharingan visual prowess", descriptionGu: "૨૫ પરીક્ષાઓ આપીને ઉચીહા કુળનું સુપ્રસિદ્ધ શારિંગન ચક્ષુ સક્રિય કરો!" },
-  { id: "exam_50", category: "exam", badgeName: "Captain Shield", targetValue: 50, points: 200, emoji: "🛡️", title: "કેપ્ટન અમેરિકા શીલ્ડ", titleEn: "Vibranium Shield Force", description: "Complete 50 exams to possess the unbreakable Vibranium shield of focus", descriptionGu: "૫૦ પરીક્ષાઓ સાથે કેપ્ટન અમેરિકા જેવી અતૂટ વાાઇબ્રેનિયમ ઢાલ મેળવો!" },
-  { id: "exam_100", category: "exam", badgeName: "Hokage Supreme", targetValue: 100, points: 250, emoji: "🍥", title: "લિજેન્ડરી હોકાગે ટાઇટલ", titleEn: "Hokage Elite Supreme", description: "Complete 100 exams! You are now respected as the protector of the village", descriptionGu: "૧૦૦ પરીક્ષાઓ સફળતાપૂર્વક પૂર્ણ કરી તમે સર્વોચ્ચ હોકાગે બન્યા છો!" },
+const buildAchievements = (): any[] => {
+  const list: any[] = [];
 
-  // Revision (Deadpool Heal / Naruto Rasegan focus theme)
-  { id: "rev_1", category: "revision", badgeName: "Chunin Rank", targetValue: 1, points: 30, emoji: "🦊", title: "ચીનીન શિનોબી પદવી", titleEn: "Chunin Shinobi", description: "Review your first question to demonstrate tactical adaptability", descriptionGu: "ભૂલ સુધારીને પ્રથમ વાર પ્રશ્નનું પુનરાવર્તન કરો" },
-  { id: "rev_25", category: "revision", badgeName: "Deadpool Regenerate", targetValue: 25, points: 80, emoji: "⚔️", title: "ડેડપૂલ ઓટો-હીલિંગ", titleEn: "Deadpool Instant Heal", description: "Review 25 wrong questions to regenerate your stamina instantly", descriptionGu: "૨૫ પ્રશ્નોના રિવિઝન વડે ડેડપૂલની જેમ તમારી બધી ભૂલોને ત્વરિત સુધારો!" },
-  { id: "rev_100", category: "revision", badgeName: "Rasengan Orb", targetValue: 100, points: 150, emoji: "🌀", title: "રાસેંગન ચક્ર એનર્જી", titleEn: "Rasengan Chakra Focus", description: "Review 100 wrong questions to mold the swirling sphere of ultimate focus", descriptionGu: "૧૦૦ રિવિઝન પૂરા કરીને પ્રચંડ રાસેંગન ચક્ર શક્તિ હસ્તગત કરો!" },
-  { id: "rev_500", category: "revision", badgeName: "Infinite Tsukuyomi", targetValue: 500, points: 300, emoji: "🔴", title: "અનંત સુકુયોમી કિંગ", titleEn: "Infinite Tsukuyomi Overlord", description: "Review 500 wrong questions to command absolute control over your destiny", descriptionGu: "૫૦૦ રિવિઝન પૂરા કરીને બ્રહ્માંડના સર્વજ્ઞાની કિંગ સાબિત થાઓ!" },
+  // 1. Exam completed milestones (32 milestones)
+  const examMilestones = [
+    { v: 1, e: "🤖", badge: "Mark I Armor", nameEn: "Arc Reactor Mk 1", nameGu: "આર્ક રિએક્ટર માર્ક ૧" },
+    { v: 2, e: "👥", badge: "Acrobat Spider", nameEn: "Web Shooter v1", nameGu: "વેબ શૂટર લેવલ ૧" },
+    { v: 3, e: "🍃", badge: "Academy Ninja", nameEn: "Ninja Academy Entrant", nameGu: "નીન્જા એકેડેમી પ્રવેશક" },
+    { v: 4, e: "🛡️", badge: "First Shield", nameEn: "Vibranium Shield Force", nameGu: "વાઇબ્રેનિયમ સ્ટાર શીલ્ડ" },
+    { v: 5, e: "🦊", badge: "Genin Student", nameEn: "Genin Ninja Candidate", nameGu: "ગેનિન નીન્જા કેન્ડિડેટ" },
+    { v: 6, e: "🔨", badge: "Storm Bolt", nameEn: "Mjolnir Buzz", nameGu: "મ્યોલનીર બઝ શક્તિ" },
+    { v: 7, e: "💍", badge: "Wakanda Citizen", nameEn: "Wakandan Ring Power", nameGu: "વાઇબ્રેનિયમ ફિંગર રીંગ" },
+    { v: 8, e: "🎯", badge: "Bullseye Hawkeye", nameEn: "Hawkeye Arrow Aim", nameGu: "હોકઆઈ બુલઝઆઈ એમ" },
+    { v: 9, e: "🧠", badge: "Pym Particles", nameEn: "Ant-Man Growth", nameGu: "એન્ટમેન માઇક્રો વિઝન" },
+    { v: 10, e: "🦾", badge: "Mark X Armor", nameEn: "Mark X Armor suit", nameGu: "આર્ક રિએક્ટર માર્ક ૧૦" },
+    { v: 12, e: "👁️", badge: "Byakugan Initiate", nameEn: "Byakugan Visuals", nameGu: "બ્યાકુગન વિઝ્યુઅલ જાગૃતિ" },
+    { v: 14, e: "🏹", badge: "Eagle Archer", nameEn: "Advanced Arrow Shooter", nameGu: "એડવાન્સ બાણ શૂટર" },
+    { v: 16, e: "🕷️", badge: "Iron Spider Legs", nameEn: "Iron Spider Legs On", nameGu: "આયર્ન સ્પાઈડર લેગ્સ રેડી" },
+    { v: 18, e: "🎭", badge: "Houdini Widow", nameEn: "Black Widow stealth", nameGu: "બ્લેક વિડો રણનીતિ" },
+    { v: 20, e: "🎖️", badge: "Chunin Cadet", nameEn: "Chunin Exam Candidate", nameGu: "ચુનીન પરીક્ષા ક્વોલિફાયર" },
+    { v: 22, e: "⚡", badge: "Mjolnir Charge", nameEn: "Mjolnir Worthy Spark", nameGu: "મ્યોલનીર ગ્રીપ જાગૃતિ" },
+    { v: 25, e: "👁️‍🗨️", badge: "Sharingan One Tomoe", nameEn: "Sharingan Activated", nameGu: "શારિંગન સુપર આઈ" },
+    { v: 28, e: "🐾", badge: "Panther Claws", nameEn: "Panther Claws Upgraded", nameGu: "પેન્થર ક્લોઝ અપગ્રેડેડ" },
+    { v: 30, e: "🛡️", badge: "Mark L Suit", nameEn: "Mark L Nanotech Armor", nameGu: "માર્ક ૫૦ નેનોટેક સુટ" },
+    { v: 35, e: "🐸", badge: "Mt Myoboku Mount", nameEn: "Toads Mount Training", nameGu: "ટોડ્સ માઉન્ટેન તાલીમ" },
+    { v: 40, e: "🛡️", badge: "Captain Guard", nameEn: "Vibranium Focus Shield", nameGu: "કેપ્ટન અમેરિકા સ્ટાર શીલ્ડ" },
+    { v: 45, e: "🌀", badge: "Rasengan Form", nameEn: "Rasengan Sphere Formed", nameGu: "રાસેંગન ગોળાકાર ચક્ર" },
+    { v: 50, e: "🦍", badge: "Hulkbuster Pilot", nameEn: "Hulkbuster Deployed", nameGu: "હલ્કબસ્ટર પાવર ફોર્સ" },
+    { v: 55, e: "🦅", badge: "Jonin Elite", nameEn: "Jonin Commander Title", nameGu: "જોનીન લશ્કરી કમાન્ડર પદ" },
+    { v: 60, e: "🛡️", badge: "Wakanda Shield", nameEn: "Wakandan Force Barrier", nameGu: "વાઇબ્રેનિયમ ફોર્સ બેરિયર" },
+    { v: 65, e: "👁️‍🗨️", badge: "Mangekyou Eye", nameEn: "Mangekyou Vision Spark", nameGu: "માંગેક્યો સ્પાર્ક ચક્ષુ" },
+    { v: 70, e: "🪓", badge: "Stormbreaker Axe", nameEn: "Stormbreaker Thunder God", nameGu: "તોફાની તોડનાર કુહાડી શક્તિ" },
+    { v: 80, e: "🎭", badge: "Anbu Leader", nameEn: "Anbu Special Ops Leader", nameGu: "આનબુ બ્લેક ઓપ્સ લીડર" },
+    { v: 90, e: "🟣", badge: "Susano Ribcage", nameEn: "Susanoo Armor Shield", nameGu: "સુસાનો સુપર બાર્મર" },
+    { v: 100, e: "🍥", badge: "Hokage Elite", nameEn: "Sixth Hokage Title", nameGu: "સર્વોચ્ચ હોકાગે સન્માન" },
+    { v: 120, e: "🔮", badge: "Magic Dimension", nameEn: "Mirror Dimension Magic", nameGu: "જાદુઈ કક્ષ રક્ષણ વિઝન" },
+    { v: 150, e: "👑", badge: "Six Paths Sage", nameEn: "Sage of Six Paths Overlord", nameGu: "સર્વોચ્ચ સિક્સ પાથ રીષિ કિંગ" }
+  ];
 
-  // Mastery (Shadow Clone / Thor / Susanoo armor theme)
-  { id: "master_1", category: "mastery", badgeName: "Spidey Crawl", targetValue: 1, points: 50, emoji: "🕸️", title: "સ્પાઈડર બાઇટ શક્તિ", titleEn: "First Mastered Spark", description: "Master 1 question consecutively to stick to the ceiling of achievements", descriptionGu: "૧ ભૂલવાળો પ્રશ્ન સતત ૩ વાર સાચો આપી ગ્રીપ મેળવો!" },
-  { id: "master_10", category: "mastery", badgeName: "Shadow Clone", targetValue: 10, points: 100, emoji: "👥", title: "શેડો ક્લોન ટેકનિક", titleEn: "Multi Shadow Clone Jutsu", description: "Master 10 wrong questions to clone your focus in multiple directions", descriptionGu: "૧૦ કઠિન પ્રશ્નો માસ્ટર કરી નરુટોની જેમ મલ્ટી શેડો ક્લોન જ્યુત્સુ જગાવો!" },
-  { id: "master_50", category: "mastery", badgeName: "Thor Hammer", targetValue: 50, points: 200, emoji: "⚡", title: "થોરનું ઓરિજિનલ મ્યોલનીર", titleEn: "Mjolnir Thunder Worthy", description: "Master 50 wrong questions. You are now worthy to lift the Mighty Thor's hammer!", descriptionGu: "૫૦ માસ્ટર્ડ પ્રશ્નો સાથે થોરનું અતુલ્ય મ્યોલનીર હથિયાર હલનચલન કરાવો!" },
-  { id: "master_100", category: "mastery", badgeName: "Perfect Susanoo", targetValue: 100, points: 300, emoji: "🟣", title: "સુસાનો અલ્ટીમેટ ડિફેન્સ", titleEn: "Ultimate Susanoo Armor", description: "Master 100 wrong questions to summon the unbreakable giant titan warrior armor", descriptionGu: "૧૦૦ કઠિન પ્રશ્નો સર કરી ઉચીહા અલ્ટીમેટ સુસાનો રક્ષા કવચ સક્રિય કરો!" },
+  examMilestones.forEach(m => {
+    list.push({
+      id: `exam_${m.v}`,
+      category: "exam",
+      badgeName: m.badge,
+      targetValue: m.v,
+      points: m.v <= 10 ? m.v * 10 : Math.min(300, m.v * 3),
+      emoji: m.e,
+      title: m.nameGu,
+      titleEn: m.nameEn,
+      description: `Complete ${m.v} exam(s) to prove your tactical logic like the legendary heroes.`,
+      descriptionGu: `${m.v} પરીક્ષાઓ સફળતાપૂર્વક પૂર્ણ કરીને સુપરહીરો જેવી બૌદ્ધિક ક્ષમતા સાબિત કરો.`
+    });
+  });
 
-  // Streak (Spider Sense / Black Panther / Kurama 九尾 theme)
-  { id: "streak_3", category: "streak", badgeName: "Spider Sense", targetValue: 3, points: 30, emoji: "🕷️", title: "સ્પાઈડી-સેન્સ રક્ષણ", titleEn: "Spidey Sense On", description: "Learn 3 days in a row. Your senses are tingling for danger!", descriptionGu: "સતત ૩ દિવસ પરીક્ષા આપીને તમારું સ્પાઈડર સેન્સ સજાગ કરો!" },
-  { id: "streak_7", category: "streak", badgeName: "Wakanda vibranium", targetValue: 7, points: 50, emoji: "🐆", title: "વાઇબ્રેનિયમ બ્લેક પેન્થર", titleEn: "Vibranium Kinetic Charge", description: "Learn 7 days in a row. Fuel your mind with Wakandan ultimate kinetic energy!", descriptionGu: "સતત ૭ દિવસની તાલીમ સાથે બ્લેક પેન્થર જેવી વાઇબ્રેનિયમ તાકાત મેળવો!" },
-  { id: "streak_30", category: "streak", badgeName: "Kurama Chakra", targetValue: 30, points: 150, emoji: "🔥", title: "કુરામા નાઇન-ટેલ્સ મોડ", titleEn: "Kurama Nine-Tails Mode", description: "Learn 30 days in a row to sync with the powerful Nine-Tailed fox chakra", descriptionGu: "સતત ૩૦ દિવસ સુધી અભ્યાસ જાળવી નરુટોના સુપર પાવર કુરમા મોડમાં પધારો!" },
-  { id: "streak_100", category: "streak", badgeName: "Eye of Agamotto", targetValue: 100, points: 300, emoji: "👁️", title: "ડોક્ટર સ્ટ્રેન્જ ટાઇમ સ્ટોન", titleEn: "Eye of Agamotto Time Control", description: "Learn 100 days in a row. You can now rewind time and rewrite physics", descriptionGu: "સતત ૧૦૦ દિવસ લર્નિંગ કરી ડોક્ટર સ્ટ્રેન્જના ટાઇમ સ્ટોન સાથે સમય પર કાબૂ મેળવો!" },
+  // 2. Revision Question completed milestones (30 milestones)
+  const revMilestones = [
+    { v: 1, e: "🩹", badge: "Quick Patch", nameEn: "Deadpool Band-Aid", nameGu: "પ્રથમ રિવિઝન બેન્ડ-એઇડ" },
+    { v: 2, e: "🦊", badge: "Fox Advice", nameEn: "Kurama Whispers Guidance", nameGu: "કુરામા સજેશન માર્ગદર્શન" },
+    { v: 3, e: "🐜", badge: "Atom Vision", nameEn: "Antman Microsize Error Finder", nameGu: "ખામી વિઝ્યુલાઇઝેશન એન્ટમેન" },
+    { v: 4, e: "💚", badge: "Medical Nin", nameEn: "Medical Ninjutsu Healing", nameGu: "મેડિકલ સેલ્ફ હીલિંગ ટેકનિક" },
+    { v: 5, e: "🧬", badge: "Flesh Regen", nameEn: "Wolverine Cell Regeneration", nameGu: "વુલ્વરાઇન ઝડપી રિકવરી" },
+    { v: 10, e: "⚔️", badge: "Regrow Blade", nameEn: "Deadpool Sword Self Healing", nameGu: "ડેડપૂલ ત્વરિત તલવાર અપડેટ" },
+    { v: 15, e: "🧠", badge: "Shikamaru I.Q.", nameEn: "Chunin Tactical IQ", nameGu: "ચીનીન શિકામરૂ ૧૮૦+ આઈક્યુ" },
+    { v: 20, e: "🛠️", badge: "Stark Lab", nameEn: "Stark Lab Code Upgrade", nameGu: "ટોની સ્ટાર્ક ગિયર શક્તિ" },
+    { v: 25, e: "❤️", badge: "Immortal Heal", nameEn: "Deadpool Pure Recovery Gear", nameGu: "ડેડપૂલ કિંગ રિકવરી" },
+    { v: 30, e: "🌸", badge: "Chakra Fist", nameEn: "Lady Tsunade Strength Charge", nameGu: "પ્રચંડ શારિરીક પ્રકોપ સેલ્ફ" },
+    { v: 35, e: "🕷️", badge: "Spider Agile", nameEn: "Black Widow Trap Reflex", nameGu: "બ્લેક વિડો ચપળ રીફ્લેક્સિબિલિટી" },
+    { v: 40, e: "👁️", badge: "See Flaws", nameEn: "Byakugan Defect Locator", nameGu: "બ્યાકુગન ભૂલ કેન્દ્ર નિરીક્ષણ" },
+    { v: 45, e: "🖥️", badge: "JARVIS Diag", nameEn: "JARVIS Hologram Diagnostics", nameGu: "જાર્વિસ કોમ્પ્યુટર ટેસ્ટિંગ" },
+    { v: 50, e: "🌀", badge: "Spiral Orb", nameEn: "Rasengan Training Phase 2", nameGu: "રાસેંગન કંટ્રોલ તાલીમ" },
+    { v: 60, e: "🥊", badge: "Infinity Snap", nameEn: "Infinity Gauntlet Snaps", nameGu: "ઇન્ફિનિટી પાવર બટન સ્નેપ" },
+    { v: 70, e: "🐍", badge: "Snake Skin", nameEn: "Orochimaru Shed Errors", nameGu: "ઓરોચિમારૂ નવી ત્વચા ધારણ" },
+    { v: 80, e: "⏳", badge: "Loop Diagnostic", nameEn: "Strange Time-Loop Analysis", nameGu: "અલ્ટીમેટ ટાઇમ લૂપ ચેકિંગ" },
+    { v: 90, e: "🍥", badge: "Uchiha Vision", nameEn: "Kotoamatsukami Mind Mastery", nameGu: "સુપર સ્પેશ્યલ કોટોઆમાત્સુકમી" },
+    { v: 100, e: "🌀", badge: "Infinite Rasengan", nameEn: "Grand Rasengan Chakra Sphere", nameGu: "પ્રચંડ ઓર્ડ રાસેંગન સ્ફીયર" },
+    { v: 120, e: "🏋️", badge: "Vibranium Shield", nameEn: "Wakandan Metal Hardening", nameGu: "વાઇબ્રેનિયમ ફોર્જિંગ ટાઇટન" },
+    { v: 140, e: "👁️", badge: "Izanagi Rewrite", nameEn: "Uchiha Izanagi Time Loop", nameGu: "ઇઝાનાગી હિસ્ટ્રી રીરાઇટ" },
+    { v: 160, e: "⚡", badge: "Storm Lightning", nameEn: "Stormbreaker Lightning Bolt", nameGu: "વીજળી તોફાન કનેક્ટર" },
+    { v: 180, e: "🦊", badge: "Nine Tails Link", nameEn: "Sage Kurama Recovery Shield", nameGu: "કુરામા અલ્ટીમેટ રિકવરી" },
+    { v: 200, e: "⚔️", badge: "Deadpool Shield", nameEn: "Deadpool Instant Armor Healing", nameGu: "ડેડપૂલ ન્યુ ટાઈમ અમરત્વ" },
+    { v: 250, e: "🟣", badge: "Perfect Shield", nameEn: "Perfect Susanoo Defense Shield", nameGu: "સુસાનો પૂર્ણ રક્ષા શક્તિ" },
+    { v: 300, e: "👁️", badge: "Strange Time Reverse", nameEn: "Eye of Agamotto Replay", nameGu: "અગામોટો લૂપ પ્રભાવ વિડિયો" },
+    { v: 350, e: "🔴", badge: "Reality Stone", nameEn: "Thanos Reality Stone Illusion", nameGu: "રિયાલિટી સ્ટોન ઇલ્યુઝન ફોર્સ" },
+    { v: 400, e: "🦊", badge: "Chakra Sync", nameEn: "Kurama Nine-Tails Full Fusion", nameGu: "કુરામા સાથે સંપૂર્ણ મિલન સ્તર" },
+    { v: 450, e: "🛡", badge: "Ultimate Nano", nameEn: "Stark Nanoshield Elite System", nameGu: "સ્ટાર્ક રક્ષા કવચ અલ્ટીમેટ" },
+    { v: 500, e: "🔴", badge: "Tsukuyomi King", nameEn: "Infinite Tsukuyomi Overlord", nameGu: "અનંત સુકુયોમી સુપર કિંગ" }
+  ];
 
-  // Subject performance-based (Avengers / Legendary Shinobi Specific Ranks)
-  { id: "sub_science", category: "subject_science", badgeName: "Iron Lab", targetValue: 90, points: 150, emoji: "🧬", title: "ટોની સ્ટાર્ક સાયન્સ લેબ", titleEn: "Tony Stark Science Lab", description: "Score 90%+ in any Science (વિજ્ઞાન) exam. Ultimate genius engineer level!", descriptionGu: "વિજ્ઞાન પરીક્ષામાં ૯૦% કે વધુ સ્કોર મેળવી આયર્નમેન જેવા સાયન્ટિસ્ટ બનો!" },
-  { id: "sub_math", category: "subject_math", badgeName: "Yellow Flash", targetValue: 90, points: 150, emoji: "⚡", title: "મિનાતો યલો ફ્લેશ સ્પીડ", titleEn: "Minato's Yellow Flash Speed", description: "Score 90%+ in a Mathematics (ગણિત) exam. Run calculations at the speed of light!", descriptionGu: "ગણિત પરીક્ષામાં ૯૦% કે વધુ લાવી લાઇટનિંગ ફ્લેશ કિંગ શિનોબી બનો!" },
-  { id: "sub_english", category: "subject_english", badgeName: "Web of Words", targetValue: 90, points: 120, emoji: "🕸️", title: "સ્પાઈડરમેન વેબ ઓફ લેંગ્વેજ", titleEn: "Spiderman's Web of Words", description: "Score 90%+ in an English (અંગ્રેજી) exam. Perfectly knit your language web!", descriptionGu: "અંગ્રેજી ભાષા પરીક્ષામાં ૯૦% કે વધુ લાવી સ્પાઈડરમેન જેવું અતૂટ ભાષા જાળું ગૂંથો!" },
-  { id: "sub_gujarati", category: "subject_gujarati", badgeName: "Will of Fire", targetValue: 90, points: 120, emoji: "☄️", title: "નરુટો વિલ ઓફ ફાયર", titleEn: "Naruto's Will of Fire", description: "Score 90%+ in a Gujarati (ગુજરાતી) exam. Embody the passion for your native roots!", descriptionGu: "માતૃભાષા ગુજરાતી પરીક્ષામાં ૯૦% કે વધુ લાવી નરુટોના વિલ ઓફ ફાયર શિનોબી બનો!" },
-  { id: "sub_social", category: "subject_social", badgeName: "Patriot Force", targetValue: 90, points: 120, emoji: "🗺️", title: "કેપ્ટન અમેરિકા હિસ્ટ્રી ક્રોનિકલ", titleEn: "Captain America History Shield", description: "Score 90%+ in Social Science (સામાજિક વિજ્ઞાન) exam. Absolute tactical historian!", descriptionGu: "સામાજિક વિજ્ઞાનમાં ૯૦% કે તેથી વધુ મેળવી પૃથ્વીના રખેવાળ સુપર સોલ્જર સાબિત થાઓ!" },
+  revMilestones.forEach(m => {
+    list.push({
+      id: `rev_${m.v}`,
+      category: "revision",
+      badgeName: m.badge,
+      targetValue: m.v,
+      points: m.v <= 10 ? m.v * 8 : Math.min(300, m.v * 2),
+      emoji: m.e,
+      title: m.nameGu,
+      titleEn: m.nameEn,
+      description: `Review ${m.v} incorrect answers to target total mastery over complex chapters.`,
+      descriptionGu: `${m.v} ભૂલવાળા પ્રશ્નોનું પુનરાવર્તન કરીને તમારી નબળાઈઓને સચોટ તાકાતમાં બદલો.`
+    });
+  });
 
-  // General performance
-  { id: "perf_100", category: "performance", badgeName: "Sand Shield", targetValue: 100, points: 200, emoji: "⏳", title: "ગારા એબ્સોલ્યુટ સેન્ડ ડિફેન્સ", titleEn: "Gaara Absolute Sand Shield", description: "Score a perfect 100% in any exam. Zero mistakes, total protection", descriptionGu: "કોઈપણ પ્રોગ્રેસ પરીક્ષામાં પૂરેપૂરા ૧૦૦% ગુણ મેળવી ગારા જેવું અભેદ રેત કવચ મેળવો!" }
-];
+  // 3. Mastery Milestones (31 milestones)
+  const masteryMilestones = [
+    { v: 1, e: "🕸️", badge: "Spidey Crawl", nameEn: "Spidey Bite Power", nameGu: "વાઇલ્ડ સ્પાઈડર બાઇટ શક્તિ" },
+    { v: 2, e: "👥", badge: "Double Study", nameEn: "Double Shadow Clone Study", nameGu: "શેડો ક્લોન ડબલ તાલીમ" },
+    { v: 3, e: "🦊", badge: "Tails Power", nameEn: "Three Tails Chakra Shield", nameGu: "૩-ટેલ્સ કુરામા રક્ષા રેડિયેશન" },
+    { v: 4, e: "👁️", badge: "Three Tomoe", nameEn: "Three Tomoe Sharingan Sight", nameGu: "થ્રી-ટોમો શારિંગન અદ્ભુત દ્રષ્ટિ" },
+    { v: 5, e: "🛡️", badge: "Shield Shockwave", nameEn: "Vibranium Kinetic Shockwave", nameGu: "બ્લેક પેન્થર વાઇબ્રેશન કરંટ" },
+    { v: 8, e: "🦾", badge: "Vibranium Fist", nameEn: "Winter Soldier cybernetic arm", nameGu: "બકી બાર્નેસ અતૂટ આર્મ" },
+    { v: 10, e: "👥", badge: "Multiple Clones", nameEn: "Multi Shadow Clone Jutsu", nameGu: "નરુટો મલ્ટી શેડો ક્લોન" },
+    { v: 12, e: "🔨", badge: "Thor Spark", nameEn: "Thor Lightning Master", nameGu: "થોર વીજળી સાર્વભૌમિક કમાન્ડર" },
+    { v: 15, e: "👁️‍🗨️", badge: "Mangekyou Jutsu", nameEn: "Amaterasu Black Flames", nameGu: "અલ્ટીમેટ અમાતેરાસુ બ્લેક અગ્નિ" },
+    { v: 18, e: "🐾", badge: "Wakanda Spear", nameEn: "Okoye King Spear combat", nameGu: "ડોરા મિલાજે શાહી ભાલો" },
+    { v: 20, e: "🌀", badge: "Giant Rasengan", nameEn: "Oodama Rasengan Mastery", nameGu: "ઓડામા પ્રચંડ રાસેંગન સ્પાર્ક" },
+    { v: 25, e: "🦾", badge: "Iron Punch", nameEn: "Nanotech Repulsor Thrusters", nameGu: "ટોની સ્ટાર્ક નેનો રીપલ્સર" },
+    { v: 30, e: "👁️‍🗨️", badge: "Susano Ribs", nameEn: "Susanoo Armored Protection", nameGu: "સુસાનો સુવર્ણ પાંસળી બારી" },
+    { v: 35, e: "⚡", badge: "Lightning Chidori", nameEn: "Chidori Raikiri Lightning Cut", nameGu: "કાકાશી ચિદોરી વીજળી પંજો" },
+    { v: 40, e: "🧬", badge: "Stark Extremis", nameEn: "Extremis Bio-Upgrade Armor", nameGu: "એક્સટ્રીમીસ બાયો કવચ ફિટિંગ" },
+    { v: 45, e: "👑", badge: "Sannin Sage", nameEn: "Jiraiya Giant Frog Sage", nameGu: "લિજેન્ડરી સન્નીન તોડ માસ્ટરી" },
+    { v: 50, e: "⚡", badge: "Thor Hammer", nameEn: "Mjolnir Thunder Hammer Lift", nameGu: "થોરનું ઓરિજિનલ મ્યોલનીર" },
+    { v: 55, e: "👁️‍🗨️", badge: "Kamui Warp", nameEn: "Kamui Space Time Distortion", nameGu: "કામુઈ સ્પેસ ટાઇમ હોલ" },
+    { v: 60, e: "🥊", badge: "Stark Gauntlet", nameEn: "Nano Gauntlet Final Fit", nameGu: "નેનો ગોન્ટલેટ્સ પાવર હોવર" },
+    { v: 65, e: "🦊", badge: "Six-Tails Mode", nameEn: "Six-Tails Fox Bone Armor", nameGu: "૬-ટેલ્સ અસ્થિ રક્ષા મોડ" },
+    { v: 70, e: "🪓", badge: "Stormbreaker Smash", nameEn: "Stormbreaker Bifrost Portal", nameGu: "બાયફ્રોસ્ટ પોર્ટલ વીજળી શક્તિ" },
+    { v: 75, e: "🟣", badge: "Susano Giant", nameEn: "Susanoo Colossal Titan Armor", nameGu: "સુસાનો કદાવર ટાઇટન વોરિયર" },
+    { v: 80, e: "🔴", badge: "Rinnegan Power", nameEn: "Rinnegan Eye of Transmigration", nameGu: "પુરાતન રિંનેગન દિવ્ય મહาચક્ષુ" },
+    { v: 85, e: "🦸", badge: "Captain Marvel Core", nameEn: "Binary Power Photon Beam", nameGu: "કેપ્ટન માર્વેલ બાઈનરી રેડિયેશન" },
+    { v: 90, e: "🔥", badge: "Amaterasu Shield", nameEn: "Susanoo Flame Shield Guard", nameGu: "સુસાનો ઇગ્નીસ ફાયર કવચ" },
+    { v: 95, e: "⚔️", badge: "Kusanagi Blade", nameEn: "Sasuke Kusanagi Sword Mastery", nameGu: "સાસુકે કુસાનાગી તલવાર ધાર" },
+    { v: 100, e: "🟣", badge: "Perfect Susanoo", nameEn: "Perfect Susanoo Colossus Titan", nameGu: "અલ્ટીમેટ કરાલા સુસાનો રક્ષા કવચ" },
+    { v: 110, e: "🔮", badge: "Mystic Magic Grid", nameEn: "Doctor Strange Eldritch Shields", nameGu: "જાદુઈ એલ્ડ્રીચ ગોળાકાર ચક્ર" },
+    { v: 120, e: "👑", badge: "Rishi Sage", nameEn: "Sage of Six Paths Truth Orbs", nameGu: "સિક્ષ પાથ સત્ય ગોળાઓ" },
+    { v: 130, e: "🍥", badge: "Asura Avatar", nameEn: "Asura Otsutsuki Wood Golem", nameGu: "આસુરા લાકડાનો દિવ્ય કિલ્લો" },
+    { v: 150, e: "🦊", badge: "Nine Tails Sage Mode", nameEn: "Kurama Nine-Tails Full Mode", nameGu: "કુરામા ફૂલ મોડ સંતુષ્ટિ" }
+  ];
+
+  masteryMilestones.forEach(m => {
+    list.push({
+      id: `master_${m.v}`,
+      category: "mastery",
+      badgeName: m.badge,
+      targetValue: m.v,
+      points: m.v <= 10 ? m.v * 12 : Math.min(400, m.v * 3),
+      emoji: m.e,
+      title: m.nameGu,
+      titleEn: m.nameEn,
+      description: `Master ${m.v} tough question(s) consecutively to build an unbreakable shield of wisdom.`,
+      descriptionGu: `સળંગ ૩ વાર સાચો જવાબ આપીને ${m.v} ભૂલવાળા કઠિન પ્રશ્નોને સંપૂર્ણપણે માસ્ટર કરો.`
+    });
+  });
+
+  // 4. Streak Milestones (30 milestones)
+  const streakMilestones = [
+    { v: 1, e: "🌱", badge: "Focus On", nameEn: "First Day Focus Spark", nameGu: "અભ્યાસ સફર પ્રથમ શિંગારી" },
+    { v: 2, e: "🐾", badge: "Quick Panther", nameEn: "Two Day Panther Prowl", nameGu: "૨ દિવસ પેન્થર તાલીમ સંકલન" },
+    { v: 3, e: "🕷️", badge: "Spider Sense", nameEn: "Spider Sense Danger Alert", nameGu: "સ્પાઈડી સેન્સ એલર્ટ રક્ષણ" },
+    { v: 4, e: "🍃", badge: "Leaf Shinobi", nameEn: "Four Day Leaf Village Will", nameGu: "કોનોહા પર્ણ અગ્નિ પ્રેરણા" },
+    { v: 5, e: "🤖", badge: "Iron Calibration", nameEn: "Iron Man Armor Boot Calibration", nameGu: "આયર્નમેન આર્મર વેરિફિકેશન" },
+    { v: 6, e: "🦁", badge: "Asgard Cadet", nameEn: "Asgard Warrior Cadet Streak", nameGu: "એસ્ગાર્ડ વોરિયર કેડેટ અભ્યાસ" },
+    { v: 7, e: "🐆", badge: "Wakanda Vibranium", nameEn: "Wakanda Kinetic Charge Up", nameGu: "વાઇબ્રેનિયમ ફુલ ડાયનેમિક ચાર્જ" },
+    { v: 8, e: "🏹", badge: "Hawkeye Bow", nameEn: "Hawkeye Bow Unchecked Aim", nameGu: "હોકઆય પ્રિસિઝન બો તાણ" },
+    { v: 9, e: "🌪️", badge: "Wind Control", nameEn: "Temari Fan Wind Jutsu", nameGu: "તેમારી જાયન્ટ ચક્ર પંખો વિન્ડ" },
+    { v: 10, e: "🦊", badge: "Ninja Fire Will", nameEn: "Konoha Fire Will Flame On", nameGu: "કોનોહા વિલ ઓફ ફાયર સેન્સર" },
+    { v: 11, e: "🧬", badge: "Stark AI", nameEn: "FRIDAY Assistant Online", nameGu: "સ્ટાર્ક ફ્રાઈડે આર્ટિફિશિયલ અસિસ્ટન્ટ" },
+    { v: 12, e: "🔮", badge: "Mirror Walker", nameEn: "Mirror Dimension Portal Access", nameGu: "મિરર ડાયમેન્શન પોર્ટલ એન્ટ્રી" },
+    { v: 13, e: "👑", badge: "Wakandan Throne", nameEn: "Wakanda Throne Room Access", nameGu: "વાઇબ્રેનિયમ શાહી સિંહાસન કક્ષ" },
+    { v: 14, e: "⚡", badge: "Thor Bolt Link", nameEn: "Bifrost Rainbow Energy Link", nameGu: "બાયફ્રોસ્ટ બ્રિજ રેઈન્બો કનેક્ટર" },
+    { v: 15, e: "🦊", badge: "Tails Energy", nameEn: "Five Tails Sage Fire Mode", nameGu: "પાંચ પૂંછડી કુરામા અગ્નિ મોડ" },
+    { v: 18, e: "🧬", badge: "Stark Tech", nameEn: "Edith Smart Glasses Active", nameGu: "એડિથ ચિત્ર સ્માર્ટ ગ્લાસ શક્તિ" },
+    { v: 20, e: "🛡️", badge: "Vibranium Body", nameEn: "Vibranium Kinetic Blast Strike", nameGu: "વાઇબ્રેનિયમ બ્લાસ્ટ પ્રહાર ક્ષમતા" },
+    { v: 22, e: "🌀", badge: "Sage Energy", nameEn: "Sage Mode Natural Chakra Sync", nameGu: "સેજ મોડ નેચરલ ચક્ર પ્રવાહ" },
+    { v: 25, e: "🧠", badge: "Gamma Blast", nameEn: "Hulk Brain Smart Synthesis", nameGu: "સ્માર્ટ પ્રોફેسور હલ્ક બ્રેઈન વેવ" },
+    { v: 28, e: "⚡", badge: "Lightning Speed", nameEn: "Yellow Flash Golden Speed", nameGu: "યલો ફ્લેશ ગોલ્ડન નીન્જા ઝડપ" },
+    { v: 30, e: "🔥", badge: "Kurama Nine-Tails Mode", nameEn: "Kurama Nine-Tails sync", nameGu: "કુરામા નાઇન-ટેલ્સ મોડ સિંકન" },
+    { v: 35, e: "🔮", badge: "Strange Sanctum", nameEn: "New York Sanctum Sanctorum", nameGu: "ન્યુયોર્ક સેન્ક્ટમ સુરક્ષા પાયો" },
+    { v: 40, e: "🦾", badge: "Stark Nanotechnology", nameEn: "Nanotech Auto Assembly", nameGu: "ઑટો એસેમ્બલી માર્ક ૫૦" },
+    { v: 45, e: "🌀", badge: "Wind Rasenshuriken", nameEn: "Wind Release Rasenshuriken", nameGu: "રાસેનશુરીકેન વાયુ પ્રચંડ બોમ્બ" },
+    { v: 50, e: "💎", badge: "Asgard King", nameEn: "Asgard King Throne Worthy", nameGu: "એસ્ગાર્ડ મ્યોલનીર કિંગ ટાઇટલ" },
+    { v: 60, e: "🟣", badge: "Grand Susano armor", nameEn: "Armored Perfect Susano Full", nameGu: "પરફેક્ટ સુસાનો અમર કિંગ કવચ" },
+    { v: 70, e: "🔴", badge: "Rinne-Sharingan", nameEn: "Madara Rinnegan Moon Check", nameGu: "માદારા મુન રીફ્લેક્શન કંટ્રોલ" },
+    { v: 80, e: "🌌", badge: "Cosmic Photon Force", nameEn: "Marvel Star Photon Blast", nameGu: "માર્વેલ બ્રહ્માંડ ગ્લોવિંગ એનર્જી" },
+    { v: 90, e: "⚡", badge: "Odin Force Power", nameEn: "King Odin Cosmic Thunderbolt", nameGu: "દિવ્ય ઓડિન ફોર્સ અલ્ટીમેટ પાવર" },
+    { v: 100, e: "👁️", badge: "Eye of Agamotto Check", nameEn: "Eye of Agamotto Time Control", nameGu: "ડોક્ટર સ્ટ્રેન્જ ટાઇમ સ્ટોન કાબૂ" }
+  ];
+
+  streakMilestones.forEach(m => {
+    list.push({
+      id: `streak_${m.v}`,
+      category: "streak",
+      badgeName: m.badge,
+      targetValue: m.v,
+      points: m.v <= 10 ? m.v * 10 : Math.min(300, m.v * 3),
+      emoji: m.e,
+      title: m.nameGu,
+      titleEn: m.nameEn,
+      description: `Keep your study streak burning for ${m.v} day(s) consecutively like an legendary warrior.`,
+      descriptionGu: `સતત ${m.v} દિવસ સુધી અભ્યાસની જ્યોત જલતી રાખીને નીન્જા એકાગ્રતા સાબિત કરો.`
+    });
+  });
+
+  // 5. Subject Specific Milestones (30 milestones: 5 fields * 6 subjects)
+  const subjects = [
+    { cat: "subject_science", subName: "Science", nameGu: "વિજ્ઞાન", subText: "વિજ્ઞાન ક્ષેત્ર" },
+    { cat: "subject_math", subName: "Mathematics", nameGu: "ગણિત", subText: "ગણિત પ્રદેશ" },
+    { cat: "subject_english", subName: "English", nameGu: "અંગ્રેજી", subText: "અંગ્રેજી વ્યાકરણ" },
+    { cat: "subject_gujarati", subName: "Gujarati", nameGu: "ગુજરાતી", subText: "માતૃભાષા સાહિત્ય" },
+    { cat: "subject_social", subName: "Social Science", nameGu: "સામાજિક વિજ્ઞાન", subText: "સામાજિક ઇતિહાસ" },
+    { cat: "subject_hindi", subName: "Hindi", nameGu: "હિન્દી", subText: "હિન્દી રાષ્ટ્રભાષા" }
+  ];
+
+  const subRanks = [
+    { target: 70, points: 50, emoji: "🎖️", badge: "Warrior Cadet", rawGu: "નીન્જા કેડેટ શક્તિ", rawEn: "Ninja Cadet Stage" },
+    { target: 80, points: 100, emoji: "🛡️", badge: "Shield Force", rawGu: "અભેદ કવચ કીપર", rawEn: "Iron Stark Protectors" },
+    { target: 90, points: 150, emoji: "⚡", badge: "Thunder Strike", rawGu: "યલો ફ્લેશ સ્પીડ", rawEn: "Lightning Flash Speed" },
+    { target: 95, points: 200, emoji: "🔮", badge: "Dimensional Mage", rawGu: "સુપર ડાયમેન્શન જાદુગર", rawEn: "Sorcerer Master Stage" },
+    { target: 100, points: 300, emoji: "👑", badge: "Sage Mastery", rawGu: "ધ ગ્રેટ સેજ અલ્ટીમેટ", rawEn: "Sage of academic Scroll" }
+  ];
+
+  subjects.forEach(sub => {
+    subRanks.forEach(rank => {
+      list.push({
+        id: `${sub.cat}_${rank.target}`,
+        category: sub.cat,
+        badgeName: `${sub.subName} ${rank.badge}`,
+        targetValue: rank.target,
+        points: rank.points,
+        emoji: rank.emoji,
+        title: `${sub.nameGu}: ${rank.rawGu}`,
+        titleEn: `${sub.subName}: ${rank.rawEn}`,
+        description: `Score high ${rank.target}% or more in any ${sub.subName} examination exam to win.`,
+        descriptionGu: `${sub.nameGu} વિષયની કોઈપણ પ્રોગ્રેસ ટેસ્ટમાં શ્રેષ્ઠ પ્રદર્શન કરી ${rank.target}% થી વધુ પોઈન્ટ્સ લાવો.`
+      });
+    });
+  });
+
+  return list;
+};
+
+export const ACHIEVEMENT_DEFINITIONS = buildAchievements();
 
 export async function awardPointsAndCheckAchievementsSecure(
   studentId: string, 

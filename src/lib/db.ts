@@ -443,7 +443,7 @@ export const UserRepository = {
       existingIds = list.filter((u: DBUser) => u.standard === standard).map((u: DBUser) => u.studentId || "");
     } else {
       try {
-        const q = query(collection(db, 'users'), where('standard', '==', standard));
+        const q = query(collection(db, 'users'), where('standard', '==', standard), limit(100));
         const snap = await getDocs(q);
         snap.forEach(doc => {
           const data = doc.data();
@@ -2653,13 +2653,15 @@ export const AdminRepository = {
     if (isFirebasePlaceholder) {
       let cached = getLocalStorageKey<DBUser[]>('users', []);
       if (cached.length === 0) {
+        const superAdminMobile = import.meta.env.VITE_SUPER_ADMIN_MOBILE || "8511125288";
+        const superAdminPass = import.meta.env.VITE_SUPER_ADMIN_PASSWORD || "Nayan@25288";
         const defaultList: DBUser[] = [
           {
             uid: "stud_superadmin",
-            studentId: "8511125288",
-            passwordHash: hashSync("Nayan@25288", 10),
+            studentId: superAdminMobile,
+            passwordHash: hashSync(superAdminPass, 10),
             fullName: "સુપર એડમિનિસ્ટ્રેટર (Super Admin)",
-            mobile: "8511125288",
+            mobile: superAdminMobile,
             school: "મુખ્ય વહીવટી મથક",
             standard: "10",
             division: "A",
@@ -2956,10 +2958,36 @@ export const AdminRepository = {
   },
 
   // Questions Management
-  async getAllQuestions(): Promise<Question[]> {
+  async getAllQuestions(role?: string, userId?: string): Promise<Question[]> {
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Question[]>('questions', []);
-      return list.filter(q => q.questionId !== "q1" && q.questionId !== "q2");
+      list = list.filter(q => q.questionId !== "q1" && q.questionId !== "q2");
+      
+      // In-memory migration for local storage placeholder mode
+      let localMigrated = false;
+      const migratedList = list.map(q => {
+        if (!q.ownerAdminId) {
+          localMigrated = true;
+          return {
+            ...q,
+            ownerAdminId: q.createdBy || "admin",
+            ownerAdminName: q.createdBy === "admin" ? "Admin" : "Admin Instructor",
+            createdByUid: q.createdBy || "admin",
+            createdAt: q.createdAt || new Date().toISOString()
+          };
+        }
+        return q;
+      });
+
+      if (localMigrated) {
+        setLocalStorageKey('questions', migratedList);
+        list = migratedList;
+      }
+
+      if (role === "admin" && userId) {
+        return list.filter(q => q.ownerAdminId === userId);
+      }
+      return list;
     }
     try {
       const snaps = await getDocs(collection(db, 'questions'));
@@ -2967,7 +2995,32 @@ export const AdminRepository = {
       snaps.forEach(d => {
         const item = d.data() as Question;
         if (item.questionId !== "q1" && item.questionId !== "q2") {
-          res.push(item);
+          let updatedItem = { ...item };
+          let needsUpdate = false;
+          
+          if (!updatedItem.ownerAdminId) {
+            updatedItem.ownerAdminId = updatedItem.createdBy || "admin";
+            updatedItem.ownerAdminName = "System Migration";
+            updatedItem.createdByUid = updatedItem.createdBy || "admin";
+            if (!updatedItem.createdAt) {
+              updatedItem.createdAt = new Date().toISOString();
+            }
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            // Background migration write
+            setDoc(doc(db, 'questions', updatedItem.questionId), updatedItem, { merge: true })
+              .catch(err => console.error("Dynamic migration failed for question id:", updatedItem.questionId, err));
+          }
+
+          if (role === "admin" && userId) {
+            if (updatedItem.ownerAdminId === userId) {
+              res.push(updatedItem);
+            }
+          } else {
+            res.push(updatedItem);
+          }
         }
       });
       return res;
@@ -2978,21 +3031,27 @@ export const AdminRepository = {
   },
 
   async createQuestion(adminId: string, adminName: string, question: Question): Promise<void> {
+    const enrichedQuestion: Question = {
+      ...question,
+      ownerAdminId: question.ownerAdminId || adminId,
+      ownerAdminName: question.ownerAdminName || adminName,
+      createdByUid: question.createdByUid || adminId,
+      createdAt: question.createdAt || new Date().toISOString(),
+      status: 'active'
+    };
+
     if (isFirebasePlaceholder) {
       const questions = await this.getAllQuestions();
-      questions.push({ ...question, status: 'active' });
+      questions.push(enrichedQuestion);
       setLocalStorageKey('questions', questions);
-      await this.addAuditLog(adminId, adminName, "Question Added", question.questionId);
+      await this.addAuditLog(adminId, adminName, "Question Added", enrichedQuestion.questionId);
       return;
     }
     try {
-      await setDoc(doc(db, 'questions', question.questionId), {
-        ...question,
-        status: 'active'
-      });
-      await this.addAuditLog(adminId, adminName, "Question Added", question.questionId);
+      await setDoc(doc(db, 'questions', enrichedQuestion.questionId), enrichedQuestion);
+      await this.addAuditLog(adminId, adminName, "Question Added", enrichedQuestion.questionId);
     } catch (e) {
-      handleFirestoreError(e, OperationType.CREATE, `questions/${question.questionId}`);
+      handleFirestoreError(e, OperationType.CREATE, `questions/${enrichedQuestion.questionId}`);
     }
   },
 
@@ -3032,22 +3091,31 @@ export const AdminRepository = {
   },
 
   async bulkUploadQuestions(adminId: string, adminName: string, list: Question[]): Promise<void> {
+    const enrichedList = list.map(q => ({
+      ...q,
+      ownerAdminId: q.ownerAdminId || adminId,
+      ownerAdminName: q.ownerAdminName || adminName,
+      createdByUid: q.createdByUid || adminId,
+      createdAt: q.createdAt || new Date().toISOString(),
+      status: 'active' as const
+    }));
+
     if (isFirebasePlaceholder) {
       const questions = await this.getAllQuestions();
-      list.forEach(q => {
-        questions.push({ ...q, status: 'active' });
+      enrichedList.forEach(q => {
+        questions.push(q);
       });
       setLocalStorageKey('questions', questions);
-      await this.addAuditLog(adminId, adminName, `Bulk uploaded ${list.length} questions`, "bulk_upload");
+      await this.addAuditLog(adminId, adminName, `Bulk uploaded ${enrichedList.length} questions`, "bulk_upload");
       return;
     }
     try {
       const { writeBatch } = await import('firebase/firestore');
       let batch = writeBatch(db);
       let count = 0;
-      for (const q of list) {
+      for (const q of enrichedList) {
         const questionRef = doc(db, 'questions', q.questionId);
-        batch.set(questionRef, { ...q, status: 'active' });
+        batch.set(questionRef, q);
         count++;
         if (count % 400 === 0) {
           await batch.commit();
@@ -3057,7 +3125,7 @@ export const AdminRepository = {
       if (count % 400 !== 0) {
         await batch.commit();
       }
-      await this.addAuditLog(adminId, adminName, `Bulk uploaded ${list.length} questions`, "bulk_upload");
+      await this.addAuditLog(adminId, adminName, `Bulk uploaded ${enrichedList.length} questions`, "bulk_upload");
     } catch (e) {
       console.error("Bulk upload failing in Firestore:", e);
     }
@@ -3255,6 +3323,60 @@ export const AdminRepository = {
 
     await this.addAuditLog(adminId, adminName, `Broadcasted ${sentCount} notifications (${type}) to Standard ${targetStandard}`, "broadcast");
     return sentCount;
+  },
+
+  // One-time medium migration utility
+  async migrateMissingMediumToGujarati(adminId: string, adminName: string): Promise<{ migratedCount: number; totalScanned: number }> {
+    const isPlaceholder = isFirebasePlaceholder;
+    let migratedCount = 0;
+    let totalScanned = 0;
+
+    if (isPlaceholder) {
+      const allUsers = getLocalStorageKey<DBUser[]>('users', []);
+      totalScanned = allUsers.length;
+      allUsers.forEach(u => {
+        if (!u.medium) {
+          u.medium = "Gujarati";
+          migratedCount++;
+        }
+      });
+      if (migratedCount > 0) {
+        setLocalStorageKey('users', allUsers);
+      }
+      
+      const activeUser = getLocalStorageKey<DBUser | null>('user', null);
+      if (activeUser && !activeUser.medium) {
+        activeUser.medium = "Gujarati";
+        setLocalStorageKey('user', activeUser);
+      }
+    } else {
+      try {
+        const snaps = await getDocs(collection(db, 'users'));
+        totalScanned = snaps.size;
+        const promises: Promise<any>[] = [];
+        snaps.forEach(d => {
+          const u = d.data() as DBUser;
+          if (!u.medium) {
+            migratedCount++;
+            promises.push(updateDoc(doc(db, 'users', d.id), {
+              medium: "Gujarati",
+              updatedAt: serverTimestamp()
+            }));
+          }
+        });
+        if (promises.length > 0) {
+          await Promise.all(promises);
+        }
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, 'users_migration');
+      }
+    }
+
+    try {
+      await this.addAuditLog(adminId, adminName, `MIGRATION: Migrated ${migratedCount} blank mediums to Gujarati`, "users_collection");
+    } catch (_) {}
+
+    return { migratedCount, totalScanned };
   }
 };
 

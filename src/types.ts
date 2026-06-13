@@ -91,6 +91,9 @@ export interface Question {
   aiGenerated?: boolean; // Whether generated via future LLM scanning pipeline
   humanReviewed?: boolean; // Whether approved by standard teacher
   reviewScore?: number; // Teacher rating score out of 100 for AI training feedback
+  ownerAdminId?: string;
+  ownerAdminName?: string;
+  createdByUid?: string;
 
   // Custom metadata
   standard?: string;
@@ -101,6 +104,7 @@ export interface Question {
   active?: boolean;
   createdAt?: any;
   approvalStatus?: "draft" | "pending_review" | "approved" | "rejected"; // Question status pipeline
+  source?: string; // Metadata source trackers like "AI Generated"
 }
 
 export interface ExamTemplate {

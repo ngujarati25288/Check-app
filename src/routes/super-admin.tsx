@@ -83,6 +83,7 @@ function SuperAdminLayout() {
   const [villageRequests, setVillageRequests] = useState<VillageRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   // Advanced Analytics States
   const [studentAnalytics, setStudentAnalytics] = useState<StudentAnalytics[]>([]);
@@ -559,6 +560,23 @@ function SuperAdminLayout() {
       loadData();
     } catch (e) {
       toast.error("બેકઅપ નિષ્ફળ.");
+    }
+  };
+
+  const handleRunMigration = async () => {
+    if (!user) return;
+    try {
+      sfx.tap();
+      setIsMigrating(true);
+      const toastId = toast.loading("માધ્યમ સ્થળાંતર પ્રક્રિયા ચાલી રહી છે... (Migrating learning mediums...)");
+      const result = await AdminRepository.migrateMissingMediumToGujarati(user.uid, user.fullName || "Super Admin");
+      toast.dismiss(toastId);
+      toast.success(`માધ્યમ સ્થળાંતર સફળ! સ્કેન કરેલ: ${result.totalScanned}, અપડેટ કરેલ: ${result.migratedCount}`);
+      loadData();
+    } catch (e: any) {
+      toast.error("સ્થળાંતર નિષ્ફળ: " + (e.message || String(e)));
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -1655,6 +1673,33 @@ function SuperAdminLayout() {
 
                 <p className="text-xs text-muted-foreground font-gu leading-relaxed">
                   સોફ્ટવેર ક્રેસ અથવા સર્વર ભંગાણ સામે વૈશ્વિક બચાવ માટે અત્રેથી લિખિત મોડ્યુલ દ્વારા મેન્યુઅલ રિકોર્ડ કોપી બનાવી શકાય છે. સંચાલકો તેનું સંકલન કરી શકે છે.
+                </p>
+              </div>
+
+              {/* ONE-TIME MEDIUM MIGRATION UTILITY */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-indigo-500/10 text-indigo-500">
+                      <Globe className="size-4" />
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-sm">ONE-TIME MEDIUM MIGRATION</h3>
+                      <p className="text-[10px] text-muted-foreground">વિદ્યાર્થી ભાષા માધ્યમ સ્થળાંતર સેટઅપ (Default: Gujarati)</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleRunMigration}
+                    disabled={isMigrating}
+                    className="gradient-primary text-primary-foreground text-xs font-bold h-9 px-3.5 rounded-xl flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 hover:text-white disabled:opacity-50"
+                  >
+                    {isMigrating ? <Loader2 className="size-3 animate-spin text-white" /> : <RefreshCw className="size-3 text-white" />} Migration
+                  </button>
+                </div>
+
+                <p className="text-xs text-muted-foreground font-gu leading-relaxed">
+                  અગાઉના જૂના વિદ્યાર્થી રેકોર્ડ્સમાં ધોરણ માધ્યમ (Gujarati / English Medium) ની પસંદગી ગુમ હોઈ શકે છે. આ યુટિલિટી દ્વારા તે તમામ વિગત વગરના રેકોર્ડ્સને આપમેળે 'Gujarati Medium' માં સ્થાનાંતરિત કરવામાં આવશે.
                 </p>
               </div>
 
