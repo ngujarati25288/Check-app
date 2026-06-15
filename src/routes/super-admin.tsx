@@ -151,6 +151,13 @@ function SuperAdminLayout() {
   const [thresholdSilver, setThresholdSilver] = useState(80);
   const [thresholdBronze, setThresholdBronze] = useState(70);
 
+  // App Update states
+  const [updLatestVersion, setUpdLatestVersion] = useState("1.0.0");
+  const [updMandatory, setUpdMandatory] = useState(false);
+  const [updApkUrl, setUpdApkUrl] = useState("");
+  const [updReleaseNotes, setUpdReleaseNotes] = useState("");
+  const [isSavingUpdateSettings, setIsSavingUpdateSettings] = useState(false);
+
   // Leaderboard Custom States
   const [leaderboardLogs, setLeaderboardLogs] = useState<any[]>([]);
   const [isLeaderboardSyncing, setIsLeaderboardSyncing] = useState(false);
@@ -210,6 +217,16 @@ function SuperAdminLayout() {
       setThresholdGold(cfg.badgeThresholdGold || 90);
       setThresholdSilver(cfg.badgeThresholdSilver || 80);
       setThresholdBronze(cfg.badgeThresholdBronze || 70);
+
+      try {
+        const upSettings = await SuperAdminRepository.getAppUpdateSettings();
+        setUpdLatestVersion(upSettings.latestVersion || "1.0.0");
+        setUpdMandatory(upSettings.mandatory || false);
+        setUpdApkUrl(upSettings.apkUrl || "");
+        setUpdReleaseNotes(upSettings.releaseNotes || "");
+      } catch (err) {
+        console.warn("Failed fetching app update settings:", err);
+      }
 
       setAdmins(admList);
       setStudents(stdList);
@@ -482,6 +499,33 @@ function SuperAdminLayout() {
       loadData();
     } catch (e) {
       toast.error("નિયંત્રણો અપડેટ કરવામાં નિષ્ફળતા.");
+    }
+  };
+
+  const handleSaveUpdateSettings = async () => {
+    try {
+      setIsSavingUpdateSettings(true);
+      await SuperAdminRepository.updateAppUpdateSettings({
+        latestVersion: updLatestVersion,
+        mandatory: updMandatory,
+        apkUrl: updApkUrl,
+        releaseNotes: updReleaseNotes
+      });
+
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `એપ અપડેટ સુયોજન બદલાવ (વર્ઝન: ${updLatestVersion}, ફરજિયાત: ${updMandatory})`
+      });
+
+      toast.success("App update configuration successfully saved!");
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save app update configuration.");
+    } finally {
+      setIsSavingUpdateSettings(false);
     }
   };
 
@@ -1639,9 +1683,96 @@ function SuperAdminLayout() {
                   <button
                     type="button"
                     onClick={handleSaveSettings}
-                    className="w-full h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase"
+                    className="w-full h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase font-gu"
                   >
                     Save configuration changes
+                  </button>
+                </div>
+              </div>
+
+              {/* APP VERSION / UPDATE SYSTEM MANAGEMENT */}
+              <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-5">
+                <div className="flex items-center gap-2 text-left">
+                  <span className="p-1.5 rounded-xl bg-primary-soft text-primary">
+                    <RefreshCw className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm uppercase">APP VERSION & UPDATE MANAGEMENT</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">એપ અપડેટ અને એપીકે રીલીઝ સંચાલન</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-left">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Latest Version</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 1.0.0"
+                        value={updLatestVersion}
+                        onChange={(e) => setUpdLatestVersion(e.target.value)}
+                        className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase">Mandatory Update</label>
+                      <div className="flex items-center h-11 bg-muted border border-border rounded-2xl px-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUpdMandatory((prev) => !prev);
+                            sfx.tap();
+                          }}
+                          className={`w-11 h-6 rounded-full p-0.5 flex items-center transition duration-300 focus:outline-none ${
+                            updMandatory ? "bg-primary justify-end" : "bg-muted-foreground/30 justify-start"
+                          }`}
+                        >
+                          <span className="size-5 rounded-full bg-card shadow-md" />
+                        </button>
+                        <span className="text-xs font-semibold ml-2 text-foreground/80 font-gu">
+                          {updMandatory ? "ફરજિયાત" : "મરજીયાત"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">APK Download URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/builds/app-latest.apk"
+                      value={updApkUrl}
+                      onChange={(e) => setUpdApkUrl(e.target.value)}
+                      className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase text-left">Release Notes (Gujarati / English)</label>
+                    <textarea
+                      rows={3}
+                      placeholder="નવી સુવિધાઓ વિગતો અહીં લખો... e.g. - Added Daily revision logs&#10;- Fixed layout overlap"
+                      value={updReleaseNotes}
+                      onChange={(e) => setUpdReleaseNotes(e.target.value)}
+                      className="w-full bg-muted border border-border rounded-2xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveUpdateSettings}
+                    disabled={isSavingUpdateSettings}
+                    className="w-full h-11 rounded-2xl gradient-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-float text-xs uppercase disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSavingUpdateSettings ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin text-white" />
+                        Saving Updates...
+                      </>
+                    ) : (
+                      "Save App Update Settings"
+                    )}
                   </button>
                 </div>
               </div>

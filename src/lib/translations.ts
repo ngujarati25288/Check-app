@@ -625,6 +625,36 @@ export const translations: TranslationDictionary = {
     Gujarati: "સ્ટાન્ડર્ડ એડમિન",
     English: "Standard Admin",
     Hindi: "मानक एडमिन"
+  },
+  "update_available": {
+    Gujarati: "નવું અપડેટ ઉપલબ્ધ છે",
+    English: "New Update Available",
+    Hindi: "नया अपडेट उपलब्ध है"
+  },
+  "current_version": {
+    Gujarati: "ચાલુ વર્ઝન",
+    English: "Current Version",
+    Hindi: "वर्तमान संस्करण"
+  },
+  "latest_version": {
+    Gujarati: "નવીનતમ વર્ઝન",
+    English: "Latest Version",
+    Hindi: "नवीनतम संस्करण"
+  },
+  "release_notes": {
+    Gujarati: "નવી સુવિધાઓ (નોંધો)",
+    English: "Release Notes",
+    Hindi: "रिलीज़ नोट्स"
+  },
+  "update_now": {
+    Gujarati: "હમણાં અપડેટ કરો",
+    English: "Update Now",
+    Hindi: "अभी अपडेट करें"
+  },
+  "later": {
+    Gujarati: "પછીથી",
+    English: "Later",
+    Hindi: "बाद में"
   }
 };
 

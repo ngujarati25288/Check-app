@@ -39,6 +39,7 @@ import {
   NotificationHistoryItem,
   AdminAuditLog,
   SuperAdminSettings,
+  AppUpdateSettings,
   Announcement,
   SystemBackup,
   SecurityLog,
@@ -2959,6 +2960,9 @@ export const AdminRepository = {
 
   // Questions Management
   async getAllQuestions(role?: string, userId?: string): Promise<Question[]> {
+    const formattedRole = (role || "").toLowerCase().trim();
+    const formattedUserId = (userId || "").trim();
+
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Question[]>('questions', []);
       list = list.filter(q => q.questionId !== "q1" && q.questionId !== "q2");
@@ -2984,8 +2988,12 @@ export const AdminRepository = {
         list = migratedList;
       }
 
-      if (role === "admin" && userId) {
-        return list.filter(q => q.ownerAdminId === userId);
+      if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+        return list.filter(q => 
+          q.ownerAdminId === formattedUserId || 
+          q.createdByUid === formattedUserId || 
+          q.createdBy === formattedUserId
+        );
       }
       return list;
     }
@@ -3014,8 +3022,12 @@ export const AdminRepository = {
               .catch(err => console.error("Dynamic migration failed for question id:", updatedItem.questionId, err));
           }
 
-          if (role === "admin" && userId) {
-            if (updatedItem.ownerAdminId === userId) {
+          if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+            const isOwner = 
+              updatedItem.ownerAdminId === formattedUserId || 
+              updatedItem.createdByUid === formattedUserId || 
+              updatedItem.createdBy === formattedUserId;
+            if (isOwner) {
               res.push(updatedItem);
             }
           } else {
@@ -3185,10 +3197,17 @@ export const AdminRepository = {
     }
   },
 
-  async getAllExams(): Promise<DailyExam[]> {
+  async getAllExams(role?: string, userId?: string): Promise<DailyExam[]> {
+    const formattedRole = (role || "").toLowerCase().trim();
+    const formattedUserId = (userId || "").trim();
+
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<DailyExam[]>('daily_exams', []);
-      return list.filter(e => e.examId !== "ex1");
+      list = list.filter(e => e.examId !== "ex1");
+      if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+        return list.filter(e => e.examinerId === formattedUserId);
+      }
+      return list;
     }
     try {
       const snaps = await getDocs(collection(db, 'daily_exams'));
@@ -3196,7 +3215,14 @@ export const AdminRepository = {
       snaps.forEach(d => {
         const e = d.data() as DailyExam;
         if (e.examId !== "ex1") {
-          res.push(e);
+          if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+            const isOwner = e.examinerId === formattedUserId;
+            if (isOwner) {
+              res.push(e);
+            }
+          } else {
+            res.push(e);
+          }
         }
       });
       return res;
@@ -3264,6 +3290,24 @@ export const AdminRepository = {
       return true;
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `daily_exams/${examId}`);
+      return false;
+    }
+  },
+
+  async deleteExam(adminId: string, adminName: string, examId: string): Promise<boolean> {
+    if (isFirebasePlaceholder) {
+      const exams = await this.getAllExams();
+      const filtered = exams.filter(e => e.examId !== examId);
+      setLocalStorageKey('daily_exams', filtered);
+      await this.addAuditLog(adminId, adminName, "Exam Deleted", examId);
+      return true;
+    }
+    try {
+      await deleteDoc(doc(db, 'daily_exams', examId));
+      await this.addAuditLog(adminId, adminName, "Exam Deleted", examId);
+      return true;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `daily_exams/${examId}`);
       return false;
     }
   },
@@ -3381,6 +3425,61 @@ export const AdminRepository = {
 };
 
 export const SuperAdminRepository = {
+  // App Version & Update Settings
+  async getAppUpdateSettings(): Promise<AppUpdateSettings> {
+    const defaultUpdateSettings: AppUpdateSettings = {
+      latestVersion: "1.0.0",
+      mandatory: false,
+      apkUrl: "",
+      releaseNotes: "",
+      updatedAt: new Date().toISOString()
+    };
+
+    if (isFirebasePlaceholder) {
+      return getLocalStorageKey<AppUpdateSettings>('app_update_settings', defaultUpdateSettings);
+    }
+
+    try {
+      const snap = await getDoc(doc(db, 'app_config', 'settings'));
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          latestVersion: data.latestVersion || "1.0.0",
+          mandatory: typeof data.mandatory === 'boolean' ? data.mandatory : false,
+          apkUrl: data.apkUrl || "",
+          releaseNotes: data.releaseNotes || "",
+          updatedAt: data.updatedAt
+        } as AppUpdateSettings;
+      }
+      return defaultUpdateSettings;
+    } catch (e) {
+      console.warn("Failed to load app update settings, returning default", e);
+      return defaultUpdateSettings;
+    }
+  },
+
+  async updateAppUpdateSettings(partial: Partial<AppUpdateSettings>): Promise<void> {
+    const current = await this.getAppUpdateSettings();
+    const updated = { 
+      ...current, 
+      ...partial, 
+      updatedAt: isFirebasePlaceholder ? new Date().toISOString() : serverTimestamp() 
+    };
+    
+    // In local storage write ISO string because serverTimestamp() is only for firestore
+    const localUpdated = { ...current, ...partial, updatedAt: new Date().toISOString() };
+    setLocalStorageKey('app_update_settings', localUpdated);
+
+    if (isFirebasePlaceholder) return;
+
+    try {
+      await setDoc(doc(db, 'app_config', 'settings'), updated, { merge: true });
+    } catch (e) {
+      console.error("Failed to save app update settings:", e);
+      throw e;
+    }
+  },
+
   // Global Settings Settings Collection
   async getSettings(): Promise<SuperAdminSettings> {
     const defaultSettings: SuperAdminSettings = {

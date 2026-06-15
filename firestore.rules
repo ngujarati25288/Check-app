@@ -101,6 +101,16 @@ service cloud.firestore {
              data.createdAt == request.time;
     }
 
+    function isValidAppConfig(data) {
+      return data.keys().hasAll(['latestVersion', 'mandatory', 'apkUrl', 'releaseNotes', 'updatedAt']) &&
+             data.keys().size() == 5 &&
+             data.latestVersion is string && data.latestVersion.size() <= 20 &&
+             data.mandatory is bool &&
+             data.apkUrl is string && data.apkUrl.size() <= 1000 &&
+             data.releaseNotes is string && data.releaseNotes.size() <= 5000 &&
+             data.updatedAt == request.time;
+    }
+
     // ----------------------------------------------------
     // 1. Users Profile Collection (Fully Hardened - ISO-Isolated)
     // ----------------------------------------------------
@@ -167,27 +177,19 @@ service cloud.firestore {
     // 3. Question Bank (Read Protected - Student Cannot Scrape ALL)
     // ----------------------------------------------------
     match /questions/{questionId} {
-      // Approved users can fetch individual questions.
-      allow get: if isApproved() && (
+      // Super Admin: Read all questions
+      // Admin: Read ONLY own questions
+      // Students: Cannot browse/query/edit (no read or write access)
+      allow get, list: if isApproved() && (
         isSuperAdmin() || 
-        !isAdmin() || 
-        resource.data.ownerAdminId == request.auth.uid
+        (isAdmin() && resource.data.ownerAdminId == request.auth.uid)
       );
 
-      // Approved users can search/query the question bank.
-      allow list: if isApproved() && (
-        isSuperAdmin() || 
-        !isAdmin() || 
-        resource.data.ownerAdminId == request.auth.uid
-      );
-
-      // Admins can create if they set themselves as owner
       allow create: if isSuperAdmin() || (
         isAdmin() && 
         incoming().ownerAdminId == request.auth.uid
       );
 
-      // Admins can write if they are the owner and preserve ownership
       allow update: if isSuperAdmin() || (
         isAdmin() && 
         existing().ownerAdminId == request.auth.uid && 
@@ -204,8 +206,30 @@ service cloud.firestore {
     // 4. Exams & Templates Configurations (Read: Approved, Write: Admin)
     // ----------------------------------------------------
     match /daily_exams/{examId} {
-      allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      // Super Admin: Full access
+      // Admin: Only own exams
+      // Students: Read-only access to take exams
+      allow get, list: if isApproved() && (
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.createdByAdminId == request.auth.uid) ||
+        (!isAdmin() && !isSuperAdmin())
+      );
+
+      allow create: if isSuperAdmin() || (
+        isAdmin() && 
+        incoming().createdByAdminId == request.auth.uid
+      );
+
+      allow update: if isSuperAdmin() || (
+        isAdmin() && 
+        existing().createdByAdminId == request.auth.uid && 
+        incoming().createdByAdminId == request.auth.uid
+      );
+
+      allow delete: if isSuperAdmin() || (
+        isAdmin() && 
+        existing().createdByAdminId == request.auth.uid
+      );
     }
 
     match /exam_templates/{templateId} {
@@ -214,8 +238,30 @@ service cloud.firestore {
     }
 
     match /scheduled_exams/{examId} {
-      allow read: if isApproved();
-      allow write: if isAdmin() || isSuperAdmin();
+      // Super Admin: Full access
+      // Admin: Only own scheduled exams
+      // Students: Read-only access
+      allow get, list: if isApproved() && (
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.createdByAdminId == request.auth.uid) ||
+        (!isAdmin() && !isSuperAdmin())
+      );
+
+      allow create: if isSuperAdmin() || (
+        isAdmin() && 
+        incoming().createdByAdminId == request.auth.uid
+      );
+
+      allow update: if isSuperAdmin() || (
+        isAdmin() && 
+        existing().createdByAdminId == request.auth.uid && 
+        incoming().createdByAdminId == request.auth.uid
+      );
+
+      allow delete: if isSuperAdmin() || (
+        isAdmin() && 
+        existing().createdByAdminId == request.auth.uid
+      );
     }
 
     match /announcements/{announcementId} {
@@ -567,6 +613,15 @@ service cloud.firestore {
       );
 
       allow delete: if isAdmin() || isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 10. App Config/Settings (Read: Public, Write: Super Admin)
+    // ----------------------------------------------------
+    match /app_config/{configId} {
+      allow read: if true;
+      allow create, update: if isSuperAdmin() && isValidId(configId) && isValidAppConfig(incoming());
+      allow delete: if isSuperAdmin();
     }
   }
 }

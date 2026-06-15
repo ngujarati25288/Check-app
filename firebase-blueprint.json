@@ -189,6 +189,14 @@
           "type": "string",
           "format": "date-time",
           "description": "Creation timestamp"
+        },
+        "ownerAdminId": {
+          "type": "string",
+          "description": "UID of the admin who owns this question"
+        },
+        "ownerAdminName": {
+          "type": "string",
+          "description": "Full name of the admin who owns this question"
         }
       },
       "required": ["questionId", "subjectId", "chapterId", "question", "correctAnswer", "difficulty"]
@@ -241,6 +249,14 @@
           "type": "string",
           "format": "date-time",
           "description": "Timestamp indicating when the exam automatically closes"
+        },
+        "createdByAdminId": {
+          "type": "string",
+          "description": "UID of the admin who created this daily exam"
+        },
+        "createdByAdminName": {
+          "type": "string",
+          "description": "Full name of the admin who created this daily exam"
         }
       },
       "required": ["examId", "subjectId", "chapterId", "examinerId", "examDate", "duration", "totalQuestions", "status", "createdAt"]
@@ -893,6 +909,19 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["requestId", "villageName", "requestedBy", "status", "createdAt"]
+    },
+    "AppUpdateSettings": {
+      "title": "App Update Settings",
+      "description": "App configuration and latest APK updates for Android users",
+      "type": "object",
+      "properties": {
+        "latestVersion": { "type": "string", "description": "The latest version of the app (e.g. 1.0.0)" },
+        "mandatory": { "type": "boolean", "description": "Whether the update is mandatory or optional" },
+        "apkUrl": { "type": "string", "description": "URL to download the APK file" },
+        "releaseNotes": { "type": "string", "description": "Description of the changes in the release" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the settings were updated" }
+      },
+      "required": ["latestVersion", "mandatory", "apkUrl", "releaseNotes", "updatedAt"]
     }
   },
   "firestore": {
@@ -1035,6 +1064,10 @@
     "/village_requests/{requestId}": {
       "schema": "VillageRequest",
       "description": "User requests for adding new villages, pending admin approval"
+    },
+    "/app_config/{configId}": {
+      "schema": "AppUpdateSettings",
+      "description": "App update configuration settings document"
     }
   }
 }

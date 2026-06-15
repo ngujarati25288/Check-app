@@ -66,7 +66,7 @@ router.post("/generate-questions", async (req, res) => {
     }
 
     let isAuthorized = false;
-    let userRole = req.body.role || "student";
+    let userRole = (req.body.role || "student").toLowerCase().trim();
 
     if (isPlaceholder) {
       // In emulated framework / local testing, allow requests
@@ -78,21 +78,24 @@ router.post("/generate-questions", async (req, res) => {
         const userRes = await fetch(firestoreUrl);
         if (userRes.ok) {
           const userData = await userRes.json();
-          userRole = userData?.fields?.role?.stringValue || "student";
-          if (userRole === "admin" || userRole === "super_admin") {
+          const rawRole = userData?.fields?.role?.stringValue || "student";
+          userRole = rawRole.toLowerCase().trim();
+          if (userRole === "admin" || userRole === "super_admin" || userRole === "teacher") {
             isAuthorized = true;
           }
         } else {
           console.warn("Could not retrieve user role via Firestore REST API, status:", userRes.status);
           // Graceful fallback: trust user's client-asserted role if we are unable to read the Firestore API anonymously
-          if (req.body.role === "admin" || req.body.role === "super_admin") {
+          const assertRole = (req.body.role || "").toLowerCase().trim();
+          if (assertRole === "admin" || assertRole === "super_admin" || assertRole === "teacher") {
             isAuthorized = true;
           }
         }
       } catch (err) {
         console.error("Error fetching user profile from REST API:", err);
         // Graceful fallback
-        if (req.body.role === "admin" || req.body.role === "super_admin") {
+        const assertRole = (req.body.role || "").toLowerCase().trim();
+        if (assertRole === "admin" || assertRole === "super_admin" || assertRole === "teacher") {
           isAuthorized = true;
         }
       }
@@ -100,7 +103,7 @@ router.post("/generate-questions", async (req, res) => {
 
     // Role Check Enforcement
     if (!isAuthorized && !isPlaceholder) {
-      return res.status(403).json({ error: "આ સેવાનો ઉપયોગ ફક્ત એડમિન અથવા સુપર એડમિન જ કરી શકે છે અને વિદ્યાર્થીઓ માટે પ્રતિબંધિત છે." });
+      return res.status(403).json({ error: "આ સેવાનો ઉપયોગ ફક્ત શિક્ષકો, એડમિન અથવા સુપર એડમિન જ કરી શકે છે." });
     }
 
     // Cost Control validation
@@ -217,6 +220,258 @@ Rules for generation:
     console.error("Server API Generation error detail:", error);
     return res.status(500).json({
       error: "AI generation error: " + (error?.message || "Internal system failure")
+    });
+  }
+});
+
+// Helper to fetch from GCP Metadata Server Token
+async function getGCPToken(): Promise<string | null> {
+  try {
+    const res = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-account/default/token", {
+      headers: { "Metadata-Flavor": "Google" }
+    });
+    if (res.ok) {
+      const data: any = await res.json();
+      return data.access_token || null;
+    }
+  } catch (err) {
+    // Silent: Expected when running locally or outer container GCP environment without metadata
+  }
+  return null;
+}
+
+// Mapped helper to query Firestore REST API
+async function queryQuestionsFromFirestore(subjectId: string, chapterId: string): Promise<any[]> {
+  const token = await getGCPToken();
+  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
+  
+  const queryPayload = {
+    structuredQuery: {
+      from: [{ collectionId: "questions" }],
+      where: {
+        compositeFilter: {
+          op: "AND",
+          filters: [
+            {
+              fieldFilter: {
+                field: { fieldPath: "subjectId" },
+                op: "EQUAL",
+                value: { stringValue: subjectId }
+              }
+            },
+            {
+              fieldFilter: {
+                field: { fieldPath: "chapterId" },
+                op: "EQUAL",
+                value: { stringValue: chapterId }
+              }
+            }
+          ]
+        }
+      }
+    }
+  };
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const url = token ? firestoreUrl : `${firestoreUrl}?key=${firebaseConfig.apiKey || ""}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(queryPayload)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`Firestore query failed: ${errText}`);
+    throw new Error(`Firestore REST query failed with status ${res.status}`);
+  }
+
+  const rawResults = await res.json();
+  const questions: any[] = [];
+
+  if (Array.isArray(rawResults)) {
+    for (const item of rawResults) {
+      if (item.document?.fields) {
+        const fields = item.document.fields;
+        const str = (f: any) => f?.stringValue || "";
+        const arr = (f: any) => {
+          if (f?.listValue?.values) {
+            return f.listValue.values.map((v: any) => v.stringValue || "");
+          }
+          return [];
+        };
+
+        const questionId = path.basename(item.document.name);
+
+        questions.push({
+          questionId,
+          subjectId: str(fields.subjectId),
+          chapterId: str(fields.chapterId),
+          question: str(fields.question),
+          optionA: str(fields.optionA),
+          optionB: str(fields.optionB),
+          optionC: str(fields.optionC),
+          optionD: str(fields.optionD),
+          correctAnswer: str(fields.correctAnswer),
+          explanation: str(fields.explanation),
+          difficulty: str(fields.difficulty) || "medium",
+          illustrationUrl: str(fields.illustrationUrl),
+          illustrationUrls: arr(fields.illustrationUrls),
+          sourceType: str(fields.sourceType),
+          status: str(fields.status) || "active"
+        });
+      }
+    }
+  }
+
+  return questions;
+}
+
+// Add mock data mapper
+import { questions as rawMockQuestions } from "./lib/mockData.js";
+
+function fetchMockQuestions(subjectId: string, chapterId: string): any[] {
+  return rawMockQuestions.map((q: any, idx: number) => ({
+    questionId: `q_${idx + 1}`,
+    subjectId: subjectId || "sub_science",
+    chapterId: chapterId || "ch_6",
+    question: q.qGu || q.q,
+    optionA: q.options[0] || "",
+    optionB: q.options[1] || "",
+    optionC: q.options[2] || "",
+    optionD: q.options[3] || "",
+    correctAnswer: String.fromCharCode(65 + q.correct),
+    explanation: q.explanation || "સમજૂતી ટૂંક સમયમાં ઉપલબ્ધ થશે.",
+    difficulty: "medium",
+    status: "active"
+  }));
+}
+
+// Helper to fetch single document from Firestore REST API
+async function fetchDocumentFromFirestore(collectionName: string, docId: string, authHeader?: string): Promise<any> {
+  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionName}/${docId}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  } else {
+    const gcpToken = await getGCPToken();
+    if (gcpToken) {
+      headers["Authorization"] = `Bearer ${gcpToken}`;
+    }
+  }
+
+  const url = (authHeader || headers["Authorization"]) ? firestoreUrl : `${firestoreUrl}?key=${firebaseConfig.apiKey || ""}`;
+  try {
+    const res = await fetch(url, { headers });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.error(`fetchDocumentFromFirestore failed for ${collectionName}/${docId}:`, err);
+  }
+  return null;
+}
+
+// Secure Exam Questions Delivery Endpoint (Option A)
+router.post("/exam-questions", async (req, res) => {
+  try {
+    const { userId, examId, studentId, subjectId, chapterId, isSubmit } = req.body;
+    const targetStudentId = studentId || userId;
+
+    if (!targetStudentId) {
+      return res.status(401).json({ error: "અનધિકૃત ઉપયોગ! વપરાશકર્તા ID ખૂટે છે." });
+    }
+
+    // A. Student ID Token Authentication check via Firebase REST API proxying
+    if (!isPlaceholder) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "અનધિકૃત ઉપયોગ! પ્રમાણીકરણ ટોકન ખૂટે છે." });
+      }
+
+      const userProfile = await fetchDocumentFromFirestore("users", targetStudentId, authHeader);
+      if (!userProfile) {
+        return res.status(401).json({ error: "અનધિકૃત ઉપયોગ! વપરાશકર્તા પ્રમાણીકરણ નિષ્ફળ થયું." });
+      }
+
+      const fields = userProfile.fields;
+      const status = fields?.status?.stringValue || "";
+      const role = fields?.role?.stringValue || "";
+      const isApprovedUser = status.toLowerCase() === "approved" || status.toLowerCase() === "Approved";
+      if (!isApprovedUser && role !== "super_admin") {
+        return res.status(403).json({ error: "અનધિકૃત ઉપયોગ! તમો મંજૂર વપરાશકર્તા નથી." });
+      }
+    }
+
+    // B. Validate active exam
+    if (!isPlaceholder && examId) {
+      const examDoc = await fetchDocumentFromFirestore("daily_exams", examId);
+      if (!examDoc) {
+        return res.status(404).json({ error: "આ પરીક્ષા અસ્તિત્વમાં નથી અથવા રદ કરવામાં આવી છે." });
+      }
+    }
+
+    // C. Check duplicate submission
+    if (!isPlaceholder && examId) {
+      try {
+        const resultDoc = await fetchDocumentFromFirestore("exam_results", `res_${targetStudentId}_${examId}`);
+        if (resultDoc && !isSubmit) {
+          return res.status(400).json({ error: "તમે આ પરીક્ષા પહેલાથી જ સબમિટ કરી દીધી છે." });
+        }
+      } catch (err) {
+        console.error("Double submission check failed on server:", err);
+      }
+    }
+
+    // D. Load questions
+    let questionsList: any[] = [];
+    if (isPlaceholder) {
+      questionsList = fetchMockQuestions(subjectId, chapterId);
+    } else {
+      questionsList = await queryQuestionsFromFirestore(subjectId, chapterId);
+    }
+
+    // Filter out q1 and q2 (legacy test questions in system) if any
+    questionsList = questionsList.filter(q => q.questionId !== "q1" && q.questionId !== "q2");
+
+    // E. SANITIZATION of keys and fields dynamically
+    // Keep: questionId, question, options, imageUrl, type (and difficulty/subjectId/chapterId for mapping safety)
+    // Strip: correctAnswer, explanation (strip these if isSubmit is false), isVerified, ownerAdminId, etc.
+    const sanitizedQuestions = questionsList.map(q => {
+      const item: any = {
+        questionId: q.questionId,
+        question: q.question,
+        options: [q.optionA, q.optionB, q.optionC, q.optionD],
+        imageUrl: q.illustrationUrl || (q.illustrationUrls && q.illustrationUrls[0]) || "",
+        type: q.questionType || "MCQ"
+      };
+
+      if (isSubmit) {
+        item.correctAnswer = q.correctAnswer;
+        item.explanation = q.explanation || "સમજૂતી ટૂંક સમયમાં ઉપલબ્ધ થશે.";
+      }
+
+      return item;
+    });
+
+    return res.json({
+      success: true,
+      questions: sanitizedQuestions
+    });
+  } catch (error: any) {
+    console.error("Secure questions fetching server error:", error);
+    return res.status(500).json({
+      error: "પ્રશ્નો મેળવવામાં ભૂલ આવી: " + (error?.message || "Internal failure")
     });
   }
 });

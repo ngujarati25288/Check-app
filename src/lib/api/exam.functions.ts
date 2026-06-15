@@ -1,6 +1,7 @@
 import { 
   db, 
-  isFirebasePlaceholder 
+  isFirebasePlaceholder,
+  auth
 } from "../firebase";
 import { 
   doc, 
@@ -197,7 +198,7 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
   }
 
   // 2. Load questions
-  let dbQuestions: Question[] = [];
+  let dbQuestions: any[] = [];
 
   if (isFirebasePlaceholder) {
     // In placeholder mode, look up from fallback local storage if available
@@ -211,17 +212,39 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
     }
   } else {
     try {
-      const qRef = collection(db, "questions");
-      const qQuery = query(qRef, where("subjectId", "==", subjectId), where("chapterId", "==", chapterId));
-      const qSnaps = await getDocs(qQuery);
-      qSnaps.forEach((doc) => {
-        const item = doc.data() as Question;
-        if (item.questionId !== "q1" && item.questionId !== "q2") {
-          dbQuestions.push(item);
+      let idToken = "";
+      try {
+        if (auth.currentUser) {
+          idToken = await auth.currentUser.getIdToken();
         }
+      } catch (tokenErr) {
+        console.warn("Failed to retrieve ID Token in getExamQuestionsSecure", tokenErr);
+      }
+
+      const response = await fetch("/api/exam-questions", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify({
+          userId: studentId,
+          examId,
+          subjectId,
+          chapterId,
+          isSubmit: false
+        })
       });
+      if (response.ok) {
+        const body = await response.json();
+        dbQuestions = body.questions || [];
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || "પરીક્ષાના પ્રશ્નો લોડ કરવામાં નિષ્ફળતા.");
+      }
     } catch (e: any) {
-      console.error("Firestore loading error on secure get questions function:", e);
+      console.error("Firestore loading error on secure get questions function (Option A):", e);
+      throw e;
     }
   }
 
@@ -232,17 +255,19 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
     );
   }
 
-  // 3. SECURE STRIPPING: Client must NEVER receive 'correctAnswer' and 'explanation'
+  // 3. SECURE STRIPPING: Client maps stripped form to expected Question structure safely
   const strippedQuestions = dbQuestions.map((q) => ({
     questionId: q.questionId,
-    subjectId: q.subjectId,
-    chapterId: q.chapterId,
+    subjectId: subjectId,
+    chapterId: chapterId,
     question: q.question,
-    optionA: q.optionA,
-    optionB: q.optionB,
-    optionC: q.optionC,
-    optionD: q.optionD,
-    difficulty: q.difficulty
+    optionA: q.options?.[0] || "",
+    optionB: q.options?.[1] || "",
+    optionC: q.options?.[2] || "",
+    optionD: q.options?.[3] || "",
+    difficulty: q.difficulty || "medium",
+    illustrationUrl: q.imageUrl || "",
+    questionType: q.type || "MCQ"
   }));
 
   return {
@@ -384,12 +409,54 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
       masterQuestions = [];
     }
   } else {
-    const qRef = collection(db, "questions");
-    const qQuery = query(qRef, where("subjectId", "==", subjectId), where("chapterId", "==", chapterId));
-    const qSnaps = await getDocs(qQuery);
-    qSnaps.forEach((doc) => {
-      masterQuestions.push(doc.data() as Question);
-    });
+    try {
+      let idToken = "";
+      try {
+        if (auth.currentUser) {
+          idToken = await auth.currentUser.getIdToken();
+        }
+      } catch (tokenErr) {
+        console.warn("Failed to retrieve ID Token in submitExamSecure", tokenErr);
+      }
+
+      const response = await fetch("/api/exam-questions", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(idToken ? { "Authorization": `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify({
+          userId: studentId,
+          examId,
+          subjectId,
+          chapterId,
+          isSubmit: true
+        })
+      });
+      if (response.ok) {
+        const body = await response.json();
+        const qList = body.questions || [];
+        masterQuestions = qList.map((q: any) => ({
+          questionId: q.questionId,
+          question: q.question,
+          optionA: q.options?.[0] || "",
+          optionB: q.options?.[1] || "",
+          optionC: q.options?.[2] || "",
+          optionD: q.options?.[3] || "",
+          correctAnswer: q.correctAnswer || "",
+          explanation: q.explanation || "સમજૂતી ઉપલબ્ધ નથી.",
+          subjectId: subjectId,
+          chapterId: chapterId,
+          difficulty: "medium"
+        }));
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || "પરીક્ષાના જવાબો મેળવવામાં નિષ્ફળતા.");
+      }
+    } catch (e: any) {
+      console.error("Firestore loading error on secure submit questions function (Option A):", e);
+      throw e;
+    }
   }
 
   if (isFirebasePlaceholder) {

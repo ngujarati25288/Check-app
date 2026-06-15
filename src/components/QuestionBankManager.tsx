@@ -1111,7 +1111,11 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
     <div className="space-y-6">
       
       {/* AI MULTI-MODAL QUESTION GENERATOR ZONE */}
-      {currentUser && (currentUser.role === "admin" || currentUser.role === "super_admin") && (
+      {currentUser && (
+        (currentUser.role || "").toLowerCase().trim() === "admin" || 
+        (currentUser.role || "").toLowerCase().trim() === "super_admin" || 
+        (currentUser.role || "").toLowerCase().trim() === "teacher"
+      ) && (
         <div className="bg-gradient-to-r from-violet-600/10 via-purple-600/5 to-pink-600/10 border border-purple-500/30 rounded-3xl p-6 shadow-md space-y-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-2 border-b border-purple-500/10">
             <div className="space-y-1 text-center md:text-left">
@@ -1309,7 +1313,7 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
-          {currentUser?.role === "super_admin" && uniqueOwners.length > 0 && (
+          {(((currentUser?.role || "").toLowerCase().trim() === "super_admin" || (currentUser?.role || "").toLowerCase().trim() === "admin")) && uniqueOwners.length > 0 && (
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] whitespace-nowrap uppercase tracking-wider font-bold text-muted-foreground">Owner:</span>
               <select
@@ -1399,7 +1403,7 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                     </td>
                     <td className="py-4 px-6 font-extrabold text-slate-800 dark:text-slate-100 text-[13px]">
                       <div>{bundle.subjectName}</div>
-                      {currentUser?.role === "super_admin" && (
+                      {(((currentUser?.role || "").toLowerCase().trim() === "super_admin" || (currentUser?.role || "").toLowerCase().trim() === "admin")) && (
                         <div className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold mt-0.5">
                           Owner: {bundle.questions[0]?.ownerAdminName || "System Migration"}
                         </div>
@@ -1936,7 +1940,7 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                   </span>
                   <h3 className="text-base font-extrabold line-clamp-1 flex flex-wrap items-center gap-2">
                     <span>{activeBundle.subjectName} — {activeBundle.chapterName}</span>
-                    {currentUser?.role === "super_admin" && (
+                    {(((currentUser?.role || "").toLowerCase().trim() === "super_admin" || (currentUser?.role || "").toLowerCase().trim() === "admin")) && (
                       <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-teal-600 dark:text-teal-400 font-bold px-2 py-0.5 rounded-md border border-border inline-block">
                         Owner: {activeBundle.questions[0]?.ownerAdminName || "System Migration"}
                       </span>

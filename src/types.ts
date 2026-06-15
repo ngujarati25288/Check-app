@@ -519,5 +519,14 @@ export interface VillageRequest {
   createdAt: string;
 }
 
+export interface AppUpdateSettings {
+  latestVersion: string;
+  mandatory: boolean;
+  apkUrl: string;
+  releaseNotes: string;
+  updatedAt: any;
+}
+
+
 
 

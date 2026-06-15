@@ -51,6 +51,7 @@ export function ExamSchedulerManager({
 
   // Reschedule existing exam states
   const [schedulingExamId, setSchedulingExamId] = useState<string | null>(null);
+  const [deletingExamId, setDeletingExamId] = useState<string | null>(null);
   const [newDateVal, setNewDateVal] = useState("");
   const [newDurationVal, setNewDurationVal] = useState(30);
   const [newExaminerVal, setNewExaminerVal] = useState("");
@@ -152,6 +153,24 @@ export function ExamSchedulerManager({
       onRefresh();
     } catch (_) {
       toast.error("સ્થિતિ બદલવામાં કોઈ કટોકટી સર્જાઈ.");
+    }
+  };
+
+  const handleDeleteExam = async (examId: string) => {
+    try {
+      const success = await AdminRepository.deleteExam(
+        currentUser?.uid || "admin",
+        currentUser?.fullName || "Admin",
+        examId
+      );
+      if (success) {
+        toast.success("పరీక్ష విజయవంతంగా డీలీట్ చేయబడింది! (પરીક્ષા સફળતાપૂર્વક ડિલીટ કરાઈ!)");
+        onRefresh();
+      } else {
+        toast.error("પરીક્ષા ડિલીટ કરવામાં અસમર્થ.");
+      }
+    } catch (_) {
+      toast.error("પરીક્ષા ડિલીટ કરતી વખતે કોઈ ભૂલ આવી.");
     }
   };
 
@@ -389,6 +408,31 @@ export function ExamSchedulerManager({
                             >
                               ❌ કસોટી સમાપ્ત કરો (Close Test)
                             </button>
+
+                            {deletingExamId === ex.examId ? (
+                              <div className="flex items-center gap-1.5 bg-red-50 dark:bg-red-950/30 p-1.5 rounded-lg border border-red-200 dark:border-red-950/50">
+                                <span className="text-[9px] text-red-700 dark:text-red-400 font-bold">ખરેખર ડિલીટ કરવું છે? (Delete?)</span>
+                                <button
+                                  onClick={() => { handleDeleteExam(ex.examId); setDeletingExamId(null); }}
+                                  className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[9px] font-black uppercase"
+                                >
+                                  હા (Yes)
+                                </button>
+                                <button
+                                  onClick={() => setDeletingExamId(null)}
+                                  className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-[9px] font-black uppercase"
+                                >
+                                  ના (No)
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingExamId(ex.examId)}
+                                className="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-400 font-extrabold rounded-lg hover:shadow-xs transition text-[9px] font-gu uppercase tracking-wider flex items-center gap-1"
+                              >
+                                <Trash2 className="size-3" /> ડિલીટ (Delete)
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -543,12 +587,39 @@ export function ExamSchedulerManager({
                             👥 {participantUserIds.length} Participated
                           </span>
                           
-                          <button
-                            onClick={() => startScheduling(ex)}
-                            className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/40 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 font-extrabold rounded-lg hover:shadow-xs transition text-[10px] font-gu uppercase tracking-wider"
-                          >
-                            📅 ફરી નવું શેડ્યૂલ સેટ કરો (Set New Schedule)
-                          </button>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => startScheduling(ex)}
+                              className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/40 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 font-extrabold rounded-lg hover:shadow-xs transition text-[10px] font-gu uppercase tracking-wider"
+                            >
+                              📅 ફરી નવું શેડ્યૂલ સેટ કરો (Set New Schedule)
+                            </button>
+
+                            {deletingExamId === ex.examId ? (
+                              <div className="flex items-center gap-1.5 bg-red-50 dark:bg-red-950/30 p-1.5 rounded-lg border border-red-200 dark:border-red-950/50">
+                                <span className="text-[9px] text-red-700 dark:text-red-400 font-bold">ખરેખર ડિલીટ કરવું છે? (Delete?)</span>
+                                <button
+                                  onClick={() => { handleDeleteExam(ex.examId); setDeletingExamId(null); }}
+                                  className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[9px] font-black uppercase"
+                                >
+                                  હા (Yes)
+                                </button>
+                                <button
+                                  onClick={() => setDeletingExamId(null)}
+                                  className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-[9px] font-black uppercase"
+                                >
+                                  ના (No)
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingExamId(ex.examId)}
+                                className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-400 font-extrabold rounded-lg hover:shadow-xs transition text-[10px] font-gu uppercase tracking-wider flex items-center gap-1"
+                              >
+                                <Trash2 className="size-3.5" /> ડિલીટ (Delete)
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                       </div>

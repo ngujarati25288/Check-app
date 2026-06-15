@@ -235,7 +235,7 @@ function AdminPanel() {
         AdminRepository.getAllSubjects(),
         AdminRepository.getAllChapters(),
         AdminRepository.getAllQuestions(user?.role, user?.uid),
-        AdminRepository.getAllExams(),
+        AdminRepository.getAllExams(user?.role, user?.uid),
         AdminRepository.getAllResults(),
         AdminRepository.getAuditLogs(),
         AdminRepository.getAllNotificationsHistory(),
@@ -1146,23 +1146,23 @@ function AdminPanel() {
 
         {/* Sidebar Nav Items */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {user?.role !== "teacher" && (
-            <>
-              <SidebarBtn 
-                active={activeTab === "questions"} 
-                onClick={() => setActiveTab("questions")} 
-                icon={<HelpCircle className="size-4" />} 
-                label="Question Bank" 
-                sub="પ્રશ્ન બેંક ભંડાર"
-              />
-              <SidebarBtn 
-                active={activeTab === "exams"} 
-                onClick={() => setActiveTab("exams")} 
-                icon={<CalendarClock className="size-4" />} 
-                label="Daily Exam Scheduler" 
-                sub="પરીક્ષા નિયંત્રણો"
-              />
-            </>
+          {/* Question Bank tab is available to all educators & admins */}
+          <SidebarBtn 
+            active={activeTab === "questions"} 
+            onClick={() => setActiveTab("questions")} 
+            icon={<HelpCircle className="size-4" />} 
+            label="Question Bank" 
+            sub="પ્રશ્ન બેંક ભંડાર"
+          />
+          {/* Daily Exam Scheduler tab is hidden from regular teachers */}
+          {(user?.role || "").toLowerCase().trim() !== "teacher" && (
+            <SidebarBtn 
+              active={activeTab === "exams"} 
+              onClick={() => setActiveTab("exams")} 
+              icon={<CalendarClock className="size-4" />} 
+              label="Daily Exam Scheduler" 
+              sub="પરીક્ષા નિયંત્રણો"
+            />
           )}
         </nav>
 
@@ -1206,11 +1206,9 @@ function AdminPanel() {
             onChange={(e) => setActiveTab(e.target.value as AdminTab)}
             className="text-xs bg-muted px-2 py-1.5 rounded-xl border border-border font-semibold outline-none"
           >
-            {user?.role !== "teacher" && (
-              <>
-                <option value="questions">Question Bank (પ્રશ્ન બેંક)</option>
-                <option value="exams">Daily Exams (દૈનિક પરીક્ષા)</option>
-              </>
+            <option value="questions">Question Bank (પ્રશ્ન બેંક)</option>
+            {(user?.role || "").toLowerCase().trim() !== "teacher" && (
+              <option value="exams">Daily Exams (દૈનિક પરીક્ષા)</option>
             )}
           </select>
         </header>

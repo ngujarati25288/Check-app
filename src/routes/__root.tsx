@@ -10,6 +10,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FirebaseProvider } from "../components/FirebaseProvider";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Toaster } from "../components/ui/sonner";
+import { AppUpdateChecker } from "../components/AppUpdateChecker";
 
 function NotFoundComponent() {
   return (
@@ -102,6 +103,7 @@ function RootComponent() {
         <FirebaseProvider>
           <Outlet />
           <Toaster />
+          <AppUpdateChecker />
         </FirebaseProvider>
       </QueryClientProvider>
     </ErrorBoundary>
