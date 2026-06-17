@@ -2209,10 +2209,9 @@ export const PointsRepository = {
       }
     }
 
-    // Map filters using actual users DB profile to guarantee up to date standard / school / village criteria
-    const compiled = compiledList
-      .filter(item => usersList.some(u => u.uid === item.studentId))
-      .map(item => {
+    // Map filters using actual users DB profile to guarantee up to date standard / school / village criteria.
+    // We do NOT filter out items if the uProfile is missing; we simply use the persisted details on the leaderboard document as fallback.
+    const compiled = compiledList.map(item => {
         const uProfile = usersList.find(u => u.uid === item.studentId);
         const userBadges = achievementsMap[item.studentId] || [];
         return {
@@ -3215,14 +3214,7 @@ export const AdminRepository = {
       snaps.forEach(d => {
         const e = d.data() as DailyExam;
         if (e.examId !== "ex1") {
-          if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
-            const isOwner = e.examinerId === formattedUserId;
-            if (isOwner) {
-              res.push(e);
-            }
-          } else {
-            res.push(e);
-          }
+          res.push(e);
         }
       });
       return res;

@@ -241,8 +241,7 @@ async function getGCPToken(): Promise<string | null> {
 }
 
 // Mapped helper to query Firestore REST API
-async function queryQuestionsFromFirestore(subjectId: string, chapterId: string): Promise<any[]> {
-  const token = await getGCPToken();
+async function queryQuestionsFromFirestore(subjectId: string, chapterId: string, authHeader?: string): Promise<any[]> {
   const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
   
   const queryPayload = {
@@ -276,11 +275,16 @@ async function queryQuestionsFromFirestore(subjectId: string, chapterId: string)
     "Content-Type": "application/json"
   };
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  } else {
+    const token = await getGCPToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
   }
 
-  const url = token ? firestoreUrl : `${firestoreUrl}?key=${firebaseConfig.apiKey || ""}`;
+  const url = (authHeader || headers["Authorization"]) ? firestoreUrl : `${firestoreUrl}?key=${firebaseConfig.apiKey || ""}`;
   const res = await fetch(url, {
     method: "POST",
     headers,
@@ -392,9 +396,10 @@ router.post("/exam-questions", async (req, res) => {
       return res.status(401).json({ error: "અનધિકૃત ઉપયોગ! વપરાશકર્તા ID ખૂટે છે." });
     }
 
+    const authHeader = req.headers.authorization;
+
     // A. Student ID Token Authentication check via Firebase REST API proxying
     if (!isPlaceholder) {
-      const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return res.status(401).json({ error: "અનધિકૃત ઉપયોગ! પ્રમાણીકરણ ટોકન ખૂટે છે." });
       }
@@ -415,7 +420,7 @@ router.post("/exam-questions", async (req, res) => {
 
     // B. Validate active exam
     if (!isPlaceholder && examId) {
-      const examDoc = await fetchDocumentFromFirestore("daily_exams", examId);
+      const examDoc = await fetchDocumentFromFirestore("daily_exams", examId, authHeader);
       if (!examDoc) {
         return res.status(404).json({ error: "આ પરીક્ષા અસ્તિત્વમાં નથી અથવા રદ કરવામાં આવી છે." });
       }
@@ -424,7 +429,7 @@ router.post("/exam-questions", async (req, res) => {
     // C. Check duplicate submission
     if (!isPlaceholder && examId) {
       try {
-        const resultDoc = await fetchDocumentFromFirestore("exam_results", `res_${targetStudentId}_${examId}`);
+        const resultDoc = await fetchDocumentFromFirestore("exam_results", `res_${targetStudentId}_${examId}`, authHeader);
         if (resultDoc && !isSubmit) {
           return res.status(400).json({ error: "તમે આ પરીક્ષા પહેલાથી જ સબમિટ કરી દીધી છે." });
         }
@@ -438,7 +443,7 @@ router.post("/exam-questions", async (req, res) => {
     if (isPlaceholder) {
       questionsList = fetchMockQuestions(subjectId, chapterId);
     } else {
-      questionsList = await queryQuestionsFromFirestore(subjectId, chapterId);
+      questionsList = await queryQuestionsFromFirestore(subjectId, chapterId, authHeader);
     }
 
     // Filter out q1 and q2 (legacy test questions in system) if any

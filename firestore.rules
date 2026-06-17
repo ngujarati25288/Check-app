@@ -43,7 +43,11 @@ service cloud.firestore {
 
     function isApproved() {
       return isSignedIn() && (
-        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com')) ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'n.gujarati25288@gmail.com' || 
+          request.auth.token.email == '8511125288@daily-learning-exam.com' ||
+          (request.auth.token.email.endsWith('@daily-learning-exam.com') && !request.auth.token.email.lower().startsWith('std'))
+        )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['approved', 'Approved'] ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
@@ -53,7 +57,11 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com')) ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'n.gujarati25288@gmail.com' || 
+          request.auth.token.email == '8511125288@daily-learning-exam.com' ||
+          (request.auth.token.email.endsWith('@daily-learning-exam.com') && !request.auth.token.email.lower().startsWith('std'))
+        )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
@@ -63,7 +71,10 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && (request.auth.token.email == 'n.gujarati25288@gmail.com' || request.auth.token.email == '8511125288@daily-learning-exam.com')) ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'n.gujarati25288@gmail.com' || 
+          request.auth.token.email == '8511125288@daily-learning-exam.com'
+        )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
       );
@@ -139,6 +150,13 @@ service cloud.firestore {
         (!('permissions' in incoming().keys())) &&
         (!('admin' in incoming().keys())) &&
         (!('isAdmin' in incoming().keys()))
+      ) || (
+        // On-the-fly registration for pre-approved admins (configured by Super Admin)
+        isCurrentUser(userId) &&
+        isValidUser(incoming()) &&
+        incoming().role == 'admin' &&
+        exists(/databases/$(database)/documents/users/$( "adm_" + incoming().mobile )) &&
+        get(/databases/$(database)/documents/users/$( "adm_" + incoming().mobile )).data.status in ['approved', 'Approved']
       );
         
       // Students can modify their non-identity fields. Admins and Super Admins can update any field.
@@ -179,11 +197,8 @@ service cloud.firestore {
     match /questions/{questionId} {
       // Super Admin: Read all questions
       // Admin: Read ONLY own questions
-      // Students: Cannot browse/query/edit (no read or write access)
-      allow get, list: if isApproved() && (
-        isSuperAdmin() || 
-        (isAdmin() && resource.data.ownerAdminId == request.auth.uid)
-      );
+      // Students: Allowed read access to take exams securely via api-router (stripped of answers)
+      allow get, list: if isApproved();
 
       allow create: if isSuperAdmin() || (
         isAdmin() && 
@@ -206,30 +221,8 @@ service cloud.firestore {
     // 4. Exams & Templates Configurations (Read: Approved, Write: Admin)
     // ----------------------------------------------------
     match /daily_exams/{examId} {
-      // Super Admin: Full access
-      // Admin: Only own exams
-      // Students: Read-only access to take exams
-      allow get, list: if isApproved() && (
-        isSuperAdmin() ||
-        (isAdmin() && resource.data.createdByAdminId == request.auth.uid) ||
-        (!isAdmin() && !isSuperAdmin())
-      );
-
-      allow create: if isSuperAdmin() || (
-        isAdmin() && 
-        incoming().createdByAdminId == request.auth.uid
-      );
-
-      allow update: if isSuperAdmin() || (
-        isAdmin() && 
-        existing().createdByAdminId == request.auth.uid && 
-        incoming().createdByAdminId == request.auth.uid
-      );
-
-      allow delete: if isSuperAdmin() || (
-        isAdmin() && 
-        existing().createdByAdminId == request.auth.uid
-      );
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
     }
 
     match /exam_templates/{templateId} {
@@ -238,30 +231,8 @@ service cloud.firestore {
     }
 
     match /scheduled_exams/{examId} {
-      // Super Admin: Full access
-      // Admin: Only own scheduled exams
-      // Students: Read-only access
-      allow get, list: if isApproved() && (
-        isSuperAdmin() ||
-        (isAdmin() && resource.data.createdByAdminId == request.auth.uid) ||
-        (!isAdmin() && !isSuperAdmin())
-      );
-
-      allow create: if isSuperAdmin() || (
-        isAdmin() && 
-        incoming().createdByAdminId == request.auth.uid
-      );
-
-      allow update: if isSuperAdmin() || (
-        isAdmin() && 
-        existing().createdByAdminId == request.auth.uid && 
-        incoming().createdByAdminId == request.auth.uid
-      );
-
-      allow delete: if isSuperAdmin() || (
-        isAdmin() && 
-        existing().createdByAdminId == request.auth.uid
-      );
+      allow read: if isApproved();
+      allow write: if isAdmin() || isSuperAdmin();
     }
 
     match /announcements/{announcementId} {

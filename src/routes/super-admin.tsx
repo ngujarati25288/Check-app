@@ -101,6 +101,7 @@ function SuperAdminLayout() {
   const [newAdminMobile, setNewAdminMobile] = useState("");
   const [newAdminSchool, setNewAdminSchool] = useState("");
   const [newAdminStd, setNewAdminStd] = useState("10");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
 
   // User Management state hooks
@@ -354,16 +355,23 @@ function SuperAdminLayout() {
   // Action methods
   const handleCreateAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAdminName.trim() || !newAdminMobile.trim()) {
-      toast.warning("રજીસ્ટ્રેશન માટે વિગતો અધૂરી છે!");
+    if (!newAdminName.trim() || !newAdminMobile.trim() || !newAdminPassword.trim()) {
+      toast.warning("રજીસ્ટ્રેશન માટે વિગતો અધૂરી છે! (All fields including password are required!)");
+      return;
+    }
+
+    if (newAdminPassword.length < 4) {
+      toast.warning("પાસવર્ડ ઓછામાં ઓછો ૪ આંકડાનો હોવો જોઈએ. (Password must be at least 4 characters.)");
       return;
     }
 
     try {
       const templateAdmin: DBUser = {
-        uid: "adm_" + Date.now(),
-        fullName: newAdminName,
-        mobile: newAdminMobile,
+        uid: "adm_" + newAdminMobile.trim(),
+        studentId: newAdminMobile.trim(), // Enable login by entering the mobile number as Student ID
+        fullName: newAdminName.trim(),
+        mobile: newAdminMobile.trim(),
+        passwordHash: hashSync(newAdminPassword, 10),
         school: newAdminSchool || "સરકારી શાળા",
         standard: newAdminStd,
         role: "admin",
@@ -385,6 +393,7 @@ function SuperAdminLayout() {
       setNewAdminName("");
       setNewAdminMobile("");
       setNewAdminSchool("");
+      setNewAdminPassword("");
       loadData();
     } catch (e) {
       toast.error("ખાતું સેટ કરવામાં ભૂલ આવી.");
@@ -1050,6 +1059,19 @@ function SuperAdminLayout() {
                           onChange={(e) => setNewAdminMobile(e.target.value)}
                           className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
                         />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase">Login Password (લૉગિન પાસવર્ડ)</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="દા.ત. Admin@123"
+                          value={newAdminPassword}
+                          onChange={(e) => setNewAdminPassword(e.target.value)}
+                          className="w-full h-11 bg-muted border border-border rounded-2xl px-3 text-xs focus:ring-2 focus:ring-primary focus:outline-none"
+                        />
+                        <p className="text-[10px] text-muted-foreground">આ પાસવર્ડ અને મોબાઈલ નંબરથી આ એડમિન લોગિન કરી શકશે.</p>
                       </div>
 
                       <div className="space-y-1">
