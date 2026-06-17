@@ -2169,17 +2169,34 @@ export const PointsRepository = {
         }
       } catch (_) {}
     } else {
-      try {
-        const snap = await getDocs(collection(db, "users"));
-        snap.forEach(d => {
-          const item = d.data() as DBUser;
-          usersList.push({
-            ...item,
-            uid: item.uid || d.id
+      let canFetchAllUsers = false;
+      if (auth.currentUser) {
+        try {
+          const uSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+          if (uSnap.exists()) {
+            const r = uSnap.data()?.role;
+            if (r === "admin" || r === "super_admin") {
+              canFetchAllUsers = true;
+            }
+          }
+        } catch (e) {
+          console.warn("Could not check user permissions for leaderboard student list:", e);
+        }
+      }
+
+      if (canFetchAllUsers) {
+        try {
+          const snap = await getDocs(collection(db, "users"));
+          snap.forEach(d => {
+            const item = d.data() as DBUser;
+            usersList.push({
+              ...item,
+              uid: item.uid || d.id
+            });
           });
-        });
-      } catch (e) {
-        console.error("Failed to fetch students for filter:", e);
+        } catch (e) {
+          console.error("Failed to fetch students for filter:", e);
+        }
       }
     }
 

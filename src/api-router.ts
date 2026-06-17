@@ -275,16 +275,17 @@ async function queryQuestionsFromFirestore(subjectId: string, chapterId: string,
     "Content-Type": "application/json"
   };
 
-  if (authHeader) {
+  // Force-prefer Google Cloud Service Account credentials (getGCPToken) first on the backend 
+  // to avoid complex 403 Forbidden security rules evaluations for query listings.
+  // Fall back to forwarded custom AuthHeader when GCP metadata service token is unavailable.
+  const gcpToken = await getGCPToken();
+  if (gcpToken) {
+    headers["Authorization"] = `Bearer ${gcpToken}`;
+  } else if (authHeader) {
     headers["Authorization"] = authHeader;
-  } else {
-    const token = await getGCPToken();
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
   }
 
-  const url = (authHeader || headers["Authorization"]) ? firestoreUrl : `${firestoreUrl}?key=${firebaseConfig.apiKey || ""}`;
+  const url = headers["Authorization"] ? firestoreUrl : `${firestoreUrl}?key=${firebaseConfig.apiKey || ""}`;
   const res = await fetch(url, {
     method: "POST",
     headers,
