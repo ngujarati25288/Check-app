@@ -50,6 +50,38 @@ export function getKolkataDaysDifference(dateStr1: string, dateStr2: string): nu
   }
 }
 
+/**
+ * Resolves relative API paths to the absolute server URL if running in a wrapped 
+ * mobile app environment (local files, Capacitor, or localhost on mobile device).
+ * Auto-detects standard deployment domain or falls back to live pre-production domain.
+ */
+export function getApiUrl(path: string): string {
+  if (typeof window !== "undefined") {
+    const origin = window.location.origin;
+    
+    try {
+      const override = localStorage.getItem("override_api_url");
+      if (override) {
+        return `${override.replace(/\/$/, "")}${path}`;
+      }
+    } catch (_) {}
+
+    const isLocalScheme = 
+      !origin || 
+      origin.startsWith("file://") || 
+      origin.startsWith("capacitor://") || 
+      origin.startsWith("http://localhost") || 
+      origin.startsWith("http://127.0.0.1") ||
+      origin.includes("10.0.2.2");
+
+    if (isLocalScheme) {
+      const fallbackBase = "https://ais-pre-lkdgapckoh4vkbfmllmd4m-147091341083.asia-east1.run.app";
+      return `${fallbackBase}${path}`;
+    }
+  }
+  return path;
+}
+
 // Common Secure Streak Update Function
 export async function updateStudentStreakSecure(studentId: string, todayStr: string, isPlaceholderMode: boolean) {
   let streakUpdated = false;
@@ -221,7 +253,7 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
         console.warn("Failed to retrieve ID Token in getExamQuestionsSecure", tokenErr);
       }
 
-      const response = await fetch("/api/exam-questions", {
+      const response = await fetch(getApiUrl("/api/exam-questions"), {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -419,7 +451,7 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
         console.warn("Failed to retrieve ID Token in submitExamSecure", tokenErr);
       }
 
-      const response = await fetch("/api/exam-questions", {
+      const response = await fetch(getApiUrl("/api/exam-questions"), {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -550,7 +582,7 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
         explanationStr = "કોઈ ઉત્તર આપવામાં આવ્યો નથી. " + explanationStr;
       } else {
         try {
-          const evalRes = await fetch("/api/evaluate-subjective", {
+          const evalRes = await fetch(getApiUrl("/api/evaluate-subjective"), {
             method: "POST",
             headers: {
               "Content-Type": "application/json"

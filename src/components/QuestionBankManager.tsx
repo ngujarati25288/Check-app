@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Question, Subject, Chapter, QuestionDifficulty, UserRole, DailyExam } from "@/types";
 import { AdminRepository } from "@/lib/db";
 import { toast } from "sonner";
+import { getApiUrl } from "@/lib/api/exam.functions";
 
 const DEFAULT_GUJARATI_SUBJECTS = [
   "ગણિત",
@@ -268,7 +269,7 @@ export function QuestionBankManager({
 
       const filesPayload = await Promise.all(filePromises);
 
-      const response = await fetch("/api/generate-questions", {
+      const response = await fetch(getApiUrl("/api/generate-questions"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

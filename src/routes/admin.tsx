@@ -201,6 +201,7 @@ function AdminPanel() {
     errors: string[];
     duplicates: string[];
   } | null>(null);
+  const [showCSVHelp, setShowCSVHelp] = useState(false);
 
   const isAuthorized = user?.role === "admin" || user?.role === "super_admin" || user?.role === "teacher";
 
@@ -929,9 +930,9 @@ function AdminPanel() {
 
         // CSV columns parse
         const header = lines[0].toLowerCase().split(",");
-        const requiredHeaders = ["question", "optiona", "optionb", "optionc", "optiond", "correctanswer", "difficulty", "subjectid", "chapterid"];
+        const minRequiredHeaders = ["question", "correctanswer", "difficulty", "subjectid", "chapterid"];
         
-        const missing = requiredHeaders.filter(h => !header.includes(h));
+        const missing = minRequiredHeaders.filter(h => !header.includes(h));
         if (missing.length > 0) {
           toast.error(`Invalid structure. Columns missing: ${missing.join(", ")}`);
           return;
@@ -948,6 +949,7 @@ function AdminPanel() {
         const subIdx = header.indexOf("subjectid");
         const chIdx = header.indexOf("chapterid");
         const medIdx = header.indexOf("medium");
+        const typeIdx = header.includes("questiontype") ? header.indexOf("questiontype") : header.indexOf("type");
 
         const parsed: Question[] = [];
         const duplicates: string[] = [];
@@ -974,36 +976,80 @@ function AdminPanel() {
           }
           cells.push(currentCell.trim());
 
-          if (cells.length < requiredHeaders.length) {
-            errors.push(`Row ${i + 1}: Expected standard columns count. Col length is ${cells.length}`);
+          if (cells.length < minRequiredHeaders.length) {
+            errors.push(`Row ${i + 1}: Expected columns count. Col length is ${cells.length}`);
             continue;
           }
 
           const questionText = cells[qIdx];
-          const aText = cells[aIdx];
-          const bText = cells[bIdx];
-          const cText = cells[cIdx];
-          const dText = cells[dIdx];
-          const rawCorrect = cells[catIdx]?.toUpperCase();
+          const aText = aIdx !== -1 && cells[aIdx] ? cells[aIdx] : "";
+          const bText = bIdx !== -1 && cells[bIdx] ? cells[bIdx] : "";
+          const cText = cIdx !== -1 && cells[cIdx] ? cells[cIdx] : "";
+          const dText = dIdx !== -1 && cells[dIdx] ? cells[dIdx] : "";
+          let rawCorrect = cells[catIdx] || "";
           const rawDifficulty = cells[difIdx]?.toLowerCase() as "easy" | "medium" | "hard";
           const explanationText = expIdx !== -1 ? cells[expIdx] : "";
           const subjIdValue = cells[subIdx];
           const chIdValue = cells[chIdx];
+          const qTypeValueRaw = typeIdx !== -1 && cells[typeIdx] ? cells[typeIdx] : "";
 
           // Validations
-          if (!questionText || !aText || !bText || !cText || !dText || !rawCorrect || !rawDifficulty || !subjIdValue || !chIdValue) {
-            errors.push(`Row ${i + 1}: Required values are empty`);
-            continue;
-          }
-
-          if (!["A", "B", "C", "D"].includes(rawCorrect)) {
-            errors.push(`Row ${i + 1}: Correct answer must be standard capitalized (A/B/C/D). Got "${rawCorrect}"`);
+          if (!questionText || !rawCorrect || !rawDifficulty || !subjIdValue || !chIdValue) {
+            errors.push(`Row ${i + 1}: Required values are empty (Question, CorrectAnswer, Difficulty, SubjectID, ChapterID)`);
             continue;
           }
 
           if (!["easy", "medium", "hard"].includes(rawDifficulty)) {
             errors.push(`Row ${i + 1}: Difficulty must be easy, medium, or hard. Got "${rawDifficulty}"`);
             continue;
+          }
+
+          let resolvedType: "MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" | "ShortAnswer" | "LongAnswer" = "MCQ";
+          if (qTypeValueRaw) {
+            const norm = qTypeValueRaw.trim().toLowerCase().replace(/[\s_/]/g, "");
+            if (norm === "truefalse" || norm === "tf" || norm === "true/false") {
+              resolvedType = "TrueFalse";
+            } else if (norm === "fillblank" || norm === "blank" || norm === "fill" || norm === "fillinblank") {
+              resolvedType = "FillBlank";
+            } else if (norm === "shortanswer" || norm === "short" || norm === "sa") {
+              resolvedType = "ShortAnswer";
+            } else if (norm === "longanswer" || norm === "long" || norm === "la") {
+              resolvedType = "LongAnswer";
+            } else if (norm === "match" || norm === "matchfollowing") {
+              resolvedType = "MatchFollowing";
+            }
+          } else {
+            // Intelligent fallback detection if questionType is omitted
+            const isTF = (aText.toLowerCase() === "true" || aText.startsWith("સાચ") || aText.startsWith("ખાસ")) && (bText.toLowerCase() === "false" || bText.startsWith("ખોટ"));
+            if (isTF) {
+              resolvedType = "TrueFalse";
+            } else if (questionText.includes("_____")) {
+              resolvedType = "FillBlank";
+            } else if (!aText && !bText && !cText && !dText) {
+              resolvedType = "ShortAnswer";
+            }
+          }
+
+          // Validation of answer key based on resolved type
+          if (resolvedType === "MCQ") {
+            if (!aText || !bText) {
+              errors.push(`Row ${i + 1}: MCQ questions must specify at least Option A and Option B.`);
+              continue;
+            }
+            if (!["A", "B", "C", "D"].includes(rawCorrect.toUpperCase().trim())) {
+              errors.push(`Row ${i + 1}: MCQ correct answer must be A, B, C, or D. Got "${rawCorrect}"`);
+              continue;
+            }
+            rawCorrect = rawCorrect.toUpperCase().trim();
+          } else if (resolvedType === "TrueFalse") {
+            const val = rawCorrect.toUpperCase().trim();
+            if (val === "A" || val === "T" || val === "TRUE" || val.startsWith("સાચ") || val === "1") {
+              rawCorrect = "A";
+            } else if (val === "B" || val === "F" || val === "FALSE" || val.startsWith("ખોટ") || val === "0") {
+              rawCorrect = "B";
+            } else {
+              rawCorrect = val;
+            }
           }
 
           // Duplicates validator check
@@ -1042,10 +1088,11 @@ function AdminPanel() {
             optionB: bText,
             optionC: cText,
             optionD: dText,
-            correctAnswer: rawCorrect as "A" | "B" | "C" | "D",
+            correctAnswer: rawCorrect,
             explanation: explanationText,
             difficulty: rawDifficulty,
             medium: rawMedium,
+            questionType: resolvedType,
             status: "active"
           });
         }
@@ -2241,6 +2288,85 @@ function AdminPanel() {
                             />
                           </label>
                         </div>
+
+                        {/* Interactive toggle block for CSV formats */}
+                        <div className="mt-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setShowCSVHelp(!showCSVHelp)}
+                            className="text-[10px] font-bold text-teal-600 hover:underline inline-flex items-center gap-1 focus:outline-none"
+                          >
+                            {showCSVHelp ? "Hide CSV Template Guide ✕" : "Show CSV Template Guide & Format Instructions ✎"}
+                          </button>
+                        </div>
+
+                        {showCSVHelp && (
+                          <div className="mt-3 bg-card border rounded-xl p-3.5 text-[11px] text-foreground space-y-3 font-sans transition-all duration-300">
+                            <div className="border-b pb-1.5">
+                              <h5 className="font-bold text-teal-600">CSV Bulk Upload Import Format Rules (પ્રશ્નો અપલોડ કરવાના નિયમો)</h5>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                Your CSV file must look like the following structure. Please read the format specifications for each type:
+                              </p>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse min-w-[500px]">
+                                <thead>
+                                  <tr className="border-b bg-muted/40 text-[10px] uppercase font-bold text-muted-foreground">
+                                    <th className="p-1 px-2 border">Column Name</th>
+                                    <th className="p-1 px-2 border">MCQ Questions</th>
+                                    <th className="p-1 px-2 border">Subjective Questions (Short/Long Answer)</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr className="border-b">
+                                    <td className="p-1.5 px-2 border font-mono font-bold text-rose-600">question</td>
+                                    <td className="p-1.5 px-2 border">The full question text (e.g. "What is photosynthesis?")</td>
+                                    <td className="p-1.5 px-2 border">The full subjective question text (e.g. "Explain working of solar panel")</td>
+                                  </tr>
+                                  <tr className="border-b">
+                                    <td className="p-1.5 px-2 border font-mono font-semibold">questiontype</td>
+                                    <td className="p-1.5 px-2 border">MCQ</td>
+                                    <td className="p-1.5 px-2 border"><b>ShortAnswer</b> (ટૂંકા પ્રશ્નો) or <b>LongAnswer</b> (લાંબા પ્રશ્નો)</td>
+                                  </tr>
+                                  <tr className="border-b col-span-2">
+                                    <td className="p-1.5 px-2 border font-mono text-muted-foreground">optiona, optionb, optionc, optiond</td>
+                                    <td className="p-1.5 px-2 border">Provide corresponding choices. (At least Option A & B are required)</td>
+                                    <td className="p-1.5 px-2 border text-muted-foreground italic">Keep empty (ખાલી રાખવું)</td>
+                                  </tr>
+                                  <tr className="border-b">
+                                    <td className="p-1.5 px-2 border font-mono font-bold text-rose-600">correctanswer</td>
+                                    <td className="p-1.5 px-2 border">Must be exactly A, B, C, or D</td>
+                                    <td className="p-1.5 px-2 border text-emerald-600 font-medium">The ideal direct textual model/correct answer (e.g. "ગ્રીનહાઉસ કોન્સેપ્ટ...")</td>
+                                  </tr>
+                                  <tr className="border-b">
+                                    <td className="p-1.5 px-2 border font-mono font-bold text-rose-600">difficulty</td>
+                                    <td className="p-1.5 px-2 border" colSpan={2}>easy, medium, or hard</td>
+                                  </tr>
+                                  <tr className="border-b">
+                                    <td className="p-1.5 px-2 border font-mono font-bold text-rose-600">subjectid</td>
+                                    <td className="p-1.5 px-2 border" colSpan={2}>Correct Subject code matches from database (e.g. "sci-10")</td>
+                                  </tr>
+                                  <tr className="border-b">
+                                    <td className="p-1.5 px-2 border font-mono font-bold text-rose-600">chapterid</td>
+                                    <td className="p-1.5 px-2 border" colSpan={2}>Chapter designation code (e.g. "Ch-1")</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="p-1.5 px-2 border font-mono">medium</td>
+                                    <td className="p-1.5 px-2 border" colSpan={2}>Gujarati or English (optional)</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="bg-teal-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-teal-100 text-[10px] space-y-1">
+                              <p className="font-bold text-teal-700">💡 Quick Gujarati Guide (ટૂંકો માર્ગદર્શિકા):</p>
+                              <p>• <b>ShortAnswer & LongAnswer (ટૂંકા અને લાંબા પ્રશ્નો)</b> માટે: <span className="font-mono">optionA</span>, <span className="font-mono">optionB</span>, <span className="font-mono">optionC</span>, <span className="font-mono">optionD</span> કોલમ ખાલી રાખવી અથવા કોલમ જ ના બનાવવી.</p>
+                              <p>• <b>correctanswer</b> કોલમમાં કોઈ A/B/C/D નહીં, પણ સીધો જ સાચો જવાબ લખવો!</p>
+                              <p>• <b>questiontype</b> કોલમમાં અનુક્રમે <code className="font-semibold text-rose-600 dark:text-rose-400">ShortAnswer</code> અથવા <code className="font-semibold text-rose-600 dark:text-rose-400">LongAnswer</code> લખવું.</p>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Inline report output logs */}
                         {importReport && (
