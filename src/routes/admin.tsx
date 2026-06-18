@@ -184,7 +184,7 @@ function AdminPanel() {
   const [questPerPage, setQuestPerPage] = useState(10);
 
   // New Question Creation Fields
-  const [questType, setQuestType] = useState<"MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing">("MCQ");
+  const [questType, setQuestType] = useState<"MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" | "ShortAnswer" | "LongAnswer">("MCQ");
   const [questMarks, setQuestMarks] = useState<number>(1);
   const [questActive, setQuestActive] = useState<boolean>(true);
 
@@ -2036,6 +2036,8 @@ function AdminPanel() {
                             <option value="TrueFalse">True or False</option>
                             <option value="FillBlank">Fill in the Blanks</option>
                             <option value="MatchFollowing">Match the Following</option>
+                            <option value="ShortAnswer">ટૂંકા પ્રશ્નો (Short Answer)</option>
+                            <option value="LongAnswer">લાંબા પ્રશ્નો (Long Answer)</option>
                           </select>
                         </div>
 
@@ -2131,6 +2133,15 @@ function AdminPanel() {
                                 value={questCorrect}
                                 onChange={(e) => setQuestCorrect(e.target.value)}
                                 className="w-full h-10 px-3 mt-1 bg-muted/40 rounded-xl border outline-none text-xs"
+                              />
+                            )}
+                            {(questType === "ShortAnswer" || questType === "LongAnswer") && (
+                              <textarea
+                                required
+                                value={questCorrect}
+                                onChange={(e) => setQuestCorrect(e.target.value)}
+                                placeholder="વિદ્યાર્થીના ઉત્તર સરખામણી માટે આદર્શ જવાબ (Model Answer) લખો..."
+                                className="w-full p-2.5 mt-1 bg-muted/40 rounded-xl border outline-none h-20 text-xs text-foreground resize-none"
                               />
                             )}
                           </div>

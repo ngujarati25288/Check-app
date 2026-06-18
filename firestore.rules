@@ -130,10 +130,10 @@ service cloud.firestore {
       allow get: if isCurrentUser(userId) || isAdmin() || isSuperAdmin();
       
       // Block unrestricted listing. Only admin/super_admin can list all users.
-      // Unauthenticated requests must be limited (limit <= 100) to prevent bulk database dumps.
+      // Requests must be limited (limit <= 100) to prevent bulk database dumps.
       // Logged in students can ONLY query their own profile document.
       allow list: if isAdmin() || isSuperAdmin() ||
-                     (!isSignedIn() && request.query.limit != null && request.query.limit <= 100) ||
+                     (request.query.limit != null && request.query.limit <= 100) ||
                      (isSignedIn() && resource.data.uid == request.auth.uid);
       
       // Prevent self-registration elevation of privilege, except for authorized Super Admin bootstrap

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Clock, ChevronLeft, ChevronRight, X, LayoutGrid, AlertCircle } from "lucide-react";
+import { Clock, ChevronLeft, ChevronRight, X, LayoutGrid, AlertCircle, Mic, MicOff } from "lucide-react";
 import { useAuth } from "@/components/FirebaseProvider";
 import { ExamRepository, ResultRepository, MistakeRepository } from "@/lib/db";
 import { DailyExam, Question, ExamResult, StudentMistake } from "@/types";
@@ -38,11 +38,62 @@ function Exam() {
   const [activeExam, setActiveExam] = useState<DailyExam | null>(null);
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<(number | null)[]>([]);
+  const [answers, setAnswers] = useState<(number | string | null)[]>([]);
   const [seconds, setSeconds] = useState(30 * 60);
   const [showPalette, setShowPalette] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Speech Recognition / Voice typing state
+  const [isRecording, setIsRecording] = useState(false);
+
+  // Native Speech-to-Text handler (runs completely local and free in the browser!)
+  const startVoiceTyping = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("તમારા બ્રાઉઝરમાં સ્પીચ રેકગ્નિશન સપોર્ટ નથી. કૃપા કરીને ક્રોમ અથવા આઈપેડ/મોબાઈલનો ઉપયોગ કરો.");
+      return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.lang = "gu-IN"; // Speaks Gujarati
+    rec.continuous = false;
+    rec.interimResults = false;
+
+    rec.onstart = () => {
+      setIsRecording(true);
+      sfx.tap();
+      toast.info("બોલવાનું શરૂ કરો... (Speak in Gujarati now)");
+    };
+
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      if (transcript && transcript.trim() !== "") {
+        const currentAnswer = (answers[index] as string) || "";
+        const space = currentAnswer ? " " : "";
+        const updatedText = currentAnswer + space + transcript;
+        
+        setAnswers((prev) => prev.map((v, idx) => (idx === index ? updatedText : v)));
+        toast.success("તમારો ઉત્તર ઉમેરાઈ ગયો!");
+      }
+    };
+
+    rec.onerror = (err: any) => {
+      console.error("Speech Recognition error:", err);
+      if (err.error === "no-speech") {
+        toast.warning("કોઈ અવાજ સંભળાયો નથી. મહેરબાની કરીને ફરીથી પ્રયાસ કરો.");
+      } else {
+        toast.error("ભાષણ-થી-લખાણમાં સહેજ ક્ષતિ આવી.");
+      }
+      setIsRecording(false);
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+    };
+
+    rec.start();
+  };
 
   // 1. Load active exam and questions on mount safely
   useEffect(() => {
@@ -143,7 +194,7 @@ function Exam() {
 
         // Load autosaved draft answers using secureStorage (Fix 6)
         const draftKey = `exam_draft_${exam.examId}`;
-        const parsedDraft = secureStorage.getItem<(number | null)[]>(draftKey);
+        const parsedDraft = secureStorage.getItem<(number | string | null)[]>(draftKey);
         if (parsedDraft && parsedDraft.length === finalQuestions.length) {
           setAnswers(parsedDraft);
         } else {
@@ -234,95 +285,14 @@ function Exam() {
         }
       });
 
-      const resultDocId = `res_${user.uid}_${activeExam.examId}`;
-
-      if (resp.isPlaceholder) {
-        // Fallback scoring logic only for local emulation placeholder mode
-        let correct = 0;
-        let wrong = 0;
-        const mistakesToSave: StudentMistake[] = [];
-
-        // Match answer key against local seeds if running mock
-        const storedQuestions = localStorage.getItem("dle:questions");
-        const allQuestions = storedQuestions ? (JSON.parse(storedQuestions) as Question[]) : [];
-
-        examQuestions.forEach((q, idx) => {
-          const matchingQ = allQuestions.find((mq) => mq.questionId === q.questionId);
-          const correctKey = matchingQ ? matchingQ.correctAnswer : "A";
-          const selectedIdx = answers[idx];
-          const selectedLetter = selectedIdx !== null ? String.fromCharCode(65 + selectedIdx) : null;
-          const isCorrect = selectedLetter === correctKey;
-
-          if (isCorrect) {
-            correct++;
-          } else {
-            wrong++;
-            mistakesToSave.push({
-              studentId: user.uid,
-              examId: activeExam.examId,
-              questionId: q.questionId,
-              subjectId: activeExam.subjectId,
-              subjectName: activeExam.subjectId === "sub1" ? "Science" : activeExam.subjectId === "sub2" ? "Mathematics" : "Social Science",
-              chapterId: q.chapterId,
-              chapterName: q.chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers",
-              question: q.question,
-              optionA: q.optionA,
-              optionB: q.optionB,
-              optionC: q.optionC,
-              optionD: q.optionD,
-              selectedAnswer: selectedLetter || "Skipped",
-              correctAnswer: correctKey,
-              explanation: matchingQ?.explanation || "No explanation document available.",
-              examDate: activeExam.examDate,
-              revisionCount: 0,
-              correctRevisionCount: 0,
-              mastered: false,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              subject: activeExam.subjectId === "sub1" ? "Science" : activeExam.subjectId === "sub2" ? "Mathematics" : "Social Science",
-              chapter: q.chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers",
-              medium: user.medium || "Gujarati"
-            });
-          }
-        });
-
-        const percentage = Math.round((correct / examQuestions.length) * 100);
-
-        const examResult: ExamResult = {
-          resultId: resultDocId,
-          studentId: user.uid,
-          examId: activeExam.examId,
-          subject: activeExam.subjectId === "sub1" ? "Science" : activeExam.subjectId === "sub2" ? "Mathematics" : "Social Science",
-          chapter: activeExam.chapterId === "ch1" ? "Chapter 6 — Life Processes" : "Chapter 1 — Real Numbers",
-          examDate: activeExam.examDate,
-          totalQuestions: examQuestions.length,
-          correctAnswers: correct,
-          wrongAnswers: wrong,
-          obtainedMarks: correct,
-          percentage: percentage,
-          submittedAt: new Date().toISOString(),
-          ...deviceInfo,
-          medium: user.medium || "Gujarati"
-        };
-
-        await ResultRepository.saveResult(examResult);
-        await Promise.all(
-          mistakesToSave.map((mistake) => MistakeRepository.saveMistake(mistake))
-        );
-
-        secureStorage.setItem("last_result_id", resultDocId);
-      } else {
-        secureStorage.setItem("last_result_id", resp.resultId);
-      }
+      secureStorage.setItem("last_result_id", resp.resultId);
 
       // Cleanup caches on completed submission
       secureStorage.removeItem(`exam_start_time_${activeExam.examId}`);
       secureStorage.removeItem(`exam_draft_${activeExam.examId}`);
 
       // Play audio cue
-      const finalPercent = resp.isPlaceholder 
-        ? Math.round((answers.filter((a) => a !== null).length / examQuestions.length) * 100) 
-        : (resp.percentage || 0);
+      const finalPercent = resp.percentage || 0;
 
       if (finalPercent >= 70) {
         sfx.correct();
@@ -436,33 +406,143 @@ function Exam() {
               <p className="text-xs uppercase tracking-wider text-muted-foreground">Question {index + 1}</p>
               <h2 className="mt-1 text-lg font-semibold leading-snug">{q.question}</h2>
 
-              <div className="mt-6 space-y-3">
-                {[q.optionA, q.optionB, q.optionC, q.optionD].map((opt, i) => {
-                  if (!opt || opt.trim() === "" || opt === "Option C" || opt === "Option D") {
-                    if (q.questionType === "TrueFalse" || !opt || opt.trim() === "") {
-                      return null;
-                    }
-                  }
-                  const selected = answers[index] === i;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => choose(i)}
-                      className={`w-full text-left flex items-center gap-3 p-4 rounded-2xl border-2 transition active:scale-[0.99] ${
-                        selected ? "border-primary bg-primary-soft-forced" : "border-border bg-card hover:border-primary/40"
-                      }`}
-                    >
-                      <span
-                        className={`size-8 rounded-xl flex items-center justify-center font-semibold text-sm ${
-                          selected ? "gradient-primary text-primary-foreground" : "bg-muted text-foreground"
+              <div className="mt-6 space-y-4">
+                {/* 1. Multiple Choice MCQ or Match the Following questions */}
+                {(q.questionType === "MCQ" || q.questionType === "MatchFollowing" || (!q.questionType)) && (
+                  <div className="space-y-3">
+                    {[q.optionA, q.optionB, q.optionC, q.optionD].map((opt, i) => {
+                      if (!opt || opt.trim() === "" || opt === "Option C" || opt === "Option D") {
+                        if (!opt || opt.trim() === "") {
+                          return null;
+                        }
+                      }
+                      const selected = answers[index] === i;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => choose(i)}
+                          className={`w-full text-left flex items-center gap-3 p-4 rounded-xl border-2 transition active:scale-[0.99] ${
+                            selected ? "border-primary bg-primary-soft-forced shadow-sm" : "border-border bg-card hover:border-primary/30"
+                          }`}
+                        >
+                          <span
+                            className={`size-8 rounded-xl flex items-center justify-center font-semibold text-sm ${
+                              selected ? "gradient-primary text-primary-foreground" : "bg-muted text-foreground"
+                            }`}
+                          >
+                            {String.fromCharCode(65 + i)}
+                          </span>
+                          <span className="flex-1 text-sm">{opt}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 2. True or False questions */}
+                {q.questionType === "TrueFalse" && (
+                  <div className="space-y-3">
+                    {["સાચું (True)", "ખોટું (False)"].map((opt, i) => {
+                      const selected = answers[index] === i;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => choose(i)}
+                          className={`w-full text-left flex items-center gap-3 p-4 rounded-xl border-2 transition active:scale-[0.99] ${
+                            selected ? "border-primary bg-primary-soft-forced shadow-sm" : "border-border bg-card hover:border-primary/30"
+                          }`}
+                        >
+                          <span
+                            className={`size-8 rounded-xl flex items-center justify-center font-semibold text-sm ${
+                              selected ? "gradient-primary text-primary-foreground" : "bg-muted text-foreground"
+                            }`}
+                          >
+                            {i === 0 ? "T" : "F"}
+                          </span>
+                          <span className="flex-1 text-sm">{opt}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 3. Fill in the Blanks questions */}
+                {q.questionType === "FillBlank" && (
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground font-semibold block font-gu">અહીં ખાલી જગ્યાનો ઉત્તર લખો:</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={(answers[index] as string) || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAnswers((prev) => prev.map((v, idx) => (idx === index ? val : v)));
+                        }}
+                        placeholder="ખાલી જગ્યાનો સાચો શબ્દ અહીં ટાઈપ કરો..."
+                        className="flex-1 h-12 px-4 rounded-xl border border-border bg-card outline-none focus:border-primary text-sm shadow-sm font-semibold text-foreground transition-all duration-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={startVoiceTyping}
+                        className={`size-12 rounded-xl flex items-center justify-center shadow-sm transition active:scale-95 ${
+                          isRecording 
+                            ? "bg-destructive text-destructive-foreground animate-pulse" 
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        }`}
+                        title="બોલો અને ટાઈપ કરો"
+                      >
+                        {isRecording ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Subjective Short / Long Answers with Speak-to-Write integration */}
+                {(q.questionType === "ShortAnswer" || q.questionType === "LongAnswer") && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground font-semibold font-gu">
+                        {q.questionType === "ShortAnswer" ? "ટૂંકો ઉત્તર લખો (Short Answer):" : "લાંબો વિગતવાર ઉત્તર લખો (Long Answer):"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={startVoiceTyping}
+                        className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold shadow-sm transition active:scale-95 ${
+                          isRecording 
+                            ? "bg-destructive text-destructive-foreground animate-pulse" 
+                            : "bg-primary text-primary-foreground hover:bg-primary/95"
                         }`}
                       >
-                        {String.fromCharCode(65 + i)}
-                      </span>
-                      <span className="flex-1 text-sm">{opt}</span>
-                    </button>
-                  );
-                })}
+                        {isRecording ? (
+                          <>
+                            <MicOff className="size-3.5" />
+                            રેકોર્ડિંગ બંધ કરો
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="size-3.5" />
+                            બોલો અને લખો (વોઇસ ટાઇપિંગ)
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <textarea
+                      rows={q.questionType === "ShortAnswer" ? 4 : 8}
+                      value={(answers[index] as string) || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAnswers((prev) => prev.map((v, idx) => (idx === index ? val : v)));
+                      }}
+                      placeholder="અહીં જવાબ લખો અથવા ઉપર આપેલા માઈક બટન પર ક્લિક કરીને સીધું બોલો..."
+                      className="w-full p-4 rounded-xl border border-border bg-card outline-none focus:border-primary text-sm shadow-sm resize-none text-foreground leading-relaxed transition-all duration-200"
+                    />
+                    {isRecording && (
+                      <p className="text-xs text-muted-foreground italic flex items-center gap-2 animate-pulse mt-1">
+                        <span className="size-2 rounded-full bg-destructive" /> મહેરબાની કરીને ગુજરાતીમાં બોલો, તમારો અવાજ લખાણમાં રૂપાંતરિત થઈ રહ્યો છે...
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

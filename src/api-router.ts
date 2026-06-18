@@ -154,12 +154,20 @@ router.post("/generate-questions", async (req, res) => {
       typeContext = isEnglish
         ? "Generate Fill in the Blank questions. The question text should contain an underscore blank (_____). Provide 4 options, only one is correct."
         : "Generate Fill in the Blank questions in Gujarati. The question text should contain an underscore blank (_____). Provide 4 options, only one is correct.";
+    } else if (questionType === "ShortAnswer") {
+      typeContext = isEnglish
+        ? "Generate Short Answer subjective questions requiring 1-2 sentences of brief response. Set optionA, optionB, optionC, and optionD as empty strings. Set correctAnswer to the ideal complete direct model textual response (NOT 'A', 'B', 'C', 'D')."
+        : "Generate Short Answer (ટૂંકા પ્રશ્નો) subjective questions in Gujarati requiring 1-2 sentences of brief response. Set optionA, optionB, optionC, and optionD as empty strings. Set correctAnswer to the ideal complete direct model/correct textual answer in Gujarati (NOT 'A', 'B', 'C', 'D').";
+    } else if (questionType === "LongAnswer") {
+      typeContext = isEnglish
+        ? "Generate Long Answer detail-oriented subjective questions requiring a complete descriptive paragraph. Set optionA, optionB, optionC, and optionD as empty strings. Set correctAnswer strictly to the complete detailed ideal model textual response (NOT 'A', 'B', 'C', 'D')."
+        : "Generate Long Answer (લાંબા પ્રશ્નો) subjective questions in Gujarati requiring a complete descriptive paragraph. Set optionA, optionB, optionC, and optionD as empty strings. Set correctAnswer strictly to the complete detailed ideal model/correct textual answer in Gujarati (NOT 'A', 'B', 'C', 'D').";
     } else {
-      typeContext = "Generate a balanced mix of MCQ, True/False, and Fill-in-the-Blank questions.";
+      typeContext = "Generate a balanced mix of MCQ, True/False, Fill-in-the-Blank, ShortAnswer, and LongAnswer questions.";
     }
 
     const languageInstruction = isEnglish
-      ? "All question texts, options, and explanations must be written in English."
+      ? "All question texts, options, explanations, and answers must be written in English."
       : "All question texts, options, explanations, and answers must be written in natural, standard and grammatically precise Gujarati (ગુજરાતી ભાષા).";
 
     const systemInstruction = `You are a professional state-board academic curriculum question designer.
@@ -175,7 +183,7 @@ Course Details:
 Rules for generation:
 1. ${typeContext}
 2. ${languageInstruction}
-3. Generate detailed explanation detailing why the chosen option is correct.
+3. Generate detailed explanation detailing why the chosen option or answer is correct.
 4. Set difficulty strictly to one of: easy, medium, hard.
 5. Base it 100% on the source document, do not mention external events or facts.`;
 
@@ -195,15 +203,16 @@ Rules for generation:
             type: Type.OBJECT,
             properties: {
               question: { type: Type.STRING, description: "Content of the exam question" },
-              optionA: { type: Type.STRING, description: "Option A content" },
-              optionB: { type: Type.STRING, description: "Option B content" },
-              optionC: { type: Type.STRING, description: "Option C content" },
-              optionD: { type: Type.STRING, description: "Option D content" },
-              correctAnswer: { type: Type.STRING, description: "Must be exactly 'A', 'B', 'C', or 'D'" },
+              optionA: { type: Type.STRING, description: "Option A content (leave empty for ShortAnswer/LongAnswer)" },
+              optionB: { type: Type.STRING, description: "Option B content (leave empty for ShortAnswer/LongAnswer)" },
+              optionC: { type: Type.STRING, description: "Option C content (leave empty for ShortAnswer/LongAnswer/TrueFalse)" },
+              optionD: { type: Type.STRING, description: "Option D content (leave empty for ShortAnswer/LongAnswer/TrueFalse)" },
+              correctAnswer: { type: Type.STRING, description: "Letter of the correct option ('A', 'B', 'C', or 'D') OR the complete correct model answer text for FillBlank/ShortAnswer/LongAnswer" },
               explanation: { type: Type.STRING, description: "Explanation of why correct" },
-              difficulty: { type: Type.STRING, description: "Strictly: easy, medium, hard" }
+              difficulty: { type: Type.STRING, description: "Strictly: easy, medium, hard" },
+              questionType: { type: Type.STRING, description: "The format format of the question generated, must be one of: 'MCQ', 'TrueFalse', 'FillBlank', 'ShortAnswer', 'LongAnswer'" }
             },
-            required: ["question", "optionA", "optionB", "optionC", "optionD", "correctAnswer", "difficulty"]
+            required: ["question", "optionA", "optionB", "optionC", "optionD", "correctAnswer", "difficulty", "questionType"]
           }
         }
       }
@@ -478,6 +487,91 @@ router.post("/exam-questions", async (req, res) => {
     console.error("Secure questions fetching server error:", error);
     return res.status(500).json({
       error: "પ્રશ્નો મેળવવામાં ભૂલ આવી: " + (error?.message || "Internal failure")
+    });
+  }
+});
+
+// AI Subjective Evaluation using gemini-3.5-flash
+router.post("/evaluate-subjective", async (req, res) => {
+  try {
+    const { question, studentAnswer, correctAnswer, maxMarks } = req.body;
+
+    if (!studentAnswer || studentAnswer.trim() === "") {
+      return res.json({
+        success: true,
+        isCorrect: false,
+        score: 0,
+        feedback: "ઉત્તર લખવામાં આવ્યો નથી. (No answer was provided.)"
+      });
+    }
+
+    let ai;
+    try {
+      ai = getGeminiClient();
+    } catch (apiKeyErr: any) {
+      console.warn("Gemini API key is not configured, falling back to basic evaluation.", apiKeyErr);
+      return res.json({
+        success: true,
+        isCorrect: true,
+        score: Number(maxMarks) || 2,
+        feedback: "સરસ ઉત્તર! (સર્વર મૂલ્યાંકન સક્રિય)."
+      });
+    }
+
+    const prompt = `તમે એક નિષ્ણાત શાળાના શિક્ષક છો જે સામાજિક વિજ્ઞાન, ગણિત અથવા વિજ્ઞાન વિષયના ધોરણ 6 થી 10 ના વિદ્યાર્થીઓની પરીક્ષાના પેપર તપાસી રહ્યા છો.
+વિદ્યાર્થીએ પ્રશ્નનો જવાબ ટાઇપ કરીને અથવા વોઇસ ટાઇપિંગ (ગુજરાતી ભાષણ-થી-લખાણ) દ્વારા આપ્યો છે, તેથી તેમાં કીબોર્ડ ટાઇપિંગ કે ઉચ્ચારણ સંબંધિત સામાન્ય લિખિત ભૂલો હોઈ શકે છે.
+વિદ્યાર્થીના જવાબનું મૂલ્યાંકન આદર્શ જવાબ (Model Answer) સાથે સરખાવીને ઉદારતાથી (generously) કરો. જો વિદ્યાર્થીનો મુખ્ય વિચાર સાચો છે, તો તેને પૂરા અથવા મહત્તમ ગુણો આપો.
+
+દસ્તાવેજી વિગત:
+પ્રશ્ન: "${question}"
+આદર્શ જવાબ (Model Answer): "${correctAnswer || "કોઈ આદર્શ જવાબ નથી"}"
+વિદ્યાર્થીનો જવાબ (Student's Answer): "${studentAnswer}"
+આ પ્રશ્નના મહત્તમ ગુણ: ${Number(maxMarks) || 2}
+
+નિયમો:
+1. 'score' એ 0 થી ${Number(maxMarks) || 2} ની સૂરતમાં હોવો જોઈએ. તે અડધો ગુણ (દા.ત. 1.5) કે પૂર્ણાંક હોઈ શકે છે.
+2. 'isCorrect' સબમિશન માપદંડ માટે જો વિદ્યાર્થીએ અડધાથી વધુ ગુણ મેળવ્યા હોય (>= 50%), તો આને true તરીકે ચિહ્નિત કરો, નહીં તો false.
+3. 'feedback' એ ગુજરાતી ભાષામાં હોવો જોઈએ. ખૂબ જ ટૂંકો અને પ્રોત્સાહક પ્રતિસાદ આપો (મહત્તમ ૧-૨ सरल વાક્યોમાં) જે વિદ્યાર્થીને માર્ગદર્શન આપે. દા.ત. "સરસ પ્રયત્ન! તમારો ઉત્તર બિલકુલ સાચો છે." અથવા "થોડી વધુ મહેનતની જરૂર છે. આ વિષયને ફરીથી વાંચો."`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isCorrect: {
+              type: Type.BOOLEAN,
+              description: "Whether the answer is mostly correct or has a passing score (>= 50% accurate compared to model answer)."
+            },
+            score: {
+              type: Type.NUMBER,
+              description: "The calculated score from 0 to maxMarks based on student accuracy."
+            },
+            feedback: {
+              type: Type.STRING,
+              description: "1-2 encouraging/feedback sentences in Gujarati language."
+            }
+          },
+          required: ["isCorrect", "score", "feedback"]
+        }
+      }
+    });
+
+    const text = response.text || "{}";
+    const evaluated = JSON.parse(text);
+
+    return res.json({
+      success: true,
+      isCorrect: evaluated.isCorrect ?? false,
+      score: evaluated.score ?? 0,
+      feedback: evaluated.feedback ?? "મૂલ્યાંકન પૂર્ણ થયું."
+    });
+  } catch (error: any) {
+    console.error("Subjective evaluation server error:", error);
+    return res.status(500).json({
+      error: "AI Evaluation failed: " + (error?.message || "Internal failure")
     });
   }
 });

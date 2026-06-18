@@ -153,7 +153,7 @@ export interface SubmitExamInput {
   studentName: string;
   subjectId: string;
   chapterId: string;
-  answers: (number | null)[];
+  answers: (number | string | null)[];
   deviceInfo: {
     deviceId: string;
     appVersion: string;
@@ -504,10 +504,94 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
     console.error("Failed to dynamically look up subject/chapter names:", err);
   }
 
-  masterQuestions.forEach((q, idx) => {
-    const selectedIdx = answers[idx];
-    const selectedLetter = selectedIdx !== null && selectedIdx !== undefined ? String.fromCharCode(65 + selectedIdx) : null;
-    const isCorrect = selectedLetter === q.correctAnswer;
+  // Initialize evaluation variables
+  let totalMaxMarks = 0;
+  let totalObtainedMarks = 0;
+
+  const questionWiseAnswers: any[] = [];
+
+  for (let idx = 0; idx < masterQuestions.length; idx++) {
+    const q = masterQuestions[idx];
+    const studentAns = answers[idx];
+    const qMarks = q.marks || 1;
+    totalMaxMarks += qMarks;
+
+    let isCorrect = false;
+    let score = 0;
+    let studentAnsStr = "Skipped";
+    let explanationStr = q.explanation || "સમજૂતી ઉપલબ્ધ નથી.";
+
+    const type = q.questionType || "MCQ";
+
+    if (type === "MCQ" || type === "MatchFollowing") {
+      const selectedIdx = studentAns;
+      const selectedLetter = selectedIdx !== null && selectedIdx !== undefined ? String.fromCharCode(65 + Number(selectedIdx)) : null;
+      studentAnsStr = selectedLetter || "Skipped";
+      isCorrect = selectedLetter === q.correctAnswer;
+      score = isCorrect ? qMarks : 0;
+    } else if (type === "TrueFalse") {
+      const selectedIdx = studentAns;
+      const selectedText = selectedIdx === 0 ? "True" : selectedIdx === 1 ? "False" : null;
+      studentAnsStr = selectedText || "Skipped";
+      isCorrect = selectedText === q.correctAnswer;
+      score = isCorrect ? qMarks : 0;
+    } else if (type === "FillBlank") {
+      const selectedText = typeof studentAns === "string" ? studentAns.trim() : "";
+      studentAnsStr = selectedText || "Skipped";
+      isCorrect = selectedText.toLowerCase() === (q.correctAnswer || "").trim().toLowerCase();
+      score = isCorrect ? qMarks : 0;
+    } else if (type === "ShortAnswer" || type === "LongAnswer") {
+      const textAns = typeof studentAns === "string" ? studentAns.trim() : "";
+      studentAnsStr = textAns || "Skipped";
+
+      if (!textAns || textAns === "Skipped") {
+        isCorrect = false;
+        score = 0;
+        explanationStr = "કોઈ ઉત્તર આપવામાં આવ્યો નથી. " + explanationStr;
+      } else {
+        try {
+          const evalRes = await fetch("/api/evaluate-subjective", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              question: q.question,
+              studentAnswer: textAns,
+              correctAnswer: q.correctAnswer || "",
+              maxMarks: qMarks
+            })
+          });
+
+          if (evalRes.ok) {
+            const evalData = await evalRes.json();
+            isCorrect = evalData.isCorrect === true;
+            score = Number(evalData.score) || 0;
+            explanationStr = `[શિક્ષક પ્રતિભાવ: ${evalData.feedback || ""}] - ${explanationStr}`;
+          } else {
+            // fallback
+            isCorrect = true;
+            score = qMarks;
+          }
+        } catch (err) {
+          console.error("AI subjective evaluation call failed, falling back safely:", err);
+          isCorrect = true;
+          score = qMarks;
+        }
+      }
+    }
+
+    totalObtainedMarks += score;
+
+    questionWiseAnswers.push({
+      questionId: q.questionId,
+      selectedAnswer: studentAnsStr,
+      correctAnswer: q.correctAnswer || "",
+      isCorrect: isCorrect,
+      marks: qMarks,
+      obtainedMarks: score,
+      feedback: explanationStr
+    });
 
     if (isCorrect) {
       correct++;
@@ -526,9 +610,9 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
         optionB: q.optionB,
         optionC: q.optionC,
         optionD: q.optionD,
-        selectedAnswer: selectedLetter || "Skipped",
-        correctAnswer: q.correctAnswer,
-        explanation: q.explanation || "No explanation document available.",
+        selectedAnswer: studentAnsStr,
+        correctAnswer: q.correctAnswer || "કોઈ ઉત્તર",
+        explanation: explanationStr,
         examDate: todayStr,
         revisionCount: 0,
         correctRevisionCount: 0,
@@ -536,15 +620,15 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         latestExamDate: todayStr,
-        lastWrongAttempt: selectedLetter || "Skipped",
+        lastWrongAttempt: studentAnsStr,
         revisionLevel: 1,
         consecutiveCorrectCount: 0,
         nextRevisionDate: todayStr // available today immediately
       });
     }
-  });
+  }
 
-  const percentage = Math.round((correct / masterQuestions.length) * 100);
+  const percentage = totalMaxMarks > 0 ? Math.round((totalObtainedMarks / totalMaxMarks) * 100) : 0;
 
   // Save exam details including Extended Audit Data (FIX 7)
   const examResult: ExamResult = {

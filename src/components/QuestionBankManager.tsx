@@ -146,7 +146,7 @@ export function QuestionBankManager({
   const [aiChapterSelector, setAiChapterSelector] = useState("Ch-1");
   const [aiCustomChapterFlag, setAiCustomChapterFlag] = useState(false);
   const [aiCustomChapterName, setAiCustomChapterName] = useState("");
-  const [aiQuestionType, setAiQuestionType] = useState<"MCQ" | "True/False" | "Fill Blank" | "Mixed">("MCQ");
+  const [aiQuestionType, setAiQuestionType] = useState<"MCQ" | "True/False" | "Fill Blank" | "Mixed" | "ShortAnswer" | "LongAnswer">("MCQ");
   const [aiQuestionCount, setAiQuestionCount] = useState("10");
   const [isAiGenerating, setIsAiGenerating] = useState(false);
 
@@ -173,6 +173,58 @@ export function QuestionBankManager({
     setParsedItems(updated);
   };
 
+  const compressImage = (file: File): Promise<{ fileBase64: string, fileMimeType: string }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            const base64String = (event.target?.result as string).split(",")[1];
+            resolve({ fileBase64: base64String, fileMimeType: file.type || "image/jpeg" });
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          const base64String = dataUrl.split(",")[1];
+          resolve({ fileBase64: base64String, fileMimeType: "image/jpeg" });
+        };
+        img.onerror = () => {
+          const base64String = (event.target?.result as string).split(",")[1];
+          resolve({ fileBase64: base64String, fileMimeType: file.type || "image/jpeg" });
+        };
+      };
+      reader.onerror = () => {
+        resolve({ fileBase64: "", fileMimeType: "image/jpeg" });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleAiGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (aiSelectedFiles.length === 0) {
@@ -197,16 +249,21 @@ export function QuestionBankManager({
 
     try {
       const filePromises = aiSelectedFiles.map((file) => {
-        return new Promise<{ fileBase64: string, fileMimeType: string }>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64String = (reader.result as string).split(",")[1];
-            const fileMime = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
-            resolve({ fileBase64: base64String, fileMimeType: fileMime });
-          };
-          reader.onerror = () => reject(new Error(`ફાઇલ ${file.name} વાંચવામાં ભૂલ આવી.`));
-          reader.readAsDataURL(file);
-        });
+        const isImage = file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|webp|gif|bmp|heic|heif)$/i.test(file.name);
+        if (isImage) {
+          return compressImage(file);
+        } else {
+          return new Promise<{ fileBase64: string, fileMimeType: string }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const base64String = (reader.result as string).split(",")[1];
+              const fileMime = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+              resolve({ fileBase64: base64String, fileMimeType: fileMime });
+            };
+            reader.onerror = () => reject(new Error(`ફાઇલ ${file.name} વાંચવામાં ભૂલ આવી.`));
+            reader.readAsDataURL(file);
+          });
+        }
       });
 
       const filesPayload = await Promise.all(filePromises);
@@ -258,15 +315,15 @@ export function QuestionBankManager({
           subject: finalSubject,
           chapter: finalChapter,
           question: q.question,
-          optionA: q.optionA,
-          optionB: q.optionB,
-          optionC: q.optionC,
-          optionD: q.optionD,
+          optionA: q.optionA || "",
+          optionB: q.optionB || "",
+          optionC: q.optionC || "",
+          optionD: q.optionD || "",
           correctAnswer: q.correctAnswer || "A",
           explanation: q.explanation || "",
           difficulty: q.difficulty || "medium",
           medium: aiMedium,
-          questionType: q.optionC === "" ? "TrueFalse" : (q.question.includes("_____") ? "FillBlank" : "MCQ"),
+          questionType: q.questionType || (q.optionC === "" ? "TrueFalse" : (q.question.includes("_____") ? "FillBlank" : "MCQ")),
           source: "AI Generated"
         }));
 
@@ -1513,7 +1570,11 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                           }
                           setAiSelectedFiles([file]);
                         } else {
-                          const validImages = files.filter(f => f.type.startsWith("image/"));
+                          const validImages = files.filter(f => {
+                            const isImageMime = f.type && f.type.startsWith("image/");
+                            const isImageExt = /\.(jpg|jpeg|png|webp|gif|bmp|heic|heif)$/i.test(f.name);
+                            return isImageMime || isImageExt;
+                          });
                           if (validImages.length === 0) {
                             toast.error("કૃપા કરીને ફક્ત ઈમેજ ફાઇલો પસંદ કરો.");
                             return;
@@ -1680,6 +1741,8 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                       <option value="MCQ">MCQ (ચાર વિકલ્પો)</option>
                       <option value="True/False">સાચું / ખોટું (True/False)</option>
                       <option value="Fill Blank">ખાલી જગ્યા પૂરો (Fill Blank)</option>
+                      <option value="ShortAnswer">ટૂંકા પ્રશ્નો (Short Answer)</option>
+                      <option value="LongAnswer">લાંબા પ્રશ્નો (Long Answer)</option>
                       <option value="Mixed">Mixed (બધા મિશ્ર પ્રશ્નો)</option>
                     </select>
                   </div>
