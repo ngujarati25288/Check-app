@@ -12,6 +12,22 @@ const router = express.Router();
 router.use(express.json({ limit: "50mb" }));
 router.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Custom Broad Cross-Origin Resource Sharing (CORS) Middleware
+// Permanent workaround to enable students' secure mobile WebView wrapper instances to request APIs
+router.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Cache-Control, Accept");
+  res.setHeader("Access-Control-Max-Age", "86400"); // Cache preflight results for 24 hours
+
+  // Pre-emptively intercept OPTIONS preflight requests
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
 // Server-side database verification to block students
 let firebaseConfig: any = {};
 try {
