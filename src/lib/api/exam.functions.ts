@@ -51,33 +51,40 @@ export function getKolkataDaysDifference(dateStr1: string, dateStr2: string): nu
 }
 
 /**
- * Resolves relative API paths to the absolute server URL if running in a wrapped 
- * mobile app environment (local files, Capacitor, or localhost on mobile device).
- * Auto-detects standard deployment domain or falls back to live pre-production domain.
+ * Resolves relative API paths to the absolute server URL depending on environment.
+ * Ensures that if the app is bundled or loaded on an Android device (via APK, file, 
+ * Capacitor, custom WebView or other hostname origins), it communicates directly 
+ * with the designated Cloud Run production API backend.
  */
 export function getApiUrl(path: string): string {
   if (typeof window !== "undefined") {
-    const origin = window.location.origin;
-    
+    const hostname = window.location.hostname || "";
+    const origin = window.location.origin || "";
+    const port = window.location.port || "";
+
     try {
       const override = localStorage.getItem("override_api_url");
       if (override) {
+        console.log("[API URL DETECTOR] Overriden API URL:", override);
         return `${override.replace(/\/$/, "")}${path}`;
       }
     } catch (_) {}
 
-    const isLocalScheme = 
-      !origin || 
-      origin.startsWith("file://") || 
-      origin.startsWith("capacitor://") || 
-      origin.startsWith("http://localhost") || 
-      origin.startsWith("http://127.0.0.1") ||
-      origin.includes("10.0.2.2");
+    // Check if we are running natively on our Cloud Run containers (isBackendServer) 
+    // or standard localhost on port 3000 (local workspace test via browser).
+    const isCloudRunHost = hostname.endsWith(".run.app");
+    const isLocalTestingWorkspace = (hostname === "localhost" || hostname === "127.0.0.1") && port === "3000";
 
-    if (isLocalScheme) {
-      const fallbackBase = "https://ais-pre-lkdgapckoh4vkbfmllmd4m-147091341083.asia-east1.run.app";
-      return `${fallbackBase}${path}`;
+    if (isCloudRunHost || isLocalTestingWorkspace) {
+      // Running directly on a server-enabled host, safe to use relative paths.
+      return path;
     }
+
+    // All other cases (Android APK, Capacitor webviews, offline/wrapped modes, file:// sheets, mobile dev, etc.)
+    // MUST route API requests to the real production server endpoint.
+    const fallbackBase = "https://ais-pre-lkdgapckoh4vkbfmllmd4m-147091341083.asia-east1.run.app";
+    console.log(`[API URL DETECTOR] Intercepted non-server origin "${origin}". Routing request to absolute live API endpoint: ${fallbackBase}${path}`);
+    return `${fallbackBase}${path}`;
   }
   return path;
 }
