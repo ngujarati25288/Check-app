@@ -842,14 +842,13 @@ export const QuestionRepository = {
     try {
       const q = query(
         collection(db, 'questions'), 
-        where('subjectId', '==', subjectId), 
-        where('chapterId', '==', chapterId)
+        where('subjectId', '==', subjectId)
       );
       const snaps = await getDocs(q);
       const res: Question[] = [];
       snaps.forEach(d => {
         const qItem = d.data() as Question;
-        if (qItem.questionId !== "q1" && qItem.questionId !== "q2") {
+        if (qItem.questionId !== "q1" && qItem.questionId !== "q2" && qItem.chapterId === chapterId) {
           res.push(qItem);
         }
       });

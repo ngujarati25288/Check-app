@@ -58,10 +58,6 @@ export function getKolkataDaysDifference(dateStr1: string, dateStr2: string): nu
  */
 export function getApiUrl(path: string): string {
   if (typeof window !== "undefined") {
-    const hostname = window.location.hostname || "";
-    const origin = window.location.origin || "";
-    const port = window.location.port || "";
-
     try {
       const override = localStorage.getItem("override_api_url");
       if (override) {
@@ -70,20 +66,33 @@ export function getApiUrl(path: string): string {
       }
     } catch (_) {}
 
-    // Check if we are running natively on our Cloud Run containers (isBackendServer) 
-    // or standard localhost on port 3000 (local workspace test via browser).
-    const isCloudRunHost = hostname.endsWith(".run.app");
-    const isLocalTestingWorkspace = (hostname === "localhost" || hostname === "127.0.0.1") && port === "3000";
+    const protocol = window.location.protocol || "";
+    const hostname = window.location.hostname || "";
+    const port = window.location.port || "";
 
-    if (isCloudRunHost || isLocalTestingWorkspace) {
-      // Running directly on a server-enabled host, safe to use relative paths.
+    // 1. If running in an online HTTPS browser (whether .run.app or a custom domain), 
+    // we MUST always use the relative path. This ensures 100% perfect same-origin requests, 
+    // eliminating CORS preflight errors or mixed-content blockers.
+    if (protocol === "https:") {
       return path;
     }
 
-    // All other cases (Android APK, Capacitor webviews, offline/wrapped modes, file:// sheets, mobile dev, etc.)
-    // MUST route API requests to the real production server endpoint.
-    const fallbackBase = "https://ais-pre-lkdgapckoh4vkbfmllmd4m-147091341083.asia-east1.run.app";
-    console.log(`[API URL DETECTOR] Intercepted non-server origin "${origin}". Routing request to absolute live API endpoint: ${fallbackBase}${path}`);
+    // 2. If running locally inside our exact developer workspace browser on port 3000, 
+    // it's also a server-enabled host, safe to use relative paths.
+    if ((hostname === "localhost" || hostname === "127.0.0.1") && port === "3000") {
+      return path;
+    }
+
+    // 3. For all other cases (e.g. local APK assets, file://, capacitor://, custom webview wrapper ports, etc.),
+    // we must route to the high-performance Cloud Run deployment.
+    // We dynamically detect if the user's active page is loaded from an ais-dev or ais-pre host 
+    // to match their environment, defaulting to the robust pre-production/shared system.
+    const isAISDevWorkspace = hostname.includes("ais-dev") || (typeof document !== "undefined" && document.referrer.includes("ais-dev"));
+    const fallbackBase = isAISDevWorkspace 
+      ? "https://ais-dev-lkdgapckoh4vkbfmllmd4m-147091341083.asia-east1.run.app"
+      : "https://ais-pre-lkdgapckoh4vkbfmllmd4m-147091341083.asia-east1.run.app";
+
+    console.log(`[API URL DETECTOR] Intercepted non-server origin "${window.location.origin}" (protocol: ${protocol}). Routing request to absolute live API endpoint: ${fallbackBase}${path}`);
     return `${fallbackBase}${path}`;
   }
   return path;
@@ -282,8 +291,57 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
         throw new Error(errJson.error || "પરીક્ષાના પ્રશ્નો લોડ કરવામાં નિષ્ફળતા.");
       }
     } catch (e: any) {
-      console.error("Firestore loading error on secure get questions function (Option A):", e);
-      throw e;
+      console.warn("[FALLBACK ENGINE] API fetch failed. Checking client-side direct Firestore fallback...", e);
+      try {
+        const qRef = collection(db, "questions");
+        const qQuery = query(
+          qRef,
+          where("subjectId", "==", subjectId)
+        );
+        const qSnap = await getDocs(qQuery);
+        const clientQuestions: any[] = [];
+        qSnap.forEach((docSnap) => {
+          const qData = docSnap.data();
+          if (qData && qData.chapterId === chapterId) {
+            clientQuestions.push({
+              questionId: docSnap.id,
+              subjectId: qData.subjectId || subjectId,
+              chapterId: qData.chapterId || chapterId,
+              question: qData.question || "",
+              optionA: qData.optionA || "",
+              optionB: qData.optionB || "",
+              optionC: qData.optionC || "",
+              optionD: qData.optionD || "",
+              correctAnswer: qData.correctAnswer || "",
+              explanation: qData.explanation || "",
+              difficulty: qData.difficulty || "medium",
+              illustrationUrl: qData.illustrationUrl || "",
+              illustrationUrls: qData.illustrationUrls || [],
+              sourceType: qData.sourceType || "MCQ",
+              status: qData.status || "active"
+            });
+          }
+        });
+
+        if (clientQuestions.length > 0) {
+          console.log(`[FALLBACK ENGINE] Successfully retrieved ${clientQuestions.length} questions directly from Firestore.`);
+          dbQuestions = clientQuestions.map(q => ({
+            questionId: q.questionId,
+            question: q.question,
+            options: [q.optionA, q.optionB, q.optionC, q.optionD],
+            imageUrl: q.illustrationUrl || (q.illustrationUrls && q.illustrationUrls[0]) || "",
+            type: q.sourceType || "MCQ",
+            difficulty: q.difficulty || "medium",
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation
+          }));
+        } else {
+          throw new Error("ડેટાબેઝમાં કોઈ પ્રશ્નો મળ્યા નથી.");
+        }
+      } catch (fallbackErr: any) {
+        console.error("Firestore direct query fallback also failed:", fallbackErr);
+        throw new Error("સર્વર અને બેકઅપ ડેટાબેઝ બંનેમાંથી પ્રશ્નો લાવવામાં મુશ્કેલી પડી. કૃપા કરીને તમારું ઇન્ટરનેટ જોડાણ તપાસો.");
+      }
     }
   }
 
@@ -493,8 +551,48 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
         throw new Error(errJson.error || "પરીક્ષાના જવાબો મેળવવામાં નિષ્ફળતા.");
       }
     } catch (e: any) {
-      console.error("Firestore loading error on secure submit questions function (Option A):", e);
-      throw e;
+      console.warn("[FALLBACK ENGINE] API fetch failed in submitExamSecure. Checking client-side direct Firestore fallback...", e);
+      try {
+        const qRef = collection(db, "questions");
+        const qQuery = query(
+          qRef,
+          where("subjectId", "==", subjectId)
+        );
+        const qSnap = await getDocs(qQuery);
+        const clientQuestions: Question[] = [];
+        qSnap.forEach((docSnap) => {
+          const qData = docSnap.data();
+          if (qData && qData.chapterId === chapterId) {
+            clientQuestions.push({
+              questionId: docSnap.id,
+              subjectId: qData.subjectId || subjectId,
+              chapterId: qData.chapterId || chapterId,
+              question: qData.question || "",
+              optionA: qData.optionA || "",
+              optionB: qData.optionB || "",
+              optionC: qData.optionC || "",
+              optionD: qData.optionD || "",
+              correctAnswer: qData.correctAnswer || "",
+              explanation: qData.explanation || "સમજૂતી ઉપલબ્ધ નથી.",
+              difficulty: qData.difficulty || "medium",
+              illustrationUrl: qData.illustrationUrl || "",
+              illustrationUrls: qData.illustrationUrls || [],
+              sourceType: qData.sourceType || "MCQ",
+              status: qData.status || "active"
+            } as Question);
+          }
+        });
+
+        if (clientQuestions.length > 0) {
+          console.log(`[FALLBACK ENGINE] Successfully retrieved ${clientQuestions.length} answer keys directly from Firestore.`);
+          masterQuestions = clientQuestions;
+        } else {
+          throw new Error("ડેટાબેઝમાં કોઈ ઉત્તરો મળ્યા નથી.");
+        }
+      } catch (fallbackErr: any) {
+        console.error("Firestore direct query fallback in submitExamSecure also failed:", fallbackErr);
+        throw new Error("પરીક્ષા સબમિટ કરવા માટે ડેટાબેઝમાંથી સાચા જવાબો લાવી શકાયા નથી. કૃપા કરીને તમારું ઇન્ટરનેટ જોડાણ તપાસો.");
+      }
     }
   }
 
