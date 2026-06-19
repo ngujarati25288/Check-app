@@ -317,6 +317,7 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
               difficulty: qData.difficulty || "medium",
               illustrationUrl: qData.illustrationUrl || "",
               illustrationUrls: qData.illustrationUrls || [],
+              questionType: qData.questionType || "MCQ",
               sourceType: qData.sourceType || "MCQ",
               status: qData.status || "active"
             });
@@ -330,7 +331,7 @@ export async function getExamQuestionsSecure({ data }: { data: GetQuestionsInput
             question: q.question,
             options: [q.optionA, q.optionB, q.optionC, q.optionD],
             imageUrl: q.illustrationUrl || (q.illustrationUrls && q.illustrationUrls[0]) || "",
-            type: q.sourceType || "MCQ",
+            type: q.questionType || q.sourceType || "MCQ",
             difficulty: q.difficulty || "medium",
             correctAnswer: q.correctAnswer,
             explanation: q.explanation
@@ -577,6 +578,7 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
               difficulty: qData.difficulty || "medium",
               illustrationUrl: qData.illustrationUrl || "",
               illustrationUrls: qData.illustrationUrls || [],
+              questionType: qData.questionType || "MCQ",
               sourceType: qData.sourceType || "MCQ",
               status: qData.status || "active"
             } as Question);

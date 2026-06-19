@@ -167,15 +167,59 @@ function Exam() {
           }
         }
 
+        // Normalize fields to handle any format mismatch (MCQ options, types alignment, etc.)
+        const normalizedQList = qList.map((q: any) => {
+          let rawType = q.questionType || q.type || "";
+          let cleanType = String(rawType).trim().replace(/[\s_-]/g, "").toLowerCase();
+
+          let resolvedType = "MCQ";
+          if (cleanType.includes("shortanswer") || cleanType.includes("short") || cleanType.includes("oneword") || cleanType.includes("subjective") || cleanType.includes("verbal")) {
+            resolvedType = "ShortAnswer";
+          } else if (cleanType.includes("longanswer") || cleanType.includes("long") || cleanType.includes("descriptive") || cleanType.includes("essay")) {
+            resolvedType = "LongAnswer";
+          } else if (cleanType.includes("truefalse") || cleanType.includes("true/false") || cleanType.includes("yesno")) {
+            resolvedType = "TrueFalse";
+          } else if (cleanType.includes("fillblank") || cleanType.includes("blank") || cleanType.includes("fillintheblank")) {
+            resolvedType = "FillBlank";
+          } else if (cleanType.includes("matchfollowing") || cleanType.includes("match")) {
+            resolvedType = "MatchFollowing";
+          } else {
+            // Intelligent detection based on option availability
+            const hasA = q.optionA && q.optionA.trim() !== "" && q.optionA !== "Option A";
+            const hasB = q.optionB && q.optionB.trim() !== "" && q.optionB !== "Option B";
+            if (!hasA && !hasB) {
+              resolvedType = "ShortAnswer"; // If no options, it must be ShortAnswer / Oral Answer where student speaks
+            } else if (hasA && hasB && (!q.optionC || q.optionC.trim() === "" || q.optionC === "Option C") && (!q.optionD || q.optionD.trim() === "" || q.optionD === "Option D")) {
+              resolvedType = "TrueFalse";
+            } else {
+              resolvedType = "MCQ";
+            }
+          }
+
+          const optionA = q.optionA || (q.options && q.options[0]) || "";
+          const optionB = q.optionB || (q.options && q.options[1]) || "";
+          const optionC = q.optionC || (q.options && q.options[2]) || "";
+          const optionD = q.optionD || (q.options && q.options[3]) || "";
+
+          return {
+            ...q,
+            questionType: resolvedType,
+            optionA,
+            optionB,
+            optionC,
+            optionD,
+          };
+        });
+
         // Limit questions matching totalCount or fallback
-        if (qList.length === 0) {
+        if (normalizedQList.length === 0) {
           toast.error("આ પરીક્ષાના પ્રશ્નો મળ્યા નથી.");
           navigate({ to: "/dashboard" });
           return;
         }
 
         // Keep matching questions
-        const finalQuestions = qList.slice(0, exam.totalQuestions);
+        const finalQuestions = normalizedQList.slice(0, exam.totalQuestions);
         setExamQuestions(finalQuestions);
 
         // Read or set startTime using secureStorage (Fix 6)

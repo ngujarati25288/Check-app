@@ -484,7 +484,8 @@ router.post("/exam-questions", async (req, res) => {
         question: q.question,
         options: [q.optionA, q.optionB, q.optionC, q.optionD],
         imageUrl: q.illustrationUrl || (q.illustrationUrls && q.illustrationUrls[0]) || "",
-        type: q.questionType || "MCQ"
+        type: q.questionType || "MCQ",
+        questionType: q.questionType || "MCQ"
       };
 
       if (isSubmit) {
