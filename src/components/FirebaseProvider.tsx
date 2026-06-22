@@ -254,12 +254,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             if (stat !== 'approved') {
               toast.error("Your account has been disabled or is pending approval.");
               setUser(null);
-              localStorage.removeItem('dle:user_session');
+              try { localStorage.removeItem('dle:user_session'); } catch (_) {}
               try { await firebaseSignOut(auth); } catch {}
               navigate({ to: '/login' });
             } else {
               setUser(profile);
-              localStorage.setItem('dle:user_session', JSON.stringify(profile));
+              try { localStorage.setItem('dle:user_session', JSON.stringify(profile)); } catch (_) {}
 
               // Real-time observer on live Firestore user doc
               if (!isFirebasePlaceholder) {
@@ -270,12 +270,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     if (curStat !== 'approved') {
                       toast.error("Your account has been disabled.");
                       setUser(null);
-                      localStorage.removeItem('dle:user_session');
+                      try { localStorage.removeItem('dle:user_session'); } catch (_) {}
                       try { firebaseSignOut(auth); } catch {}
                       navigate({ to: '/login' });
                     } else {
                       setUser(latestData);
-                      localStorage.setItem('dle:user_session', JSON.stringify(latestData));
+                      try { localStorage.setItem('dle:user_session', JSON.stringify(latestData)); } catch (_) {}
                     }
                   }
                 }, (err) => {
@@ -287,14 +287,14 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             // If authenticated in Firebase but no profile exists (e.g. bootstrapper rejected),
             // sign out of Firebase too to keep states synchronized
             setUser(null);
-            localStorage.removeItem('dle:user_session');
+            try { localStorage.removeItem('dle:user_session'); } catch (_) {}
             try { await firebaseSignOut(auth); } catch {}
           }
         } catch (error: any) {
           console.error("Auth session configuration failed:", error);
           toast.error("યુઝર પ્રોફાઇલ મેળવવામાં નિષ્ફળતા: " + (error.message || error));
           setUser(null);
-          localStorage.removeItem('dle:user_session');
+          try { localStorage.removeItem('dle:user_session'); } catch (_) {}
           try { await firebaseSignOut(auth); } catch {}
         }
       } else {
@@ -428,12 +428,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLoading(true);
     loginInProgress.current = true;
     try {
+      // Clean and trim both input fields: remove leading/trailing spaces & newlines
+      const cleanStudentId = (studentId || "").trim();
+      const cleanPassword = (passwordPlain || "").trim();
+
       // 1. Convert Gujarati numerals to English digits
       const guDoc: { [key: string]: string } = {
         '૦': '0', '૧': '1', '૨': '2', '૩': '3', '૪': '4',
         '૫': '5', '૬': '6', '૭': '7', '૮': '8', '૯': '9'
       };
-      let normalizedId = studentId.replace(/[૦-૯]/g, (match) => guDoc[match] || match);
+      let normalizedId = cleanStudentId.replace(/[૦-૯]/g, (match) => guDoc[match] || match);
 
       // 2. Trim and remove ANY blank spaces or tabs typed within the ID (extremely common error)
       normalizedId = normalizedId.replace(/\s+/g, '').trim();
@@ -449,7 +453,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const uIdInput = normalizedId;
 
-      if (!uIdInput || !passwordPlain) {
+      if (!uIdInput || !cleanPassword) {
         toast.error("કૃપા કરીને રજીસ્ટ્રેશન આઈડી અને પાસવર્ડ ભરો.");
         setLoading(false);
         return false;
@@ -499,7 +503,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           ];
 
           const demoFound = defaultDemoUsers.find(
-            d => (d.studentId === uIdInput || d.mobile === uIdInput) && d.passwordPlain === passwordPlain
+            d => (d.studentId === uIdInput || d.mobile === uIdInput) && d.passwordPlain === cleanPassword
           );
 
           if (demoFound) {
@@ -509,11 +513,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               // 1. Create in Firebase Auth
               let finalUid = "";
               try {
-                const credential = await createUserWithEmailAndPassword(auth, demoEmail, passwordPlain);
+                const credential = await createUserWithEmailAndPassword(auth, demoEmail, cleanPassword);
                 finalUid = credential.user.uid;
               } catch (authErr: any) {
                 if (authErr.code === "auth/email-already-in-use") {
-                  const credential = await signInWithEmailAndPassword(auth, demoEmail, passwordPlain);
+                  const credential = await signInWithEmailAndPassword(auth, demoEmail, cleanPassword);
                   finalUid = credential.user.uid;
                 } else {
                   throw authErr;
@@ -550,12 +554,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           const email = `${actualStudentId}@daily-learning-exam.com`;
 
           const passwordCheck = profileById.passwordHash 
-            ? compareSync(passwordPlain, profileById.passwordHash)
-            : passwordPlain === "123456";
+            ? compareSync(cleanPassword, profileById.passwordHash)
+            : cleanPassword === "123456";
           
           if (passwordCheck) {
             try {
-              const authResult = await signInWithEmailAndPassword(auth, email, passwordPlain);
+              const authResult = await signInWithEmailAndPassword(auth, email, cleanPassword);
               matchedUser = await UserRepository.getProfile(authResult.user.uid);
               if (!matchedUser) {
                 // If auth succeeded but UID changed, map the existing document attributes to the new UID and save it
@@ -566,7 +570,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             } catch (authError: any) {
               console.log("Seed/manually added user is correct locally, attempting on-the-fly Firebase Auth registration:", authError.code);
               try {
-                const credential = await createUserWithEmailAndPassword(auth, email, passwordPlain);
+                const credential = await createUserWithEmailAndPassword(auth, email, cleanPassword);
                 const newUid = credential.user.uid;
                 
                 // Copy or migrate the Firestore profile document to the new valid UID
@@ -590,7 +594,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           const actualStudentId = profileById.studentId;
           const email = `${actualStudentId}@daily-learning-exam.com`;
           try {
-            const authResult = await signInWithEmailAndPassword(auth, email, passwordPlain);
+            const authResult = await signInWithEmailAndPassword(auth, email, cleanPassword);
             matchedUser = await UserRepository.getProfile(authResult.user.uid);
           } catch (authError: any) {
             console.warn("Firebase auth login failing:", authError);
@@ -632,8 +636,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       // Verify bcrypt password
       const passwordMatches = matchedUser.passwordHash 
-        ? compareSync(passwordPlain, matchedUser.passwordHash)
-        : passwordPlain === "123456"; // graceful fallback
+        ? compareSync(cleanPassword, matchedUser.passwordHash)
+        : cleanPassword === "123456"; // graceful fallback
 
       if (!passwordMatches) {
         toast.error("ખોટો પાસવર્ડ! કૃપા કરીને સાચો પાસવર્ડ લખો. (Incorrect password!)");
@@ -879,7 +883,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (profile) {
           const migratedProfile = await ensureProfileMediumValue(profile);
           setUser(migratedProfile);
-          localStorage.setItem('dle:user_session', JSON.stringify(migratedProfile));
+          try { localStorage.setItem('dle:user_session', JSON.stringify(migratedProfile)); } catch (_) {}
           toast.success(`આપનું સ્વાગત છે, ${migratedProfile.fullName}!`);
           if (profile.role === 'admin' || profile.role === 'super_admin') {
             navigate({ to: '/admin' });
@@ -913,7 +917,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (profile) {
         const migratedProfile = await ensureProfileMediumValue(profile);
         setUser(migratedProfile);
-        localStorage.setItem('dle:user_session', JSON.stringify(migratedProfile));
+        try { localStorage.setItem('dle:user_session', JSON.stringify(migratedProfile)); } catch (_) {}
         toast.success(`આપનું સ્વાગત છે, ${migratedProfile.fullName}!`);
         if (profile.role === 'admin' || profile.role === 'super_admin') {
           navigate({ to: '/admin' });

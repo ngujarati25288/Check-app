@@ -93,6 +93,12 @@ function AbhyasComponent() {
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
+  // Fallback Audio Player refs and state for Android/Webview compatibility
+  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const fallbackChunksRef = useRef<string[]>([]);
+  const fallbackIndexRef = useRef<number>(0);
+  const [useFallbackTts, setUseFallbackTts] = useState(false);
+
   // Practice Exam State
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -146,11 +152,19 @@ function AbhyasComponent() {
   useEffect(() => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
       synthRef.current = window.speechSynthesis;
+    } else {
+      setUseFallbackTts(true);
     }
     return () => {
       // Clean up text-to-speech when leaving page
       if (synthRef.current) {
-        synthRef.current.cancel();
+        try { synthRef.current.cancel(); } catch (_) {}
+      }
+      if (fallbackAudioRef.current) {
+        try {
+          fallbackAudioRef.current.pause();
+          fallbackAudioRef.current = null;
+        } catch (_) {}
       }
     };
   }, []);
@@ -173,31 +187,133 @@ function AbhyasComponent() {
     sfx.tap();
   };
 
-  // Text-To-Speech Controls
-  const speakSummary = () => {
-    if (!synthRef.current) {
-      toast.error("તમારા ઉપકરણમાં વૉઇસ ક્ષમતા ઉપલબ્ધ નથી.");
+  // Text-To-Speech Controls with dual layer Native / Google TTS Hybrid engine
+  const splitIntoTtsChunks = (text: string): string[] => {
+    const cleanText = text.replace(/[\n\r]+/g, " ");
+    const sentences = cleanText.split(/([।\.!\?，,]+)/g);
+    const chunks: string[] = [];
+    let currentPart = "";
+
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i];
+      if (!s) continue;
+      if (currentPart.length + s.length < 150) {
+        currentPart += s;
+      } else {
+        if (currentPart.trim()) {
+          chunks.push(currentPart.trim());
+        }
+        currentPart = s;
+      }
+    }
+    if (currentPart.trim()) {
+      chunks.push(currentPart.trim());
+    }
+    return chunks.filter(c => c.length > 1 && /[A-Za-z0-9\u0A80-\u0AFF\u0900-\u097F]/.test(c));
+  };
+
+  const playFallbackChunk = (index: number) => {
+    if (index >= fallbackChunksRef.current.length) {
+      setIsSpeaking(false);
+      setIsPaused(false);
       return;
     }
 
-    // If active and paused, resume
-    if (isSpeaking && isPaused) {
-      synthRef.current.resume();
+    fallbackIndexRef.current = index;
+    const chunk = fallbackChunksRef.current[index];
+
+    let tl = "gu";
+    const targetMedium = (user?.medium || "Gujarati").trim().toLowerCase();
+    if (targetMedium === "hindi" || targetMedium === "hi") {
+      tl = "hi";
+    } else if (targetMedium === "english" || targetMedium === "en") {
+      tl = "en";
+    }
+
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${encodeURIComponent(chunk)}`;
+
+    if (fallbackAudioRef.current) {
+      try { fallbackAudioRef.current.pause(); } catch (_) {}
+    }
+
+    const audio = new Audio(url);
+    audio.playbackRate = ttsSpeed;
+    fallbackAudioRef.current = audio;
+
+    audio.onended = () => {
+      playFallbackChunk(index + 1);
+    };
+
+    audio.onerror = (err) => {
+      console.warn("Fallback TTS chunk error, attempting next:", err);
+      playFallbackChunk(index + 1);
+    };
+
+    audio.play().then(() => {
+      setIsSpeaking(true);
       setIsPaused(false);
+    }).catch((playErr) => {
+      console.error("Audio playback failed or was blocked:", playErr);
+      playFallbackChunk(index + 1);
+    });
+  };
+
+  const speakSummary = () => {
+    // Lazily detect voice synthesis availability on request
+    if (!useFallbackTts && typeof window !== "undefined" && window.speechSynthesis) {
+      synthRef.current = window.speechSynthesis;
+    } else {
+      setUseFallbackTts(true);
+    }
+
+    if (useFallbackTts || !synthRef.current) {
+      // Fallback Audio playback action
+      if (isSpeaking && isPaused) {
+        if (fallbackAudioRef.current) {
+          fallbackAudioRef.current.play().then(() => {
+            setIsPaused(false);
+          }).catch(err => console.warn("Fallback resume failed:", err));
+        }
+        sfx.tap();
+        return;
+      }
+
+      // Stop any existing fallback
+      if (fallbackAudioRef.current) {
+        try { fallbackAudioRef.current.pause(); } catch (_) {}
+        fallbackAudioRef.current = null;
+      }
+
+      const chunks = splitIntoTtsChunks(summaryText);
+      if (chunks.length === 0) {
+        toast.error("વાંચવા માટે કોઈ સાહિત્ય મળ્યું નથી.");
+        return;
+      }
+
+      fallbackChunksRef.current = chunks;
+      playFallbackChunk(0);
       sfx.tap();
       return;
     }
 
-    // Stop former audios
-    synthRef.current.cancel();
+    // Standard Native Voice synthesis execution
+    if (isSpeaking && isPaused) {
+      try {
+        synthRef.current.resume();
+        setIsPaused(false);
+      } catch (_) {}
+      sfx.tap();
+      return;
+    }
 
-    // Setup voice utterance
+    try {
+      synthRef.current.cancel();
+    } catch (_) {}
+
     const textToSpeak = summaryText.replace(/[\n\r]/g, " ");
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
 
-    // Try selecting a native Indian language voice
     const voices = synthRef.current.getVoices();
-    // Look for Gujarati support, fallbacks to Hindi then general Indian English
     const guVoice = voices.find(v => v.lang.startsWith("gu") || v.lang === "gu-IN");
     const hiVoice = voices.find(v => v.lang.startsWith("hi") || v.lang === "hi-IN");
     const enInVoice = voices.find(v => v.lang.includes("IN") && v.lang.startsWith("en"));
@@ -206,14 +322,14 @@ function AbhyasComponent() {
       utterance.voice = guVoice;
     } else if (hiVoice) {
       utterance.voice = hiVoice;
-      utterance.rate = ttsSpeed * 0.9; // Hindi is slightly fast
+      utterance.rate = ttsSpeed * 0.9;
     } else if (enInVoice) {
       utterance.voice = enInVoice;
     }
 
     utterance.lang = guVoice ? "gu-IN" : "hi-IN";
     utterance.rate = ttsSpeed;
-    utterance.pitch = 1.05; // Slightly child friendly higher pitch
+    utterance.pitch = 1.05;
 
     utterance.onstart = () => {
       setIsSpeaking(true);
@@ -227,28 +343,68 @@ function AbhyasComponent() {
 
     utterance.onerror = (e) => {
       if (e.error !== "interrupted" && e.error !== "canceled") {
-        console.warn("TTS synth error:", e);
+        console.warn("Native TTS error, auto-routing to fallback engine:", e);
+        // seamless fallback transition
+        setUseFallbackTts(true);
+        setTimeout(() => {
+          const chunks = splitIntoTtsChunks(summaryText);
+          if (chunks.length > 0) {
+            fallbackChunksRef.current = chunks;
+            playFallbackChunk(0);
+          }
+        }, 100);
+      } else {
+        setIsSpeaking(false);
+        setIsPaused(false);
       }
-      setIsSpeaking(false);
-      setIsPaused(false);
     };
 
     utteranceRef.current = utterance;
-    synthRef.current.speak(utterance);
+    try {
+      synthRef.current.speak(utterance);
+    } catch (speakErr) {
+      console.warn("synth.speak error, falling back:", speakErr);
+      setUseFallbackTts(true);
+      const chunks = splitIntoTtsChunks(summaryText);
+      if (chunks.length > 0) {
+        fallbackChunksRef.current = chunks;
+        playFallbackChunk(0);
+      }
+    }
     sfx.tap();
   };
 
   const pauseSummary = () => {
+    if (useFallbackTts) {
+      if (fallbackAudioRef.current && isSpeaking && !isPaused) {
+        try { fallbackAudioRef.current.pause(); } catch (_) {}
+        setIsPaused(true);
+        sfx.tap();
+      }
+      return;
+    }
+
     if (synthRef.current && isSpeaking && !isPaused) {
-      synthRef.current.pause();
+      try { synthRef.current.pause(); } catch (_) {}
       setIsPaused(true);
       sfx.tap();
     }
   };
 
   const stopSpeaking = () => {
+    if (useFallbackTts || fallbackAudioRef.current) {
+      if (fallbackAudioRef.current) {
+        try { fallbackAudioRef.current.pause(); } catch (_) {}
+        fallbackAudioRef.current = null;
+      }
+      setIsSpeaking(false);
+      setIsPaused(false);
+      sfx.tap();
+      return;
+    }
+
     if (synthRef.current) {
-      synthRef.current.cancel();
+      try { synthRef.current.cancel(); } catch (_) {}
       setIsSpeaking(false);
       setIsPaused(false);
       sfx.tap();
@@ -257,8 +413,13 @@ function AbhyasComponent() {
 
   const updateTtsSpeed = (newSpeed: number) => {
     setTtsSpeed(newSpeed);
+    if (useFallbackTts) {
+      if (fallbackAudioRef.current) {
+        fallbackAudioRef.current.playbackRate = newSpeed;
+      }
+      return;
+    }
     if (synthRef.current && isSpeaking) {
-      // Re-trigger with updated speed
       setTimeout(() => {
         speakSummary();
       }, 100);

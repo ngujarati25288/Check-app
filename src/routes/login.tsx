@@ -264,6 +264,10 @@ function Login() {
                     <input
                       type="text"
                       required
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck="false"
                       placeholder={loginLang === "English" ? "STDX-XXXXX" : loginLang === "Hindi" ? "विद्यार्थी आईडी दर्ज करें" : "સ્ટુડન્ટ આઈડી ભરો"}
                       value={studentId}
                       onChange={(e) => setStudentId(e.target.value)}
@@ -289,6 +293,10 @@ function Login() {
                     <input
                       type={showPassword ? "text" : "password"}
                       required
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck="false"
                       placeholder="******"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
