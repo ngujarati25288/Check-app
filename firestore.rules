@@ -41,12 +41,20 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isOwner(studentId) {
+      return isSignedIn() && (
+        studentId == request.auth.uid ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId == studentId)
+      );
+    }
+
     function isApproved() {
       return isSignedIn() && (
         (request.auth.token.email != null && (
           request.auth.token.email == 'n.gujarati25288@gmail.com' || 
           request.auth.token.email == '8511125288@daily-learning-exam.com' ||
-          (request.auth.token.email.endsWith('@daily-learning-exam.com') && !request.auth.token.email.lower().startsWith('std'))
+          request.auth.token.email.endsWith('@daily-learning-exam.com')
         )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['approved', 'Approved'] ||
@@ -251,13 +259,13 @@ service cloud.firestore {
     match /exam_results/{resultId} {
       allow read: if isApproved() && (
         resource == null ||
-        resource.data.studentId == request.auth.uid || 
+        isOwner(resource.data.studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create: if isApproved() && 
-                    incoming().studentId == request.auth.uid && 
+                    isOwner(incoming().studentId) && 
                     incoming().submittedAt == request.time;
 
       allow update, delete: if isAdmin() || isSuperAdmin();
@@ -266,13 +274,13 @@ service cloud.firestore {
     match /student_failures/{failureId} {
       allow read: if isApproved() && (
         resource == null ||
-        resource.data.studentId == request.auth.uid || 
+        isOwner(resource.data.studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create, update: if isApproved() && 
-                            incoming().studentId == request.auth.uid;
+                            isOwner(incoming().studentId);
 
       allow delete: if isAdmin() || isSuperAdmin();
     }
@@ -280,18 +288,18 @@ service cloud.firestore {
     match /student_mistakes/{mistakeId} {
       allow read: if isApproved() && (
         resource == null ||
-        resource.data.studentId == request.auth.uid || 
+        isOwner(resource.data.studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create: if isApproved() && 
-                    incoming().studentId == request.auth.uid && 
+                    isOwner(incoming().studentId) && 
                     incoming().createdAt == request.time;
 
       allow update: if isApproved() && (
-        (existing().studentId == request.auth.uid && 
-         incoming().studentId == request.auth.uid &&
+        (isOwner(existing().studentId) && 
+         isOwner(incoming().studentId) &&
          incoming().diff(existing()).affectedKeys().hasOnly([
            'revisionCount', 'correctRevisionCount', 'mastered', 'nextRevisionDate', 
            'lastRevisionDate', 'lastRevisedAt', 'consecutiveCorrectCount', 'revisionLevel', 'masteredAt', 'updatedAt'
@@ -307,18 +315,18 @@ service cloud.firestore {
     match /revision_progress/{progressId} {
       allow read: if isApproved() && (
         resource == null ||
-        resource.data.studentId == request.auth.uid || 
+        isOwner(resource.data.studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create: if isApproved() && 
-                    incoming().studentId == request.auth.uid && 
+                    isOwner(incoming().studentId) && 
                     incoming().lastRevisedAt == request.time;
 
       allow update: if isApproved() && (
-        (existing().studentId == request.auth.uid && 
-         incoming().studentId == request.auth.uid &&
+        (isOwner(existing().studentId) && 
+         isOwner(incoming().studentId) &&
          incoming().diff(existing()).affectedKeys().hasOnly([
            'revisionCount', 'correctRevisionCount', 'mastered', 'lastRevisedAt'
          ]) &&
@@ -332,17 +340,17 @@ service cloud.firestore {
 
     match /revision_analytics/{studentId} {
       allow read: if isApproved() && (
-        studentId == request.auth.uid || 
+        isOwner(studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create: if isApproved() && 
-                    studentId == request.auth.uid && 
+                    isOwner(studentId) && 
                     incoming().updatedAt == request.time;
 
       allow update: if isApproved() && (
-        (studentId == request.auth.uid && 
+        (isOwner(studentId) && 
          incoming().updatedAt == request.time &&
          incoming().diff(existing()).affectedKeys().hasOnly([
            'totalRevisions', 'totalCorrectRevisions', 'revisionAccuracy', 
@@ -357,17 +365,17 @@ service cloud.firestore {
 
     match /student_points/{studentId} {
       allow read: if isApproved() && (
-        studentId == request.auth.uid || 
+        isOwner(studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create: if isApproved() && 
-                    studentId == request.auth.uid && 
+                    isOwner(studentId) && 
                     incoming().updatedAt == request.time;
 
       allow update: if isApproved() && (
-        (studentId == request.auth.uid && 
+        (isOwner(studentId) && 
          incoming().updatedAt == request.time &&
          incoming().diff(existing()).affectedKeys().hasOnly([
            'totalPoints', 'examPoints', 'revisionPoints', 'masteryPoints', 'achievementPoints', 'studentName', 'studentId', 'updatedAt'
@@ -382,11 +390,11 @@ service cloud.firestore {
     match /achievements/{achievementId} {
       allow read: if isApproved();
       allow create: if isApproved() && 
-                    incoming().studentId == request.auth.uid && 
+                    isOwner(incoming().studentId) && 
                     incoming().unlockedAt == request.time;
       allow update: if isApproved() && (
-                    (existing().studentId == request.auth.uid && 
-                     incoming().studentId == request.auth.uid) ||
+                    (isOwner(existing().studentId) && 
+                     isOwner(incoming().studentId)) ||
                     isAdmin() ||
                     isSuperAdmin()
       );
@@ -397,12 +405,12 @@ service cloud.firestore {
       allow read: if isApproved();
 
       allow create: if isApproved() && 
-                    incoming().studentId == request.auth.uid && 
+                    isOwner(incoming().studentId) && 
                     incoming().unlockedAt == request.time;
 
       allow update: if isApproved() && (
-                    (existing().studentId == request.auth.uid && 
-                     incoming().studentId == request.auth.uid) ||
+                    (isOwner(existing().studentId) && 
+                     isOwner(incoming().studentId)) ||
                     isAdmin() ||
                     isSuperAdmin()
       );
@@ -415,11 +423,11 @@ service cloud.firestore {
     match /leaderboard/{id} {
       allow read: if isApproved();
       allow create: if isApproved() && (
-                    id == request.auth.uid &&
-                    incoming().studentId == request.auth.uid
+                    isOwner(id) &&
+                    isOwner(incoming().studentId)
       ) || isAdmin() || isSuperAdmin();
       allow update: if isApproved() && (
-                    (id == request.auth.uid && 
+                    (isOwner(id) && 
                      incoming().diff(existing()).affectedKeys().hasOnly([
                        'studentId', 'studentName', 'totalMarks', 'percentage', 'rank', 'updatedAt'
                      ])) ||
@@ -464,7 +472,7 @@ service cloud.firestore {
     // ----------------------------------------------------
     match /student_analytics/{studentId} {
       allow read: if isApproved() && (
-        studentId == request.auth.uid || 
+        isOwner(studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
@@ -554,7 +562,7 @@ service cloud.firestore {
     match /notifications/{id} {
       allow read: if isApproved() && (
         resource == null ||
-        resource.data.studentId == request.auth.uid || 
+        isOwner(resource.data.studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
@@ -564,21 +572,21 @@ service cloud.firestore {
     match /notification_history/{recordId} {
       allow read: if isApproved() && (
         resource == null ||
-        resource.data.studentId == request.auth.uid || 
+        isOwner(resource.data.studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow create: if isApproved() && (
-        incoming().studentId == request.auth.uid || 
+        isOwner(incoming().studentId) || 
         isAdmin() || 
         isSuperAdmin()
       );
 
       allow update: if isApproved() && (
-        (incoming().studentId == request.auth.uid &&
+        (isOwner(incoming().studentId) &&
          incoming().diff(existing()).affectedKeys().hasOnly(['opened']) &&
-         existing().studentId == request.auth.uid) ||
+         isOwner(existing().studentId)) ||
         isAdmin() ||
          isSuperAdmin()
       );

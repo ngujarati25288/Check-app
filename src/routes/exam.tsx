@@ -1,8 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Clock, ChevronLeft, ChevronRight, X, LayoutGrid, AlertCircle, Mic, MicOff } from "lucide-react";
 import { useAuth } from "@/components/FirebaseProvider";
-import { ExamRepository, ResultRepository, MistakeRepository } from "@/lib/db";
+import { ExamRepository, ResultRepository, MistakeRepository, ChapterRepository } from "@/lib/db";
 import { DailyExam, Question, ExamResult, StudentMistake } from "@/types";
 import { toast } from "sonner";
 import { sfx } from "@/lib/settings";
@@ -46,9 +46,20 @@ function Exam() {
 
   // Speech Recognition / Voice typing state
   const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   // Native Speech-to-Text handler (runs completely local and free in the browser!)
   const startVoiceTyping = () => {
+    if (isRecording && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.error("Failed to stop recognition instance:", err);
+      }
+      setIsRecording(false);
+      return;
+    }
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast.error("તમારા બ્રાઉઝરમાં સ્પીચ રેકગ્નિશન સપોર્ટ નથી. કૃપા કરીને ક્રોમ અથવા આઈપેડ/મોબાઈલનો ઉપયોગ કરો.");
@@ -80,10 +91,13 @@ function Exam() {
 
     rec.onerror = (err: any) => {
       console.error("Speech Recognition error:", err);
-      if (err.error === "no-speech") {
+      const errType = String(err.error || "").toLowerCase();
+      if (errType === "no-speech") {
         toast.warning("કોઈ અવાજ સંભળાયો નથી. મહેરબાની કરીને ફરીથી પ્રયાસ કરો.");
+      } else if (errType === "not-allowed" || errType === "permission-blocked") {
+        toast.error("માઇક્રોફોનની પરવાનગી બ્લોક છે! આના ઉકેલ માટે ઉપર આપેલ 'Open in a new tab' (તમારી લિંક નવા ટેબમાં ખોલો) બટન પર ક્લિક કરો.");
       } else {
-        toast.error("ભાષણ-થી-લખાણમાં સહેજ ક્ષતિ આવી.");
+        toast.error(`ભાષણ-થી-લખાણમાં સહેજ ક્ષતિ આવી (${err.error || "તપાસો"}).`);
       }
       setIsRecording(false);
     };
@@ -92,6 +106,7 @@ function Exam() {
       setIsRecording(false);
     };
 
+    recognitionRef.current = rec;
     rec.start();
   };
 
@@ -127,14 +142,23 @@ function Exam() {
         }
         setActiveExam(exam);
 
-        // Verify duplicate submissions (Fix 8)
+        // Check if Abhyas study is completed if requested by administrator
+        if (exam.requireAbhyasCompleted) {
+          const completed = await ChapterRepository.checkAbhyasCompleted(user.uid, exam.chapterId);
+          if (!active) return;
+          if (!completed) {
+            toast.error("આ પરીક્ષા આપવા માટે પ્રથમ આ પ્રકરણનો અભ્યાસ પૂર્ણ કરવો ફરજિયાત છે! 🔐");
+            navigate({ to: "/exam-today" });
+            return;
+          }
+        }
+
+        // Verify duplicate submissions - Let them retake/re-enter for infinite practice as requested by the user
         const prevResults = await ResultRepository.getUserResults(user.uid);
         if (!active) return;
         const alreadySubmitted = prevResults.some((r) => r.examId === exam.examId);
         if (alreadySubmitted) {
-          toast.warning("તમે આ પરીક્ષા પહેલાથી જ સબમિટ કરી દીધી છે.");
-          navigate({ to: "/dashboard" });
-          return;
+          console.log("Student has taken this exam before, allowing them to re-run/retake for full practice.");
         }
 
         // Fetch questions securely (Fix 3)

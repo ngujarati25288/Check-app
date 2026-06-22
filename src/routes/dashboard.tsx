@@ -18,6 +18,7 @@ import {
   Sparkles,
   Shield,
   User,
+  BookOpen,
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { MotivationalQuote } from "@/components/MotivationalQuote";
@@ -563,6 +564,34 @@ function Dashboard() {
             </p>
           </div>
         )}
+
+        {/* ABHYAS - SMART SELF LEARNING ENGINE */}
+        <Link
+          to="/abhyas"
+          className="block rounded-3xl bg-gradient-to-br from-indigo-500 via-primary to-purple-600 p-5 text-white shadow-float relative overflow-hidden active:scale-[0.99] transition animate-[slide-up_0.4s_ease-out]"
+        >
+          <div className="absolute top-0 right-0 size-28 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute -bottom-10 -left-10 size-24 bg-white/5 rounded-full blur-xl" />
+          <div className="relative flex items-start gap-4">
+            <div className="size-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0 border border-white/20">
+              <BookOpen className="size-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-[9px] uppercase tracking-wider bg-white/25 px-2.5 py-0.5 rounded-full font-bold text-white/95">
+                અભ્યાસ • NEW STUDY MODULE
+              </span>
+              <h2 className="mt-1.5 text-lg font-black font-gu leading-tight text-white">
+                અભ્યાસ મટીરીયલ (Abhyas Module)
+              </h2>
+              <p className="text-xs text-white/90 font-gu mt-1 leading-relaxed">
+                અહીં બુકનો ટૂંકો સારાંશ (Summary) વાંચો, સૂરિલા અવાજમાં સાંભળો (TTS Engine) અને પ્રશ્નોની પ્રેક્ટિસ કરીને જ્ઞાન મેળવો!
+              </p>
+              <div className="mt-3 inline-flex items-center gap-1 text-xs font-semibold bg-white text-primary px-3.5 py-1.5 rounded-xl shadow-sm active:scale-95 transition">
+                🚀 ભણવાનું શરૂ કરો (Start Learn)
+              </div>
+            </div>
+          </div>
+        </Link>
 
         {/* WEEKLY CHALLENGE */}
         <div className="rounded-3xl bg-card border border-border p-5 shadow-card relative overflow-hidden animate-[slide-up_0.45s_ease-out]">

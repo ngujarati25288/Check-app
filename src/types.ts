@@ -52,6 +52,7 @@ export interface Subject {
   description?: string;
   active?: boolean;
   updatedAt?: any;
+  isDerived?: boolean;
 }
 
 export interface Chapter {
@@ -65,6 +66,8 @@ export interface Chapter {
   active?: boolean;
   createdAt?: any;
   updatedAt?: any;
+  summaryText?: string;
+  isDerived?: boolean;
 }
 
 export interface Question {
@@ -148,6 +151,7 @@ export interface DailyExam {
   recurringPattern?: string; // Day of week or interval indicator
   examType?: "Immediate" | "Scheduled" | "Recurring";
   examinerName?: string;
+  requireAbhyasCompleted?: boolean;
 }
 
 export interface QuestionWiseAnswer {

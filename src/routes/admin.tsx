@@ -89,7 +89,9 @@ export const Route = createFileRoute("/admin")({
 
 type AdminTab = 
   | "questions" 
-  | "exams";
+  | "exams"
+  | "subjects"
+  | "chapters";
 
 function AdminPanel() {
   const { user, loading: authLoading } = useAuth();
@@ -133,9 +135,16 @@ function AdminPanel() {
   const [chapSubId, setChapSubId] = useState("");
   const [chapNo, setChapNo] = useState<number>(1);
   const [chapDesc, setChapDesc] = useState("");
+  const [chapSummaryText, setChapSummaryText] = useState("");
   const [chapActive, setChapActive] = useState<boolean>(true);
   const [chapStd, setChapStd] = useState("10");
   const [editingChap, setEditingChap] = useState<Chapter | null>(null);
+
+  const [pastedMcq, setPastedMcq] = useState("");
+  const [pastedTf, setPastedTf] = useState("");
+  const [pastedFb, setPastedFb] = useState("");
+  const [pastedShort, setPastedShort] = useState("");
+  const [pastedLong, setPastedLong] = useState("");
 
   const [questText, setQuestText] = useState("");
   const [questTopic, setQuestTopic] = useState("");
@@ -252,9 +261,16 @@ function AdminPanel() {
         AnalyticsRepository.getAnalyticsReports()
       ]);
 
-      // Automatically derive unique subjects and chapters from our single source of truth: Questions!
+      // Start with the actual subjects and chapters from the database (fully complete documents)
       const derivedSubsMap: Record<string, Subject> = {};
+      (subList || []).forEach(s => {
+        derivedSubsMap[s.subjectId] = { ...s, isDerived: false };
+      });
+
       const derivedChapsMap: Record<string, Chapter> = {};
+      (chapList || []).forEach(c => {
+        derivedChapsMap[c.chapterId] = { ...c, isDerived: false };
+      });
 
       const existingSubsMap: Record<string, Subject> = {};
       (subList || []).forEach(s => {
@@ -312,13 +328,15 @@ function AdminPanel() {
         q.subjectId = subId;
         q.chapterId = chapId;
 
+        // ONLY derive skeleton if it doesn't exist in the database collections
         if (!derivedSubsMap[subId]) {
           derivedSubsMap[subId] = {
             subjectId: subId,
             subjectName: subName,
             standard: std,
             status: "active" as const,
-            createdAt: q.createdAt || new Date().toISOString()
+            createdAt: q.createdAt || new Date().toISOString(),
+            isDerived: true
           };
         }
 
@@ -328,21 +346,26 @@ function AdminPanel() {
             subjectId: subId,
             chapterName: chapName,
             standard: std,
-            status: "active" as const
+            status: "active" as const,
+            isDerived: true
           };
         }
       });
 
-      // Include academic subjects/chapters from the database even if they have 0 questions currently
+      // Ensure that actual fully complete DB documents take final priority and overwrite any partial/skeletons
       (subList || []).forEach(s => {
-        if (!derivedSubsMap[s.subjectId]) {
-          derivedSubsMap[s.subjectId] = s;
-        }
+        derivedSubsMap[s.subjectId] = {
+          ...derivedSubsMap[s.subjectId],
+          ...s,
+          isDerived: false
+        };
       });
       (chapList || []).forEach(c => {
-        if (!derivedChapsMap[c.chapterId]) {
-          derivedChapsMap[c.chapterId] = c;
-        }
+        derivedChapsMap[c.chapterId] = {
+          ...derivedChapsMap[c.chapterId],
+          ...c,
+          isDerived: false
+        };
       });
 
       // Keep static defaults for empty database situation so experience isn't blank
@@ -542,6 +565,7 @@ function AdminPanel() {
   // Subjects filter for inline display
   const filteredSubjectsForView = useMemo(() => {
     return subjects.filter(s => {
+      if (s.isDerived) return false;
       const matchesStd = subFilterStd === "all" ? true : s.standard === subFilterStd;
       const matchesSearch = subSearch.trim() 
         ? s.subjectName.toLowerCase().includes(subSearch.toLowerCase()) || (s.description || "").toLowerCase().includes(subSearch.toLowerCase())
@@ -553,6 +577,7 @@ function AdminPanel() {
   // Chapters filter for inline display
   const filteredChaptersForView = useMemo(() => {
     return chapters.filter(c => {
+      if (c.isDerived) return false;
       const matchesSub = chapFilterSub === "all" ? true : c.subjectId === chapFilterSub;
       const matchesStd = chapFilterStd === "all" ? true : c.standard === chapFilterStd;
       const matchesSearch = chapSearch.trim()
@@ -677,6 +702,80 @@ function AdminPanel() {
       return;
     }
 
+    const parsePastedQuestions = (jsonStr: string, questionType: string, subjectId: string, chapterId: string, standard: string): Question[] => {
+      if (!jsonStr.trim()) return [];
+      try {
+        let cleanStr = jsonStr.trim();
+        if (cleanStr.startsWith("```")) {
+          cleanStr = cleanStr.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+        }
+        const parsed = JSON.parse(cleanStr);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        return list.map((item, idx) => {
+          const qId = `q_${questionType.toLowerCase()}_${Date.now()}_${idx}_${Math.floor(Math.random() * 1000)}`;
+          
+          let finalOptA = "";
+          let finalOptB = "";
+          let finalOptC = "";
+          let finalOptD = "";
+          let finalOptions: string[] = [];
+
+          if (questionType === "MCQ") {
+            finalOptA = item.optionA || item.a || item.options?.[0] || "";
+            finalOptB = item.optionB || item.b || item.options?.[1] || "";
+            finalOptC = item.optionC || item.c || item.options?.[2] || "";
+            finalOptD = item.optionD || item.d || item.options?.[3] || "";
+            finalOptions = [finalOptA, finalOptB, finalOptC, finalOptD];
+          } else if (questionType === "TrueFalse") {
+            finalOptA = "True";
+            finalOptB = "False";
+            finalOptions = ["True", "False"];
+          } else if (questionType === "FillBlank") {
+            finalOptA = item.optionA || item.a || item.options?.[0] || "";
+            finalOptB = item.optionB || item.b || item.options?.[1] || "";
+            finalOptC = item.optionC || item.c || item.options?.[2] || "";
+            finalOptD = item.optionD || item.d || item.options?.[3] || "";
+            finalOptions = [finalOptA, finalOptB, finalOptC, finalOptD].filter(Boolean);
+          } else if (questionType === "ShortAnswer") {
+            finalOptA = item.optionA || item.answer || item.a || "";
+            if (!item.optionA && item.explanation) finalOptA = item.explanation;
+            finalOptions = [finalOptA];
+          } else if (questionType === "LongAnswer") {
+            finalOptA = item.optionA || item.answer || item.a || "";
+            if (!item.optionA && item.explanation) finalOptA = item.explanation;
+            finalOptions = [finalOptA];
+          }
+
+          return {
+            questionId: qId,
+            id: qId,
+            subjectId,
+            chapterId,
+            question: item.question || item.questionText || item.q || "",
+            optionA: finalOptA,
+            optionB: finalOptB,
+            optionC: finalOptC,
+            optionD: finalOptD,
+            correctAnswer: String(item.correctAnswer || item.answer || "A").trim().substring(0, 1).toUpperCase(),
+            explanation: item.explanation || item.explanationText || "",
+            difficulty: (item.difficulty || "medium").toLowerCase() as any,
+            status: "active",
+            standard,
+            medium: item.medium || "Gujarati",
+            questionType: questionType as any,
+            options: finalOptions,
+            marks: 1,
+            active: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+        });
+      } catch (e) {
+        console.error(e);
+        throw new Error(`કૃપા કરીને ${questionType} નું સાચું JSON ફોર્મેટ ચેક કરો.`);
+      }
+    };
+
     try {
       const selectedSubject = subjects.find(s => s.subjectId === chapSubId);
       const targetStandard = selectedSubject ? selectedSubject.standard : chapStd;
@@ -684,12 +783,26 @@ function AdminPanel() {
       const isAct = chapActive;
       const chapterId = editingChap ? editingChap.chapterId : "ch_" + Date.now();
 
+      // Parse and dry-test questions before uploading chapter to database (Failsafe)
+      let batchQuestions: Question[] = [];
+      try {
+        if (pastedMcq.trim()) batchQuestions.push(...parsePastedQuestions(pastedMcq, "MCQ", chapSubId, chapterId, targetStandard));
+        if (pastedTf.trim()) batchQuestions.push(...parsePastedQuestions(pastedTf, "TrueFalse", chapSubId, chapterId, targetStandard));
+        if (pastedFb.trim()) batchQuestions.push(...parsePastedQuestions(pastedFb, "FillBlank", chapSubId, chapterId, targetStandard));
+        if (pastedShort.trim()) batchQuestions.push(...parsePastedQuestions(pastedShort, "ShortAnswer", chapSubId, chapterId, targetStandard));
+        if (pastedLong.trim()) batchQuestions.push(...parsePastedQuestions(pastedLong, "LongAnswer", chapSubId, chapterId, targetStandard));
+      } catch (parseErr: any) {
+        toast.error(parseErr.message);
+        return;
+      }
+
       const chapterObj: Chapter = {
         chapterId,
         subjectId: chapSubId,
         chapterNo: chNo,
         chapterName: chapName,
         description: chapDesc,
+        summaryText: chapSummaryText,
         standard: targetStandard,
         active: isAct,
         status: isAct ? "active" : "archived",
@@ -714,11 +827,59 @@ function AdminPanel() {
         );
         toast.success("New Chapter created successfully!");
       }
+
+      // Upload batch questions successfully with duplicate prevention!
+      if (batchQuestions.length > 0) {
+        const existingKeySet = new Set(
+          questions.map(q => `${q.chapterId}_${(q.question || "").trim().toLowerCase()}`)
+        );
+
+        const uniqueNewQuestions: Question[] = [];
+        let duplicateCount = 0;
+
+        for (const qObj of batchQuestions) {
+          const key = `${qObj.chapterId}_${(qObj.question || "").trim().toLowerCase()}`;
+          if (existingKeySet.has(key)) {
+            duplicateCount++;
+          } else {
+            uniqueNewQuestions.push(qObj);
+            existingKeySet.add(key); // avoid duplicates within the newly pasted batch
+          }
+        }
+
+        if (uniqueNewQuestions.length > 0) {
+          toast.info(`કુલ ${uniqueNewQuestions.length} નવા પ્રશ્નો સાથે અપલોડ થઈ રહ્યા છે...`);
+          for (const qObj of uniqueNewQuestions) {
+            await AdminRepository.createQuestion(
+              user.uid,
+              user.fullName || "Admin",
+              qObj
+            );
+          }
+          if (duplicateCount > 0) {
+            toast.success(`પ્રકરણ અને જોડાયેલ પ્રશ્ન બેંક પ્રક્રિયા સફળ! (${uniqueNewQuestions.length} નવા પ્રશ્નો ઉમેરાયા, ${duplicateCount} ડુપ્લિકેટ્સ રોકવામાં આવ્યા.)`);
+          } else {
+            toast.success(`પ્રકરણ અને જોડાયેલ પ્રશ્ન બેંક (${uniqueNewQuestions.length} પ્રશ્નો) સફળતાપૂર્વક અપલોડ થઈ ગયા છે!`);
+          }
+        } else if (duplicateCount > 0) {
+          toast.warning("તમે સબમિટ કરેલા તમામ પ્રશ્નો આ પ્રકરણમાં પહેલાથી ઉપલબ્ધ છે, તેથી ડુપ્લિકેટ થતાં બચાવ્યા છે! 🛡️");
+        }
+      }
+
       setChapName("");
       setChapNo(chNo + 1);
       setChapDesc("");
+      setChapSummaryText("");
       setChapActive(true);
       setEditingChap(null);
+      
+      // Reset bulk inputs
+      setPastedMcq("");
+      setPastedTf("");
+      setPastedFb("");
+      setPastedShort("");
+      setPastedLong("");
+
       loadAllData();
     } catch (_) {
       toast.error("Chapter details save failed.");
@@ -1007,15 +1168,15 @@ function AdminPanel() {
           let resolvedType: "MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" | "ShortAnswer" | "LongAnswer" = "MCQ";
           if (qTypeValueRaw) {
             const norm = qTypeValueRaw.trim().toLowerCase().replace(/[\s_/]/g, "");
-            if (norm === "truefalse" || norm === "tf" || norm === "true/false") {
+            if (norm === "truefalse" || norm === "tf" || norm === "true/false" || norm.includes("ખરા") || norm.includes("ખોટા")) {
               resolvedType = "TrueFalse";
-            } else if (norm === "fillblank" || norm === "blank" || norm === "fill" || norm === "fillinblank") {
+            } else if (norm === "fillblank" || norm === "blank" || norm === "fill" || norm === "fillinblank" || norm.includes("ખાલી") || norm.includes("જગ્યા")) {
               resolvedType = "FillBlank";
-            } else if (norm === "shortanswer" || norm === "short" || norm === "sa") {
+            } else if (norm === "shortanswer" || norm === "short" || norm === "sa" || norm.includes("ટૂંક") || norm.includes("ટૂંકા") || norm.includes("નાના") || norm.includes("નાનો")) {
               resolvedType = "ShortAnswer";
-            } else if (norm === "longanswer" || norm === "long" || norm === "la") {
+            } else if (norm === "longanswer" || norm === "long" || norm === "la" || norm.includes("લાંબા") || norm.includes("લાંબો") || norm.includes("મોટા") || norm.includes("મોટો") || norm.includes("વિસ્તૃત")) {
               resolvedType = "LongAnswer";
-            } else if (norm === "match" || norm === "matchfollowing") {
+            } else if (norm === "match" || norm === "matchfollowing" || norm.includes("જોડકા")) {
               resolvedType = "MatchFollowing";
             }
           } else {
@@ -1023,10 +1184,24 @@ function AdminPanel() {
             const isTF = (aText.toLowerCase() === "true" || aText.startsWith("સાચ") || aText.startsWith("ખાસ")) && (bText.toLowerCase() === "false" || bText.startsWith("ખોટ"));
             if (isTF) {
               resolvedType = "TrueFalse";
-            } else if (questionText.includes("_____")) {
+            } else if (questionText.includes("_____") || questionText.includes("ખાલી જગ્યા")) {
               resolvedType = "FillBlank";
             } else if (!aText && !bText && !cText && !dText) {
-              resolvedType = "ShortAnswer";
+              const qClean = questionText.toLowerCase();
+              if (
+                qClean.includes("વિસ્તૃત") || qClean.includes("મુદ્દાસર") || 
+                qClean.includes("લાંબો") || qClean.includes("લાંબા") || 
+                qClean.includes("મોટા") || qClean.includes("મોટો") || 
+                qClean.includes("ટૂંકનોંધ") || qClean.includes("સમજાવો") ||
+                qClean.includes("વિસ્તાર") || qClean.includes("સવિસ્તાર") ||
+                qClean.includes("વર્ણવો") || qClean.includes("describe") || 
+                qClean.includes("explain") || qClean.includes("elaborate") ||
+                qClean.includes("long answer") || qClean.length > 60
+              ) {
+                resolvedType = "LongAnswer";
+              } else {
+                resolvedType = "ShortAnswer";
+              }
             }
           }
 
@@ -1203,13 +1378,29 @@ function AdminPanel() {
           />
           {/* Daily Exam Scheduler tab is hidden from regular teachers */}
           {(user?.role || "").toLowerCase().trim() !== "teacher" && (
-            <SidebarBtn 
-              active={activeTab === "exams"} 
-              onClick={() => setActiveTab("exams")} 
-              icon={<CalendarClock className="size-4" />} 
-              label="Daily Exam Scheduler" 
-              sub="પરીક્ષા નિયંત્રણો"
-            />
+            <>
+              <SidebarBtn 
+                active={activeTab === "exams"} 
+                onClick={() => setActiveTab("exams")} 
+                icon={<CalendarClock className="size-4" />} 
+                label="Daily Exam Scheduler" 
+                sub="પરીક્ષા નિયંત્રણો"
+              />
+              <SidebarBtn 
+                active={activeTab === "subjects"} 
+                onClick={() => setActiveTab("subjects")} 
+                icon={<Layers className="size-4" />} 
+                label="Subjects Registry" 
+                sub="વિષયોનું વ્યવસ્થાપન"
+              />
+              <SidebarBtn 
+                active={activeTab === "chapters"} 
+                onClick={() => setActiveTab("chapters")} 
+                icon={<BookOpen className="size-4" />} 
+                label="Chapters Registry" 
+                sub="પ્રકરણોનું વ્યવસ્થાપન"
+              />
+            </>
           )}
         </nav>
 
@@ -1255,7 +1446,11 @@ function AdminPanel() {
           >
             <option value="questions">Question Bank (પ્રશ્ન બેંક)</option>
             {(user?.role || "").toLowerCase().trim() !== "teacher" && (
-              <option value="exams">Daily Exams (દૈનિક પરીક્ષા)</option>
+              <>
+                <option value="exams">Daily Exams (દૈનિક પરીક્ષા)</option>
+                <option value="subjects">Subjects Registry (વિષય રજીસ્ટ્રી)</option>
+                <option value="chapters">Chapters Registry (ચેપ્ટર રજીસ્ટ્રી)</option>
+              </>
             )}
           </select>
         </header>
@@ -1436,7 +1631,7 @@ function AdminPanel() {
               )}
 
               {/* Tab 2: SUBJECTS MANAGEMENT */}
-              {false && (
+              {activeTab === "subjects" && (
                 <div className="space-y-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-teal-500/10 dark:bg-teal-500/5 p-4 rounded-3xl border border-teal-500/20">
                     <div>
@@ -1693,7 +1888,7 @@ function AdminPanel() {
               )}
 
               {/* Tab 2.5: CHAPTERS MANAGEMENT */}
-              {false && (
+              {activeTab === "chapters" && (
                 <div className="space-y-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-teal-500/10 dark:bg-teal-500/5 p-4 rounded-3xl border border-teal-500/20">
                     <div>
@@ -1783,7 +1978,20 @@ function AdminPanel() {
                         </div>
 
                         <div>
-                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Topic Summary / Description</label>
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Topic Summary / Description</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const prompt = `હું તમને મારા ધોરણ ${chapStd} ના પ્રકરણ '${chapName || "નવું ચેપ્ટર"}' ના પાઠ્યપુસ્તકના પાનાના ફોટા મોકલી રહ્યો છું. આ પ્રકરણના મુખ્ય મુદ્દાઓ, હેડલાઇન્સ અને અભ્યાસક્રમની વિશેષતાઓ (Topic Summary) ને સુંદર, ટૂંકા ગુજરાતી બુલેટ પોઈન્ટ્સમાં ખાસ કરીને લખી આપો.`;
+                                navigator.clipboard.writeText(prompt);
+                                toast.success("AI Topic Summary Prompt કોપી થઈ ગયો! 📋");
+                              }}
+                              className="text-[9px] text-teal-600 hover:underline flex items-center gap-1 font-bold bg-teal-500/10 px-2 py-0.5 rounded-md"
+                            >
+                              ✨ Copy AI Topic Prompt
+                            </button>
+                          </div>
                           <textarea
                             value={chapDesc}
                             onChange={(e) => setChapDesc(e.target.value)}
@@ -1792,10 +2000,244 @@ function AdminPanel() {
                           />
                         </div>
 
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block flex items-center gap-1">
+                              <BookOpen className="size-3 text-teal-600" /> Abhyas Book Summary (અભ્યાસ બુક સારાંશ - Audio Text)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const prompt = `હું તમને મારા ધોરણ ${chapStd} ના પ્રકરણ '${chapName || "નવું ચેપ્ટર"}' ના પાઠ્યપુસ્તકના પાનાના ફોટા મોકલી રહ્યો છું. આખા પ્રકરણનો એક રસપ્રદ, ઊંડો અને સરળ પણ સમજાય તેવો ટૂંકો સારાંશ (Gujarati audio text for speaking) ગુજરાતીમાં લખી આપો જેથી મધ્યમ ગતિએ વાંચતા ૩-૫ મિનિટ થાય અને માત્ર અવાજ સાંભળીને પણ વિદ્યાર્થીઓ આખું પ્રકરણ સરળતાથી સમજી શકે. છેલ્લે એક પ્રોત્સાહક વાક્ય ખાસ રાખજો.`;
+                                navigator.clipboard.writeText(prompt);
+                                toast.success("AI Audio Summary Prompt કોપી થઈ ગયો! 📋");
+                              }}
+                              className="text-[9px] text-teal-600 hover:underline flex items-center gap-1 font-bold bg-teal-500/10 px-2 py-0.5 rounded-md"
+                            >
+                              ✨ Copy Audio Summary Prompt
+                            </button>
+                          </div>
+                          <textarea
+                            value={chapSummaryText}
+                            onChange={(e) => setChapSummaryText(e.target.value)}
+                            placeholder="અહીં આખા પ્રકરણનો ટૂંકો અને સુંદર સારાંશ લખો જે વિદ્યાર્થીઓ સ્પીકર દ્વારા સાંભળી શકે અને પરીક્ષા આપી શકે..."
+                            className="w-full h-32 p-3 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-semibold transition"
+                          />
+                        </div>
+
+                        {/* BULK QUESTION IMPORTER */}
+                        <div className="border-t border-border pt-4 mt-4 space-y-4">
+                          <h4 className="font-extrabold text-[11px] text-teal-600 dark:text-teal-400 flex items-center gap-1.5 uppercase tracking-wide">
+                            <Layers className="size-4" /> પાઠ પ્રશ્ન બેંક એક સાથે અપલોડ (Bulk Questions Package)
+                          </h4>
+                          <p className="text-[10px] text-muted-foreground font-gu leading-relaxed">
+                            આ પાઠ સંબંધિત પ્રશ્નો જનરેટ કરાવીને નીચેના ખાનાઓમાં પેસ્ટ કરો. બધા જ પ્રશ્નો આ આખા પેકેજ સાથે એકસાથે અપલોડ થશે.
+                          </p>
+
+                          {/* 1. MCQ Box */}
+                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
+                                🔘 વિકલ્પોવાળા પ્રશ્નો (MCQs)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૫ સરસ દ્વિભાષી/ગુજરાતી MCQs તૈયાર કરો. સાચો જવાબ કેપિટલ 'A', 'B', 'C' કે 'D' માંથી જ હોય તેની ખાતરી કરો.
+
+નીચે દર્શாவેલ ચોક્કસ JSON ફોર્મેટમાં જ આખા જવાબો લખો:
+[
+  {
+    "question": "ચુંબકનો કયો ધ્રુવ ભૌગોલિક ઉત્તર દિશા દર્શાવે છે?",
+    "optionA": "દક્ષિણ ધ્રુવ",
+    "optionB": "ઉત્તર ધ્રુવ",
+    "optionC": "પૂર્વ ધ્રુવ",
+    "optionD": "પશ્ચિમ ધ્રુવ",
+    "correctAnswer": "B",
+    "explanation": "મુક્ત રીતે લટકાવેલ ચુંબકનો ઉત્તર દિશા દર્શાવતો છેડો એ તેનો ઉત્તર ધ્રુવ છે."
+  }
+]`;
+                                  navigator.clipboard.writeText(pr);
+                                  toast.success("MCQ Prompt Copy completed! 📋");
+                                }}
+                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
+                              >
+                                Copy MCQ AI Prompt ✨
+                              </button>
+                            </div>
+                            <textarea
+                              value={pastedMcq}
+                              onChange={(e) => setPastedMcq(e.target.value)}
+                              placeholder='પ્રોમ્પ્ટ રન કરી મેળવેલ JSON અહીં પેસ્ટ કરો...'
+                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
+                            />
+                            {pastedMcq.trim() && (
+                              <div className="text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded-md inline-block">
+                                verified parsed: JSON detected
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 2. TrueFalse Box */}
+                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
+                                Yes / No ખરા-ખોટા (True / False)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૦ ખરાં-ખોટાં વિધાનો તૈયાર કરો. True માટે optionA="સાચું", False માટે optionB="ખોટું", optionC અને D ખાલી રાખો અને correctAnswer "A" અથવા "B" રહેશે.
+
+આપેલી ડાયરેક્ટ JSON ફોર્મેટ જ વાપરો:
+[
+  {
+    "question": "મુક્ત રીતે લટકાવેલ ચુંબક હંમેશાં ઉત્તર-દક્ષિણ દિશામાં સ્થિર થાય છે.",
+    "optionA": "સાચું",
+    "optionB": "ખોટું",
+    "optionC": "",
+    "optionD": "",
+    "correctAnswer": "A",
+    "explanation": "મુક્ત રીતે લટકાવેલ ચુંબક પૃથ્વીના ચુંબકીય બળને કારણે હંમેશા ઉત્તર-દક્ષિણ સ્થિર થાય."
+  }
+]`;
+                                  navigator.clipboard.writeText(pr);
+                                  toast.success("TrueFalse Prompt Copy completed! 📋");
+                                }}
+                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
+                              >
+                                Copy TrueFalse Prompt ✨
+                              </button>
+                            </div>
+                            <textarea
+                              value={pastedTf}
+                              onChange={(e) => setPastedTf(e.target.value)}
+                              placeholder='ખરા-ખોટાનો મેળવેલ JSON અહીં પેસ્ટ કરો...'
+                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
+                            />
+                          </div>
+
+                          {/* 3. Fill Blank Box */}
+                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
+                                📝 ખાલી જગ્યા પૂરો (Fill Blanks)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૦ ખાલી જગ્યા પૂરોના પ્રશ્નો તૈયાર કરો સવાલમાં બ્લેન્ક સ્પેસ '______' મુકો. optionA માં સાચો જવાબ અને optionB, C, D માં અન્ય ખોટા વિકલ્પો લખી correctAnswer="A" સેટ કરજો.
+
+આપેલી JSON ફોર્મેટ જ વાપરો:
+[
+  {
+    "question": "હોકાયંત્રની સોય હંમેશા ______ દિશા દર્શાવે છે.",
+    "optionA": "ઉત્તર-દક્ષિણ",
+    "optionB": "પૂર્વ-પશ્ચિમ",
+    "optionC": "દક્ષિણ-પૂર્વ",
+    "optionD": "ઉત્તર-પશ્ચિમ",
+    "correctAnswer": "A",
+    "explanation": "હોકાયંત્રની ચુંબકીય સોય હંમેશા ભૌગોલિક ઉત્તર-દક્ષિણ દિશા તરફ રહે છે."
+  }
+]`;
+                                  navigator.clipboard.writeText(pr);
+                                  toast.success("FillBlank Prompt Copy completed! 📋");
+                                }}
+                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
+                              >
+                                Copy FillBlank AI Prompt ✨
+                              </button>
+                            </div>
+                            <textarea
+                              value={pastedFb}
+                              onChange={(e) => setPastedFb(e.target.value)}
+                              placeholder='ખાલી જગ્યા પૂરો નો JSON અહીં પેસ્ટ કરો...'
+                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
+                            />
+                          </div>
+
+                          {/* 4. Short Question Box */}
+                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
+                                💬 એક-બે વાક્યના ઉત્તરો (Short Qs)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૦ એક-બે વાક્ય ના ઉત્તરો વાળા પ્રશ્નો તૈયાર કરો. optionA માં સાચો સવિસ્તાર ઉત્તર લખી optionB, C, D ખાલી રાખજો અને correctAnswer="A" સેટ કરજો.
+
+આપેલી JSON ફોર્મેટ વાપરો:
+[
+  {
+    "question": "ચુંબકત્વ એટલે શું?",
+    "optionA": "ચુંબક દ્વારા લોખંડ જેવી વસ્તુઓને આકર્ષવાના ગુણધર્મને ચુંબકત્વ કહે છે.",
+    "optionB": "",
+    "optionC": "",
+    "optionD": "",
+    "correctAnswer": "A",
+    "explanation": ""
+  }
+]`;
+                                  navigator.clipboard.writeText(pr);
+                                  toast.success("Short Qs Prompt Copy completed! 📋");
+                                }}
+                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
+                              >
+                                Copy Short Qs Prompt ✨
+                              </button>
+                            </div>
+                            <textarea
+                              value={pastedShort}
+                              onChange={(e) => setPastedShort(e.target.value)}
+                              placeholder='એક-બે વાક્યના ટૂંકા પ્રશ્નોત્તરી JSON અહીં પેસ્ટ કરો...'
+                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
+                            />
+                          </div>
+
+                          {/* 5. Long Question Box */}
+                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
+                                📑 લાંબા સવિસ્તાર ઉત્તરો (Long Qs)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૫ વિસ્તૃત લાંબા પ્રશ્નો તૈયાર કરો. optionA માં તેનો সম্পূর্ণ સવિસ્તાર મોટો ઉત્તર લખજો, optionB, C, D ખાલી રાખજો અને correctAnswer="A" સેટ કરજો.
+
+આપેલી JSON ફોર્મેટ વાપરો:
+[
+  {
+    "question": "ચુંબકના ગુણધર્મો સવિસ્તાર સમજાવો.",
+    "optionA": "ચુંબકના મુખ્ય ગુણધર્મો: ૧. તે મુક્ત રીતે લટકાવતા હંમેશા ઉત્તર-દક્ષિણ દિશામાં સ્થિર થાય છે, ૨. સમાન ધ્રુવો વચ્ચે અપાકર્ષણ અને અસમાન ધ્રુવો વચ્ચે આકર્ષણ થાય છે, ૩. ચુંબકના બંને ધ્રુવો કાયમ જોડીમાં જ હોય છે.",
+    "optionB": "",
+    "optionC": "",
+    "optionD": "",
+    "correctAnswer": "A",
+    "explanation": ""
+  }
+]`;
+                                  navigator.clipboard.writeText(pr);
+                                  toast.success("Long Qs Prompt Copy completed! 📋");
+                                }}
+                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
+                              >
+                                Copy Long Qs Prompt ✨
+                              </button>
+                            </div>
+                            <textarea
+                              value={pastedLong}
+                              onChange={(e) => setPastedLong(e.target.value)}
+                              placeholder='લાંબા અને સવિસ્તાર પ્રશ્નોત્તરી JSON અહીં પેસ્ટ કરો...'
+                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
+                            />
+                          </div>
+                        </div>
+
                         <div className="flex items-center gap-3 bg-muted/30 p-3 rounded-2xl border border-border">
                           <input
                             type="checkbox"
-                            pattern="[0-9]*"
                             id="chapActiveCheck"
                             checked={chapActive}
                             onChange={(e) => setChapActive(e.target.checked)}
@@ -1823,6 +2265,7 @@ function AdminPanel() {
                                 setChapSubId("");
                                 setChapNo(1);
                                 setChapDesc("");
+                                setChapSummaryText("");
                                 setChapActive(true);
                               }}
                               className="px-4 h-11 border border-border rounded-xl text-xs font-semibold hover:bg-muted"
@@ -1950,6 +2393,7 @@ function AdminPanel() {
                                             setChapSubId(c.subjectId);
                                             setChapNo(c.chapterNo || 1);
                                             setChapDesc(c.description || "");
+                                            setChapSummaryText(c.summaryText || "");
                                             setChapActive(c.active ?? (c.status !== "archived"));
                                             setChapStd(c.standard || "10");
                                           }}

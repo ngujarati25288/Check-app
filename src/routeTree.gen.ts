@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AbhyasRouteImport } from './routes/abhyas'
 import { Route as SuperAdminRouteImport } from './routes/super-admin'
 import { Route as RevisionRouteImport } from './routes/revision'
 import { Route as ResultRouteImport } from './routes/result'
@@ -30,6 +31,11 @@ import { Route as RegisterSuccessRouteImport } from './routes/register.success'
 const SuperAdminRoute = SuperAdminRouteImport.update({
   id: '/super-admin',
   path: '/super-admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AbhyasRoute = AbhyasRouteImport.update({
+  id: '/abhyas',
+  path: '/abhyas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RevisionRoute = RevisionRouteImport.update({
@@ -115,6 +121,7 @@ const RegisterSuccessRoute = RegisterSuccessRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/abhyas': typeof AbhyasRoute
   '/achievements': typeof AchievementsRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/abhyas': typeof AbhyasRoute
   '/achievements': typeof AchievementsRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
@@ -154,6 +162,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/abhyas': typeof AbhyasRoute
   '/achievements': typeof AchievementsRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/abhyas'
     | '/achievements'
     | '/admin'
     | '/dashboard'
@@ -194,6 +204,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/abhyas'
     | '/achievements'
     | '/admin'
     | '/dashboard'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/abhyas'
     | '/achievements'
     | '/admin'
     | '/dashboard'
@@ -233,6 +245,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AbhyasRoute: typeof AbhyasRoute
   AchievementsRoute: typeof AchievementsRoute
   AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
@@ -252,6 +265,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/abhyas': {
+      id: '/abhyas'
+      path: '/abhyas'
+      fullPath: '/abhyas'
+      preLoaderRoute: typeof AbhyasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/super-admin': {
       id: '/super-admin'
       path: '/super-admin'
@@ -388,6 +408,7 @@ const RegisterRouteWithChildren = RegisterRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AbhyasRoute: AbhyasRoute,
   AchievementsRoute: AchievementsRoute,
   AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,

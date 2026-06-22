@@ -124,6 +124,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const registerInProgress = React.useRef(false);
+  const loginInProgress = React.useRef(false);
   
   const navigate = useNavigate();
 
@@ -216,11 +217,36 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         try {
           let profile = await UserRepository.getProfile(fUser.uid);
           if (!profile) {
-            if (registerInProgress.current) {
-              console.log("onAuthStateChanged skipped: user registration is currently in progress", fUser.uid);
+            if (registerInProgress.current || loginInProgress.current) {
+              console.log("onAuthStateChanged skipped: user registration or login is currently in progress", fUser.uid);
               return;
             }
-            profile = await handleBootstrapIfEligible(fUser);
+            
+            // Check if super admin email
+            const envEmails = import.meta.env.VITE_SUPER_ADMIN_EMAILS || "";
+            const allowedEmails = envEmails 
+              ? envEmails.split(",").map((e: string) => e.trim().toLowerCase()) 
+              : ["n.gujarati25288@gmail.com", "8511125288@daily-learning-exam.com"];
+            const isSuperAdminEmail = fUser.email ? allowedEmails.includes(fUser.email.toLowerCase()) : false;
+
+            if (isSuperAdminEmail) {
+              profile = await handleBootstrapIfEligible(fUser);
+            } else {
+              // Self-healing: if they have a standard email, try to find the profile by Student ID / Mobile and map it
+              if (fUser.email && fUser.email.endsWith('@daily-learning-exam.com')) {
+                const identifier = fUser.email.split('@')[0].toUpperCase();
+                let matchedProfile = await UserRepository.getProfileByStudentId(identifier);
+                if (!matchedProfile && /^[0-9]{10}$/.test(identifier)) {
+                  matchedProfile = await UserRepository.getProfileByMobile(identifier);
+                }
+                if (matchedProfile) {
+                  const updatedProfile = { ...matchedProfile, uid: fUser.uid };
+                  await UserRepository.createProfile(updatedProfile);
+                  profile = updatedProfile;
+                  console.log(`Auto-mapped missing auth UID ${fUser.uid} to profile ${identifier}`);
+                }
+              }
+            }
           }
           if (profile) {
             // Double-check approval status
@@ -272,7 +298,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           try { await firebaseSignOut(auth); } catch {}
         }
       } else {
-        const savedSession = localStorage.getItem('dle:user_session');
+        let savedSession = null;
+        try {
+          savedSession = localStorage.getItem('dle:user_session');
+        } catch (e) {
+          console.warn("localStorage read bypassed in restricted env:", e);
+        }
         if (savedSession) {
           try {
             const parsed = JSON.parse(savedSession);
@@ -395,6 +426,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Student ID and Password Login implementation
   const loginWithStudentId = async (studentId: string, passwordPlain: string): Promise<boolean> => {
     setLoading(true);
+    loginInProgress.current = true;
     try {
       // 1. Convert Gujarati numerals to English digits
       const guDoc: { [key: string]: string } = {
@@ -623,7 +655,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Successful verification path
       const migratedUser = await ensureProfileMediumValue(matchedUser);
       setUser(migratedUser);
-      localStorage.setItem('dle:user_session', JSON.stringify(migratedUser));
+      try {
+        localStorage.setItem('dle:user_session', JSON.stringify(migratedUser));
+      } catch (_) {}
       toast.success(`આપનું સ્વાગત છે, ${migratedUser.fullName || "વિદ્યાર્થી"}!`);
       
       // Navigate to main application board
@@ -665,6 +699,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       toast.error(getFriendlyErrorMessage(err));
       setLoading(false);
       return false;
+    } finally {
+      loginInProgress.current = false;
+      setLoading(false);
     }
   };
 

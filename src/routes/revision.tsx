@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
-import { Sparkles, CheckCircle2, ChevronLeft, ChevronRight, Target, Flame, RotateCw, BookOpen, AlertCircle, HelpCircle, Trophy, BarChart3, TrendingUp, HelpCircleIcon } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Sparkles, CheckCircle2, ChevronLeft, ChevronRight, Target, Flame, RotateCw, BookOpen, AlertCircle, HelpCircle, Trophy, BarChart3, TrendingUp, HelpCircleIcon, Mic, MicOff, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/FirebaseProvider";
 import { MistakeRepository, AnalyticsRepository } from "@/lib/db";
 import { StudentMistake, RevisionAnalytics } from "@/types";
 import { sfx } from "@/lib/settings";
 import { toast } from "sonner";
+import { getApiUrl } from "@/lib/api/exam.functions";
 
 export const Route = createFileRoute("/revision")({
   head: () => ({ meta: [{ title: "Daily Revision & Mastery Engine" }] }),
@@ -28,11 +29,78 @@ function Revision() {
 
   // Practice state
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<"A" | "B" | "C" | "D" | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [practicedCount, setPracticedCount] = useState(0);
   const [motivationMsg, setMotivationMsg] = useState("");
+  
+  // Speech Recognition & AI validation states
+  const [isRecording, setIsRecording] = useState(false);
+  const [isLoadingEval, setIsLoadingEval] = useState(false);
+  const [aiFeedbackText, setAiFeedbackText] = useState("");
+  const recognitionRef = useRef<any>(null);
+
+  const startVoiceTyping = () => {
+    if (isRecording && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.error("Failed to stop recognition instance:", err);
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error("તમારા બ્રાઉઝરમાં સ્પીચ રેકગ્નિશન સપોર્ટ નથી. કૃપા કરીને ક્રોમ અથવા આઈપેડ/મોબાઈલનો ઉપયોગ કરો.");
+      return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.lang = "gu-IN"; // Speaks Gujarati
+    rec.continuous = false;
+    rec.interimResults = false;
+
+    rec.onstart = () => {
+      setIsRecording(true);
+      sfx.tap();
+      toast.info("બોલવાનું શરૂ કરો... (Speak in Gujarati now)");
+    };
+
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      if (transcript && transcript.trim() !== "") {
+        const currentAnswer = selectedOption || "";
+        const space = currentAnswer ? " " : "";
+        const updatedText = currentAnswer + space + transcript;
+        
+        setSelectedOption(updatedText);
+        toast.success("તમારો ઉત્તર ઉમેરાઈ ગયો!");
+      }
+    };
+
+    rec.onerror = (err: any) => {
+      console.error("Speech Recognition error:", err);
+      const errType = String(err.error || "").toLowerCase();
+      if (errType === "no-speech") {
+        toast.warning("કોઈ અવાજ સંભળાયો નથી. મહેરબાની કરીને ફરીથી પ્રયાસ કરો.");
+      } else if (errType === "not-allowed" || errType === "permission-blocked") {
+        toast.error("માઇક્રોફોનની પરવાનગી બ્લોક છે! આના ઉકેલ માટે ઉપર આપેલ 'Open in a new tab' (તમારી લિંક નવા ટેબમાં ખોલો) બટન પર ક્લિક કરો.");
+      } else {
+        toast.error(`ભાષણ-થી-લખાણમાં સહેજ ક્ષતિ આવી (${err.error || "તપાસો"}).`);
+      }
+      setIsRecording(false);
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = rec;
+    rec.start();
+  };
 
   const loadData = async (active: boolean) => {
     if (!user?.uid) return;
@@ -168,7 +236,7 @@ function Revision() {
   const activeQ = filteredPool[currentIndex];
   const totalPoolQuestions = filteredPool.length;
 
-  const handleOptionSelect = (option: "A" | "B" | "C" | "D") => {
+  const handleOptionSelect = (option: string) => {
     if (isSubmitted) return;
     setSelectedOption(option);
     sfx.tap();
@@ -177,7 +245,78 @@ function Revision() {
   const handleSubmitAnswer = async () => {
     if (!user || !activeQ || !selectedOption || isSubmitted) return;
 
-    const answerCorrect = selectedOption === activeQ.correctAnswer;
+    let answerCorrect = false;
+    const type = activeQ.questionType || "MCQ";
+
+    if (type === "MCQ" || type === "MatchFollowing") {
+      answerCorrect = selectedOption === activeQ.correctAnswer;
+    } else if (type === "TrueFalse") {
+      const word = selectedOption || "";
+      const canonicalCorrect = (activeQ.correctAnswer || "").trim().toUpperCase();
+      const isA_Correct = canonicalCorrect === "A" || canonicalCorrect === "TRUE" || canonicalCorrect.startsWith("સાચ") || canonicalCorrect === "YES" || canonicalCorrect === "ખર";
+      const isB_Correct = canonicalCorrect === "B" || canonicalCorrect === "FALSE" || canonicalCorrect.startsWith("ખોટ") || canonicalCorrect === "NO";
+
+      if ((word === "0" || word === "A" || word.toUpperCase() === "TRUE" || word.startsWith("સાચ")) && isA_Correct) {
+        answerCorrect = true;
+      } else if ((word === "1" || word === "B" || word.toUpperCase() === "FALSE" || word.startsWith("ખોટ")) && isB_Correct) {
+        answerCorrect = true;
+      } else {
+        answerCorrect = false;
+      }
+    } else if (type === "FillBlank") {
+      const selectedText = selectedOption || "";
+      const cleanInput = selectedText.toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+      const cleanCorrect = (activeQ.correctAnswer || "").toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+      
+      if (cleanInput && cleanCorrect) {
+        answerCorrect = (cleanInput === cleanCorrect) || 
+                        (cleanInput.includes(cleanCorrect) && cleanCorrect.length > 1) || 
+                        (cleanCorrect.includes(cleanInput) && cleanInput.length > 1);
+      } else {
+        answerCorrect = false;
+      }
+    } else if (type === "ShortAnswer" || type === "LongAnswer" || type === "OneWordAnswer") {
+      const textAns = selectedOption || "";
+      if (!textAns || textAns.trim() === "") {
+        answerCorrect = false;
+      } else {
+        setIsLoadingEval(true);
+        try {
+          const evalRes = await fetch(getApiUrl("/api/evaluate-subjective"), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              question: activeQ.question,
+              studentAnswer: textAns,
+              correctAnswer: activeQ.correctAnswer || "",
+              maxMarks: 1
+            })
+          });
+
+          if (evalRes.ok) {
+            const evalData = await evalRes.json();
+            answerCorrect = evalData.isCorrect === true;
+            if (evalData.feedback) {
+              setAiFeedbackText(evalData.feedback);
+            }
+          } else {
+            // fallback
+            const cleanInput = textAns.toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+            const cleanCorrect = (activeQ.correctAnswer || "").toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+            answerCorrect = cleanInput.includes(cleanCorrect) || cleanCorrect.includes(cleanInput) || (cleanInput.length > 2 && cleanCorrect.length > 2 && (cleanInput.includes(cleanCorrect) || cleanCorrect.includes(cleanInput)));
+          }
+        } catch {
+          const cleanInput = textAns.toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+          const cleanCorrect = (activeQ.correctAnswer || "").toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+          answerCorrect = cleanInput.includes(cleanCorrect) || cleanCorrect.includes(cleanInput);
+        } finally {
+          setIsLoadingEval(false);
+        }
+      }
+    }
+
     setIsCorrect(answerCorrect);
     setIsSubmitted(true);
 
@@ -190,7 +329,18 @@ function Revision() {
       } else {
         sfx.wrong();
         setMotivationMsg("💡 તમે તમારી ભૂલોમાંથી શીખી રહ્યા છો. ફરી પ્રયાસ કરો!");
-        toast.error(`ખોટો જવાબ. સાચો જવાબ ${activeQ.correctAnswer} છે.`);
+        
+        let correctDisplay = activeQ.correctAnswer;
+        if (activeQ.optionA && ["A","B","C","D"].includes(activeQ.correctAnswer)) {
+          const optVal = activeQ.correctAnswer === "A" ? activeQ.optionA : activeQ.correctAnswer === "B" ? activeQ.optionB : activeQ.correctAnswer === "C" ? activeQ.optionC : activeQ.optionD;
+          correctDisplay = `વિકલ્પ ${activeQ.correctAnswer} (${optVal})`;
+        } else if (activeQ.correctAnswer === "A" && (type === "TrueFalse" || type === "MCQ")) {
+          correctDisplay = activeQ.optionA || "સાચું";
+        } else if (activeQ.correctAnswer === "B" && (type === "TrueFalse" || type === "MCQ")) {
+          correctDisplay = activeQ.optionB || "ખોટું";
+        }
+        
+        toast.error(`ખોટો જવાબ. સાચો જવાબ "${correctDisplay}" છે.`);
       }
 
       // Commit to Database/Local Storage with Spaced Repetition Rules
@@ -232,6 +382,8 @@ function Revision() {
     setIsSubmitted(false);
     setIsCorrect(false);
     setMotivationMsg("");
+    setAiFeedbackText("");
+    setIsLoadingEval(false);
 
     if (currentIndex < totalPoolQuestions - 1) {
       setCurrentIndex((p) => p + 1);
@@ -475,56 +627,209 @@ function Revision() {
                     </h3>
                   </div>
 
-                  {/* OPTIONS LIST */}
-                  <div className="space-y-2 mt-4 font-sans">
-                    {["A", "B", "C", "D"].map((key) => {
-                      const optText =
-                        key === "A" ? activeQ.optionA :
-                        key === "B" ? activeQ.optionB :
-                        key === "C" ? activeQ.optionC :
-                        activeQ.optionD;
+                  {/* OPTIONS LIST OR INPUT FOR REVISION */}
+                  <div className="space-y-3 mt-4">
+                    {/* 1. MCQ OR MatchFollowing */}
+                    {(activeQ.questionType === "MCQ" || !activeQ.questionType || activeQ.questionType === "MatchFollowing") && (
+                      <div className="space-y-2 font-sans">
+                        {["A", "B", "C", "D"].map((key) => {
+                          const optText =
+                            key === "A" ? activeQ.optionA :
+                            key === "B" ? activeQ.optionB :
+                            key === "C" ? activeQ.optionC :
+                            activeQ.optionD;
 
-                      const isSelected = selectedOption === key;
+                          if (!optText) return null;
 
-                      // Highlighting styles
-                      let btnStyle = "bg-card hover:bg-muted/40 border-border text-foreground";
-                      if (isSelected) {
-                        btnStyle = "bg-primary-soft/80 border-primary text-primary font-semibold shadow-card-sm";
-                      }
+                          const isSelected = selectedOption === key;
 
-                      if (isSubmitted) {
-                        if (key === activeQ.correctAnswer) {
-                          // Correct answer in green
-                          btnStyle = "bg-success-soft/90 border-success text-success font-bold";
-                        } else if (isSelected) {
-                          // Incorrect submitted option in red
-                          btnStyle = "bg-destructive-soft/90 border-destructive text-destructive font-semibold";
-                        } else {
-                          btnStyle = "opacity-55 border-border bg-card text-muted-foreground";
-                        }
-                      }
+                          // Highlighting styles
+                          let btnStyle = "bg-card hover:bg-muted/40 border-border text-foreground";
+                          if (isSelected) {
+                            btnStyle = "bg-primary-soft/80 border-primary text-primary font-semibold shadow-card-sm";
+                          }
 
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => handleOptionSelect(key as any)}
-                          disabled={isSubmitted}
-                          className={`w-full text-left min-h-12 p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 transition active:scale-[0.99] ${btnStyle}`}
-                        >
-                          <span className="font-bold uppercase shrink-0 mt-0.5 bg-muted size-5 rounded-full flex items-center justify-center text-[10px]">
-                            {key}
+                          if (isSubmitted) {
+                            if (key === activeQ.correctAnswer) {
+                              // Correct answer in green
+                              btnStyle = "bg-success-soft/90 border-success text-success font-bold";
+                            } else if (isSelected) {
+                              // Incorrect submitted option in red
+                              btnStyle = "bg-destructive-soft/90 border-destructive text-destructive font-semibold";
+                            } else {
+                              btnStyle = "opacity-55 border-border bg-card text-muted-foreground";
+                            }
+                          }
+
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => handleOptionSelect(key)}
+                              disabled={isSubmitted}
+                              className={`w-full text-left min-h-12 p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 transition active:scale-[0.99] ${btnStyle}`}
+                            >
+                              <span className="font-bold uppercase shrink-0 mt-0.5 bg-muted size-5 rounded-full flex items-center justify-center text-[10px]">
+                                {key}
+                              </span>
+                              <span className="leading-tight">{optText}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* 2. TrueFalse */}
+                    {activeQ.questionType === "TrueFalse" && (
+                      <div className="grid grid-cols-2 gap-3 font-sans">
+                        {["A", "B"].map((key) => {
+                          const optText = key === "A" ? (activeQ.optionA || "સાચું (True)") : (activeQ.optionB || "ખોટું (False)");
+                          const idxValue = key === "A" ? "0" : "1";
+                          const isSelected = selectedOption === idxValue || selectedOption === key;
+
+                          let btnStyle = "bg-card hover:bg-muted/40 border-border text-foreground";
+                          if (isSelected) {
+                            btnStyle = "bg-primary-soft border-primary text-primary font-semibold shadow-card-sm";
+                          }
+
+                          if (isSubmitted) {
+                            const canonicalCorrect = (activeQ.correctAnswer || "").toUpperCase();
+                            const isA_Correct = canonicalCorrect === "A" || canonicalCorrect === "TRUE" || canonicalCorrect.startsWith("સાચ") || canonicalCorrect === "YES" || canonicalCorrect === "ખર";
+                            
+                            const isCurrentCorrect = (key === "A" && isA_Correct) || (key === "B" && !isA_Correct);
+                            
+                            if (isCurrentCorrect) {
+                              btnStyle = "bg-success-soft/90 border-success text-success font-bold";
+                            } else if (isSelected) {
+                              btnStyle = "bg-destructive-soft/90 border-destructive text-destructive font-semibold";
+                            } else {
+                              btnStyle = "opacity-55 border-border bg-card text-muted-foreground";
+                            }
+                          }
+
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => handleOptionSelect(idxValue)}
+                              disabled={isSubmitted}
+                              className={`w-full text-center py-3.5 px-3 rounded-2xl border text-xs font-semibold flex flex-col items-center justify-center gap-1.5 transition active:scale-[0.99] ${btnStyle}`}
+                            >
+                              <span className="text-[10px] uppercase font-bold text-muted-foreground">
+                                {key === "A" ? "ખરું (True)" : "ખોટું (False)"}
+                              </span>
+                              <span className="leading-tight">{optText}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* 3. FillBlank */}
+                    {activeQ.questionType === "FillBlank" && (
+                      <div className="space-y-2">
+                        <label className="text-xs text-muted-foreground font-semibold block font-gu">અહીં ખાલી જગ્યાનો ઉત્તર લખો:</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={selectedOption || ""}
+                            disabled={isSubmitted}
+                            onChange={(e) => handleOptionSelect(e.target.value)}
+                            placeholder="ખાલી જગ્યાનો સાચો શબ્દ અહીં ટાઈપ કરો..."
+                            className="flex-1 h-12 px-4 rounded-xl border border-border bg-card outline-none focus:border-primary text-sm shadow-sm font-semibold text-foreground transition-all duration-200"
+                          />
+                          {!isSubmitted && (
+                            <button
+                              type="button"
+                              onClick={startVoiceTyping}
+                              className={`size-12 rounded-xl flex items-center justify-center shadow-sm transition active:scale-95 ${
+                                isRecording 
+                                  ? "bg-destructive text-destructive-foreground animate-pulse" 
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                              }`}
+                              title="બોલો અને ટાઈપ કરો"
+                            >
+                              {isRecording ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+                            </button>
+                          )}
+                        </div>
+                        {isSubmitted && (
+                          <div className="mt-2 p-3.5 rounded-2xl bg-muted/60 border text-xs space-y-1">
+                            <p className="text-muted-foreground font-semibold">તમારો જવાબ: <span className={isCorrect ? "text-success font-bold" : "text-destructive font-bold"}>{selectedOption || "Skipped"}</span></p>
+                            <p className="text-success font-bold">સાચો જવાબ: <span>{activeQ.correctAnswer}</span></p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4. ShortAnswer or LongAnswer */}
+                    {(activeQ.questionType === "ShortAnswer" || activeQ.questionType === "LongAnswer" || activeQ.questionType === "OneWordAnswer") && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground font-semibold font-gu">
+                            {activeQ.questionType === "ShortAnswer" ? "ટૂંકો ઉત્તર લખો (Short Answer):" : activeQ.questionType === "OneWordAnswer" ? "એક શબ્દમાં ઉત્તર લખો:" : "લાંબો વિગતવાર ઉત્તર લખો (Long Answer):"}
                           </span>
-                          <span className="leading-tight">{optText}</span>
-                        </button>
-                      );
-                    })}
+                          {!isSubmitted && (
+                            <button
+                              type="button"
+                              onClick={startVoiceTyping}
+                              className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold shadow-sm transition active:scale-95 ${
+                                isRecording 
+                                  ? "bg-destructive text-destructive-foreground animate-pulse" 
+                                  : "bg-primary text-primary-foreground hover:bg-primary/95"
+                              }`}
+                            >
+                              {isRecording ? (
+                                <>
+                                  <MicOff className="size-3.5" />
+                                  રેકોર્ડિંગ બંધ કરો
+                                </>
+                              ) : (
+                                <>
+                                  <Mic className="size-3.5" />
+                                  બોલો અને લખો (વોઇસ ટાઇપિંગ)
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          rows={activeQ.questionType === "ShortAnswer" ? 4 : 7}
+                          value={selectedOption || ""}
+                          disabled={isSubmitted}
+                          onChange={(e) => handleOptionSelect(e.target.value)}
+                          placeholder="અહીં જવાબ લખો અથવા ઉપર આપેલા માઈક બટન પર ક્લિક કરીને સીધું બોલો..."
+                          className="w-full p-4 rounded-xl border border-border bg-card outline-none focus:border-primary text-xs shadow-sm resize-none text-foreground leading-relaxed transition-all duration-200 font-sans"
+                        />
+                        {isRecording && (
+                          <p className="text-[11px] text-muted-foreground italic flex items-center gap-2 animate-pulse mt-1">
+                            <span className="size-2 rounded-full bg-destructive" /> મહેરબાની કરીને ગુજરાતીમાં બોલો, તમારો અવાજ લખાણમાં રૂપાંતરિત થઈ રહ્યો છે...
+                          </p>
+                        )}
+                        {isLoadingEval && (
+                          <div className="p-3 bg-muted rounded-xl flex items-center gap-2 text-xs italic text-primary animate-pulse">
+                            <RotateCw className="size-3.5 animate-spin" />
+                            શિક્ષક AI દ્વારા તમારા ઉત્તરનું મૂલ્યાંકન થઈ રહ્યો છે...
+                          </div>
+                        )}
+                        {isSubmitted && (
+                          <div className="p-3.5 rounded-2xl bg-muted/60 border text-xs space-y-1.5 leading-relaxed font-sans">
+                            <p className="text-muted-foreground font-semibold">તમારો જવાબ: <span className="font-medium text-foreground">{selectedOption || "Skipped"}</span></p>
+                            <p className="border-t border-border/50 pt-1.5 text-success font-bold">સાચો જવાબ: <span className="font-semibold text-foreground/90">{activeQ.correctAnswer}</span></p>
+                            {aiFeedbackText && (
+                              <p className="border-t border-border/50 pt-1.5 text-primary text-[11px] italic font-medium leading-normal">
+                                <strong>શિક્ષક અભિપ્રાય (AI Feedback):</strong> {aiFeedbackText}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* ACTION COMMAND CONTROLS */}
                   <div className="pt-2 border-t border-border/60">
                     {!isSubmitted ? (
                       <button
-                        disabled={!selectedOption}
+                        disabled={!selectedOption || selectedOption.trim() === ""}
                         onClick={handleSubmitAnswer}
                         className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-semibold text-xs shadow-float hover:opacity-90 active:scale-95 transition disabled:opacity-40 flex items-center justify-center gap-1.5 font-gu"
                       >

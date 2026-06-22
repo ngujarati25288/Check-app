@@ -29,7 +29,11 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [loginLang, setLoginLang] = useState<string>(() => {
-    return localStorage.getItem("dle:login_lang") || "Gujarati";
+    try {
+      return localStorage.getItem("dle:login_lang") || "Gujarati";
+    } catch (_) {
+      return "Gujarati";
+    }
   });
 
   // Forgot Password Flow States
@@ -224,7 +228,9 @@ function Login() {
                   onChange={(e) => {
                     const selected = e.target.value;
                     setLoginLang(selected);
-                    localStorage.setItem("dle:login_lang", selected);
+                    try {
+                      localStorage.setItem("dle:login_lang", selected);
+                    } catch (_) {}
                   }}
                   className="bg-white/15 text-white border border-white/25 rounded-2xl px-3 py-1 text-xs font-bold outline-none cursor-pointer focus:bg-background focus:text-foreground transition max-w-[100px]"
                 >

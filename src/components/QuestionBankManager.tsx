@@ -428,6 +428,7 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
   const [questionSelectionMode, setQuestionSelectionMode] = useState<"All" | "Random">("All");
   const [randomCount, setRandomCount] = useState(15);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [requireAbhyasCompleted, setRequireAbhyasCompleted] = useState(false);
 
   // Auto clean standards
   const cleanStandard = (val: string): string => {
@@ -737,7 +738,7 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
           }
         }
 
-        let qType: "MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" = "MCQ";
+        let qType: "MCQ" | "TrueFalse" | "FillBlank" | "MatchFollowing" | "ShortAnswer" | "LongAnswer" | "OneWordAnswer" = "MCQ";
         if (headerMap["questionType"]) {
           const tVal = (rowObj[headerMap["questionType"]] || "").trim().toLowerCase();
           if (tVal.includes("true") || tVal.includes("false") || tVal === "tf" || tVal.includes("ખરા") || tVal.includes("ખોટા") || tVal.includes("ખરા-ખોટા") || tVal.includes("ખરા ખોટા")) {
@@ -746,6 +747,12 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
             qType = "FillBlank";
           } else if (tVal.includes("match") || tVal.includes("following") || tVal === "mf" || tVal.includes("જોડકા") || tVal.includes("જોડો")) {
             qType = "MatchFollowing";
+          } else if (tVal.includes("short") || tVal.includes("સંક્ષિપ્ત") || tVal.includes("નવા") || tVal === "sa" || tVal.includes("ટૂંક") || tVal.includes("ટૂંકા") || tVal.includes("નાના") || tVal.includes("નાનો")) {
+            qType = "ShortAnswer";
+          } else if (tVal.includes("long") || tVal.includes("વિસ્તૃત") || tVal.includes("વિગતવાર") || tVal === "la" || tVal.includes("લાંબા") || tVal.includes("લાંબો") || tVal.includes("મોટા") || tVal.includes("મોટો") || tVal.includes("વર્ણનાત્મક")) {
+            qType = "LongAnswer";
+          } else if (tVal.includes("oneword") || tVal.includes("one word") || tVal.includes("એક શબ્દ") || tVal === "owa") {
+            qType = "OneWordAnswer";
           }
         } else {
           // Auto-detect based on option strings or blanks
@@ -761,6 +768,47 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
             qType = "TrueFalse";
           } else if (questionText.includes("______") || questionText.includes("ખાલી જગ્યા")) {
             qType = "FillBlank";
+          } else if (!optA.trim() && !optB.trim()) {
+            // No options given: it is either ShortAnswer or LongAnswer
+            const qClean = questionText.toLowerCase();
+            if (
+              qClean.includes("વિસ્તૃત") || qClean.includes("મુદ્દાસર") || 
+              qClean.includes("લાંબો") || qClean.includes("લાંબા") || 
+              qClean.includes("મોટા") || qClean.includes("મોટો") || 
+              qClean.includes("ટૂંકનોંધ") || qClean.includes("સમજાવો") ||
+              qClean.includes("વિસ્તાર") || qClean.includes("સવિસ્તાર") ||
+              qClean.includes("વર્ણવો") || qClean.includes("describe") || 
+              qClean.includes("explain") || qClean.includes("elaborate") ||
+              qClean.includes("long answer") || qClean.length > 60
+            ) {
+              qType = "LongAnswer";
+            } else {
+              qType = "ShortAnswer";
+            }
+          }
+        }
+
+        let rawCorrect = (rowObj[headerMap["correctAnswer"]] || "").trim();
+        let finalCorrect = rawCorrect;
+
+        if (qType === "MCQ" || qType === "TrueFalse") {
+          const upperCorrect = rawCorrect.toUpperCase();
+          if (["A", "B", "C", "D"].includes(upperCorrect)) {
+            finalCorrect = upperCorrect;
+          } else {
+            // Map text answer to option letters
+            const cleanCorr = rawCorrect.toLowerCase();
+            if (cleanCorr === optA.toLowerCase().trim() || cleanCorr === "true" || cleanCorr === "સાચું" || cleanCorr === "સાચુ" || cleanCorr === "ખરું") {
+              finalCorrect = "A";
+            } else if (cleanCorr === optB.toLowerCase().trim() || cleanCorr === "false" || cleanCorr === "ખોટું" || cleanCorr === "ખોટુ") {
+              finalCorrect = "B";
+            } else if (cleanCorr === optC.toLowerCase().trim()) {
+              finalCorrect = "C";
+            } else if (cleanCorr === optD.toLowerCase().trim()) {
+              finalCorrect = "D";
+            } else {
+              finalCorrect = "A"; // Fallback
+            }
           }
         }
 
@@ -770,11 +818,11 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
             subject: cleanedSubject,
             chapter: cleanedChapter,
             question: questionText.trim(),
-            optionA: optA.trim() || (qType === "TrueFalse" ? "સાચું" : "Option A"),
-            optionB: optB.trim() || (qType === "TrueFalse" ? "ખોટું" : "Option B"),
-            optionC: qType === "TrueFalse" ? "" : (optC.trim() || "Option C"),
-            optionD: qType === "TrueFalse" ? "" : (optD.trim() || "Option D"),
-            correctAnswer: ["A", "B", "C", "D"].includes(correct) ? correct : "A",
+            optionA: optA.trim() || (qType === "TrueFalse" ? "સાચું" : (qType === "ShortAnswer" || qType === "LongAnswer" ? "" : "Option A")),
+            optionB: optB.trim() || (qType === "TrueFalse" ? "ખોટું" : (qType === "ShortAnswer" || qType === "LongAnswer" ? "" : "Option B")),
+            optionC: (qType === "TrueFalse" || qType === "ShortAnswer" || qType === "LongAnswer") ? "" : (optC.trim() || "Option C"),
+            optionD: (qType === "TrueFalse" || qType === "ShortAnswer" || qType === "LongAnswer") ? "" : (optD.trim() || "Option D"),
+            correctAnswer: finalCorrect,
             explanation: expl.trim(),
             difficulty: ["easy", "medium", "hard"].includes(diff) ? diff : "medium",
             medium: rowMedium,
@@ -886,13 +934,40 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
         };
       });
 
-      await AdminRepository.bulkUploadQuestions(
-        currentUser?.uid || "admin",
-        currentUser?.fullName || "Admin",
-        finalQuestionsList
+      // Filter duplicates to prevent double-uploading
+      const existingKeySet = new Set(
+        questions.map(q => `${q.chapterId}_${(q.question || "").trim().toLowerCase()}`)
       );
 
-      toast.success(`${finalQuestionsList.length} પ્રશ્નો સફળતાપૂર્વક ડેટાબેઝમાં સાચવવામાં આવ્યા!`);
+      const uniqueNewQuestions: Question[] = [];
+      let duplicateCount = 0;
+
+      finalQuestionsList.forEach(q => {
+        const key = `${q.chapterId}_${(q.question || "").trim().toLowerCase()}`;
+        if (existingKeySet.has(key)) {
+          duplicateCount++;
+        } else {
+          uniqueNewQuestions.push(q);
+          existingKeySet.add(key); // avoid duplicates within the uploading CSV itself
+        }
+      });
+
+      if (uniqueNewQuestions.length > 0) {
+        await AdminRepository.bulkUploadQuestions(
+          currentUser?.uid || "admin",
+          currentUser?.fullName || "Admin",
+          uniqueNewQuestions
+        );
+
+        if (duplicateCount > 0) {
+          toast.success(`${uniqueNewQuestions.length} પ્રશ્નો સફળતાપૂર્વક સાચવવામાં આવ્યા! (${duplicateCount} ડુપ્લિકેટ્સ મળેલા જે પહેલાથી હાજર હોવાથી ઉમેર્યા નથી.)`);
+        } else {
+          toast.success(`${uniqueNewQuestions.length} પ્રશ્નો સફળતાપૂર્વક ડેટાબેઝમાં સાચવવામાં આવ્યા!`);
+        }
+      } else if (duplicateCount > 0) {
+        toast.warning("અપલોડ કરેલા બધા જ પ્રશ્નો આ પ્રકરણમાં પહેલાથી ઉપલબ્ધ છે, તેથી કોઈ ડુપ્લિકેટ પ્રશ્ન ઉમેરવામાં આવ્યો નથી! 🛡️");
+      }
+
       setShowImportPreview(false);
       setParsedItems([]);
       onRefresh();
@@ -1029,6 +1104,37 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
     }
   };
 
+  const handleDeleteBundle = async (bundle: any) => {
+    if (!window.confirm(`શું તમે ખરેખર આ આખા પેકેજ/બંડલને કાઢી નાખવા માગો છો? આ પ્રકરણના તમામ ${bundle.questionCount} પ્રશ્નો કાયમ માટે ડિલીટ થઈ જશે.`)) {
+      return;
+    }
+    
+    setIsUploading(true);
+    try {
+      const qIds = bundle.questions.map((q: any) => q.questionId);
+      for (const qId of qIds) {
+        await AdminRepository.deleteQuestion(
+          currentUser?.uid || "admin",
+          currentUser?.fullName || "Admin",
+          qId
+        );
+      }
+      toast.success("આખું પ્રશ્ન બંડલ સફળતાપૂર્વક ડિલીટ કરવામાં આવ્યું છે!");
+      
+      // Close active questions modal if it is examining this deleted bundle
+      if (activeBundle && activeBundle.chapterId === bundle.chapterId) {
+        setShowQuestionsModal(false);
+        setActiveBundle(null);
+      }
+      onRefresh();
+    } catch (e) {
+      console.error(e);
+      toast.error("બંડલ ડિલીટ કરવામાં સમસ્યા આવી.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Exam Scheduler Open Modal
   const openExamScheduler = (bundle: any) => {
     setActiveBundle(bundle);
@@ -1083,6 +1189,7 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
     setScheduledDuration(30);
     setQuestionSelectionMode("All");
     setRandomCount(Math.min(15, bundle.questionCount));
+    setRequireAbhyasCompleted(false);
     setShowSchedulerModal(true);
   };
 
@@ -1138,7 +1245,8 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
         questionIds: paperQuestionIds,
         createdAt: new Date().toISOString(),
         standard: activeBundle.standard,
-        medium: activeBundle.medium || "Gujarati"
+        medium: activeBundle.medium || "Gujarati",
+        requireAbhyasCompleted: requireAbhyasCompleted
       };
 
       const success = await AdminRepository.createExam(
@@ -1168,51 +1276,6 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
   return (
     <div className="space-y-6">
       
-      {/* AI MULTI-MODAL QUESTION GENERATOR ZONE */}
-      {currentUser && (
-        (currentUser.role || "").toLowerCase().trim() === "admin" || 
-        (currentUser.role || "").toLowerCase().trim() === "super_admin" || 
-        (currentUser.role || "").toLowerCase().trim() === "teacher"
-      ) && (
-        <div className="bg-gradient-to-r from-violet-600/10 via-purple-600/5 to-pink-600/10 border border-purple-500/30 rounded-3xl p-6 shadow-md space-y-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-2 border-b border-purple-500/10">
-            <div className="space-y-1 text-center md:text-left">
-              <h3 className="text-base font-extrabold text-purple-900 dark:text-purple-400 flex items-center justify-center md:justify-start gap-2">
-                <Sparkles className="size-5 text-purple-600 animate-pulse" /> AI મલ્ટી-મોડલ ક્વેશ્ચન જનરેટર (AI Question Generator Engine)
-              </h3>
-              <p className="text-xs text-muted-foreground max-w-xl">
-                તમારી પીડીએફ દસ્તાવેજ અથવા પુસ્તકના પાનાની તસવીરો (Images) માંથી આપમેળે સચોટ પ્રશ્નો બનાવો. Gemini AI ફક્ત અપલોડેડ સામગ્રીમાંથી જ પ્રશ્નો બનાવશે.
-              </p>
-            </div>
-            
-            <div className="flex gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setAiFileType("pdf");
-                  setAiSelectedFiles([]);
-                  setShowAiModal(true);
-                }}
-                className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl text-xs transition active:scale-[0.98] shadow-md flex items-center gap-1.5 cursor-pointer"
-              >
-                <FileText className="size-4" /> AI Generate from PDF
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAiFileType("image");
-                  setAiSelectedFiles([]);
-                  setShowAiModal(true);
-                }}
-                className="px-4 py-2.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white font-bold rounded-xl text-xs transition active:scale-[0.98] shadow-md flex items-center gap-1.5 cursor-pointer"
-              >
-                <Layers className="size-4" /> AI Generate from Images
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* CSV UPLOADER ZONE */}
       <div className="bg-gradient-to-r from-teal-500/5 to-emerald-500/5 border border-dashed border-teal-500/30 rounded-3xl p-6 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-2 border-b border-teal-500/10">
@@ -1492,6 +1555,13 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                           className="h-8 px-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs transition active:scale-[0.97] flex items-center gap-1 text-[11px] cursor-pointer"
                         >
                           <Calendar className="size-3.5" /> Schedule Exam
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBundle(bundle)}
+                          className="h-8 px-3 border border-red-200 hover:bg-red-50 dark:border-red-900/10 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400 font-bold rounded-xl shadow-xs transition active:scale-[0.97] flex items-center gap-1 text-[11px] cursor-pointer"
+                          title="આખું પેકેજ કાઢી નાખો (Delete Entire package)"
+                        >
+                          <Trash2 className="size-3.5" /> Delete
                         </button>
                       </div>
                     </td>
@@ -2019,10 +2089,9 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
               {/* Scrollable core container */}
               <div className="p-6 overflow-y-auto space-y-6 max-h-[55dvh]">
                 
-                {/* ℹ️ સિંગલ પ્રશ્ન ઉમેરવાનો વિકલ્પ બંધ કર્યો છે (મેન્યુઅલ વિકલ્પો બંધ કરવા સંબંધિત) */}
+                {/* ℹ️ સિંગલ પ્રશ્ન કસ્ટમાઇઝ કરવાની મંજૂરી */}
                 <div className="bg-teal-500/10 dark:bg-teal-500/5 p-4 rounded-3xl border border-teal-500/20 text-center text-xs text-teal-700 dark:text-teal-400 font-bold mb-6 flex flex-col items-center justify-center gap-1">
-                  <span>ℹ️ આ પ્રક્રિયામાં નવો પ્રશ્ન ફક્ત CSV બલ્ક અપલોડ દ્વારા જ ઉમેરી શકાશે.</span>
-                  <span className="text-[10px] text-muted-foreground font-normal">સિંગલ મેન્યુઅલ પ્રશ્ન ઉમેરવાનો કે એડિટ કરવાનો વિકલ્પ તમારા નિવેદન મુજબ અક્ષમ કરવામાં આવ્યો છે.</span>
+                  <span>✏️ આ મોડલમાં તમે કોઈપણ અયોગ્ય અથવા ડુપ્લિકેટ પ્રશ્નને સુધારી (Edit) અથવા કાઢી (Delete) શકો છો!</span>
                 </div>
 
                 {/* Questions Display Grid */}
@@ -2037,7 +2106,23 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                           </span>
                         </div>
 
-                        {/* Edit Delete tools disabled based on requirements */}
+                        {/* Edit Delete tools enabled */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => initiateEditQuestion(q)}
+                            className="p-1 px-2 border border-border bg-background hover:bg-muted text-teal-600 dark:text-teal-400 rounded-lg transition active:scale-[0.95] flex items-center gap-1 text-[10px] cursor-pointer"
+                            title="સુધારો (Edit)"
+                          >
+                            <Edit3 className="size-3" /> એડિટ (Edit)
+                          </button>
+                          <button
+                            onClick={() => handleDeleteQuestion(q.questionId)}
+                            className="p-1 px-2 border border-border bg-background hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-650 text-rose-600 rounded-lg transition active:scale-[0.95] flex items-center gap-1 text-[10px] cursor-pointer"
+                            title="કાઢી નાખો (Delete)"
+                          >
+                            <Trash2 className="size-3" /> ડિલીટ
+                          </button>
+                        </div>
                       </div>
 
                       <p className="font-bold text-slate-800 dark:text-slate-100 leading-relaxed text-sm">
@@ -2202,6 +2287,27 @@ Important: Output strictly valid raw CSV text with headers. No markdown block wr
                       </span>
                     </div>
                   )}
+                </div>
+
+                {/* 5. Require Abhyas Completed Validation */}
+                <div className="bg-amber-500/5 p-4 rounded-2xl border border-amber-500/15 space-y-2">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      id="schedRequireAbhyas"
+                      checked={requireAbhyasCompleted}
+                      onChange={(e) => setRequireAbhyasCompleted(e.target.checked)}
+                      className="size-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 mt-0.5 cursor-pointer"
+                    />
+                    <div className="space-y-1">
+                      <label htmlFor="schedRequireAbhyas" className="text-xs font-black text-slate-700 dark:text-slate-300 font-gu select-none cursor-pointer flex items-center gap-1.5">
+                        📖 પ્રકરણનો અભ્યાસ ફરજિયાત છે (Require Abhyas Done)
+                      </label>
+                      <p className="text-[10px] text-muted-foreground font-gu leading-relaxed">
+                        જો આ નિયમ ચાલુ હોય, તો માત્ર એવા જ બાળકો આ પરીક્ષા આપી શકશે કે જેમણે આ પ્રકરણના અભ્યાસ બોર્ડમાંથી પોતાનો અભ્યાસ પૂર્ણ કરેલ છે!
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Submit operations */}

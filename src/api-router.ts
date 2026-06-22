@@ -207,34 +207,56 @@ Rules for generation:
       text: `Create ${count} unique questions matching this context. Return the array strictly according to the requested JSON schema.`
     });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contents,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING, description: "Content of the exam question" },
-              optionA: { type: Type.STRING, description: "Option A content (leave empty for ShortAnswer/LongAnswer)" },
-              optionB: { type: Type.STRING, description: "Option B content (leave empty for ShortAnswer/LongAnswer)" },
-              optionC: { type: Type.STRING, description: "Option C content (leave empty for ShortAnswer/LongAnswer/TrueFalse)" },
-              optionD: { type: Type.STRING, description: "Option D content (leave empty for ShortAnswer/LongAnswer/TrueFalse)" },
-              correctAnswer: { type: Type.STRING, description: "Letter of the correct option ('A', 'B', 'C', or 'D') OR the complete correct model answer text for FillBlank/ShortAnswer/LongAnswer" },
-              explanation: { type: Type.STRING, description: "Explanation of why correct" },
-              difficulty: { type: Type.STRING, description: "Strictly: easy, medium, hard" },
-              questionType: { type: Type.STRING, description: "The format format of the question generated, must be one of: 'MCQ', 'TrueFalse', 'FillBlank', 'ShortAnswer', 'LongAnswer'" }
-            },
-            required: ["question", "optionA", "optionB", "optionC", "optionD", "correctAnswer", "difficulty", "questionType"]
+    let response;
+    let attempts = 0;
+    const maxAttempts = 4;
+    let fallbackModel = "gemini-3.5-flash";
+
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        response = await ai.models.generateContent({
+          model: fallbackModel,
+          contents: contents,
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  question: { type: Type.STRING, description: "Content of the exam question" },
+                  optionA: { type: Type.STRING, description: "Option A content (leave empty for ShortAnswer/LongAnswer)" },
+                  optionB: { type: Type.STRING, description: "Option B content (leave empty for ShortAnswer/LongAnswer)" },
+                  optionC: { type: Type.STRING, description: "Option C content (leave empty for ShortAnswer/LongAnswer/TrueFalse)" },
+                  optionD: { type: Type.STRING, description: "Option D content (leave empty for ShortAnswer/LongAnswer/TrueFalse)" },
+                  correctAnswer: { type: Type.STRING, description: "Letter of the correct option ('A', 'B', 'C', or 'D') OR the complete correct model answer text for FillBlank/ShortAnswer/LongAnswer" },
+                  explanation: { type: Type.STRING, description: "Explanation of why correct" },
+                  difficulty: { type: Type.STRING, description: "Strictly: easy, medium, hard" },
+                  questionType: { type: Type.STRING, description: "The format format of the question generated, must be one of: 'MCQ', 'TrueFalse', 'FillBlank', 'ShortAnswer', 'LongAnswer'" }
+                },
+                required: ["question", "optionA", "optionB", "optionC", "optionD", "correctAnswer", "difficulty", "questionType"]
+              }
+            }
           }
+        });
+        break; // break loop on success
+      } catch (err: any) {
+        console.warn(`AI generateContent calling attempt ${attempts} failed:`, err?.message || err);
+        const errMsg = String(err?.message || "").toLowerCase();
+        // Fall back to alternative supported high-availability model or retry
+        if (attempts < maxAttempts) {
+          fallbackModel = "gemini-3.1-flash-lite";
+          const delay = attempts * 2000;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          throw err;
         }
       }
-    });
+    }
 
-    const parsedJson = JSON.parse(response.text || "[]");
+    const parsedJson = JSON.parse(response?.text || "[]");
     return res.json({
       success: true,
       questions: parsedJson,
@@ -354,6 +376,7 @@ async function queryQuestionsFromFirestore(subjectId: string, chapterId: string,
           difficulty: str(fields.difficulty) || "medium",
           illustrationUrl: str(fields.illustrationUrl),
           illustrationUrls: arr(fields.illustrationUrls),
+          questionType: str(fields.questionType),
           sourceType: str(fields.sourceType),
           status: str(fields.status) || "active"
         });
@@ -483,6 +506,10 @@ router.post("/exam-questions", async (req, res) => {
         questionId: q.questionId,
         question: q.question,
         options: [q.optionA, q.optionB, q.optionC, q.optionD],
+        optionA: q.optionA,
+        optionB: q.optionB,
+        optionC: q.optionC,
+        optionD: q.optionD,
         imageUrl: q.illustrationUrl || (q.illustrationUrls && q.illustrationUrls[0]) || "",
         type: q.questionType || "MCQ",
         questionType: q.questionType || "MCQ"
@@ -550,33 +577,53 @@ router.post("/evaluate-subjective", async (req, res) => {
 2. 'isCorrect' સબમિશન માપદંડ માટે જો વિદ્યાર્થીએ અડધાથી વધુ ગુણ મેળવ્યા હોય (>= 50%), તો આને true તરીકે ચિહ્નિત કરો, નહીં તો false.
 3. 'feedback' એ ગુજરાતી ભાષામાં હોવો જોઈએ. ખૂબ જ ટૂંકો અને પ્રોત્સાહક પ્રતિસાદ આપો (મહત્તમ ૧-૨ सरल વાક્યોમાં) જે વિદ્યાર્થીને માર્ગદર્શન આપે. દા.ત. "સરસ પ્રયત્ન! તમારો ઉત્તર બિલકુલ સાચો છે." અથવા "થોડી વધુ મહેનતની જરૂર છે. આ વિષયને ફરીથી વાંચો."`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            isCorrect: {
-              type: Type.BOOLEAN,
-              description: "Whether the answer is mostly correct or has a passing score (>= 50% accurate compared to model answer)."
-            },
-            score: {
-              type: Type.NUMBER,
-              description: "The calculated score from 0 to maxMarks based on student accuracy."
-            },
-            feedback: {
-              type: Type.STRING,
-              description: "1-2 encouraging/feedback sentences in Gujarati language."
+    let response;
+    let attempts = 0;
+    const maxAttempts = 4;
+    let fallbackModel = "gemini-3.5-flash";
+
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        response = await ai.models.generateContent({
+          model: fallbackModel,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                isCorrect: {
+                  type: Type.BOOLEAN,
+                  description: "Whether the answer is mostly correct or has a passing score (>= 50% accurate compared to model answer)."
+                },
+                score: {
+                  type: Type.NUMBER,
+                  description: "The calculated score from 0 to maxMarks based on student accuracy."
+                },
+                feedback: {
+                  type: Type.STRING,
+                  description: "1-2 encouraging/feedback sentences in Gujarati language."
+                }
+              },
+              required: ["isCorrect", "score", "feedback"]
             }
-          },
-          required: ["isCorrect", "score", "feedback"]
+          }
+        });
+        break;
+      } catch (err: any) {
+        console.warn(`AI evaluate-subjective calling attempt ${attempts} failed:`, err?.message || err);
+        if (attempts < maxAttempts) {
+          fallbackModel = "gemini-3.1-flash-lite";
+          const delay = attempts * 2000;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          throw err;
         }
       }
-    });
+    }
 
-    const text = response.text || "{}";
+    const text = response?.text || "{}";
     const evaluated = JSON.parse(text);
 
     return res.json({

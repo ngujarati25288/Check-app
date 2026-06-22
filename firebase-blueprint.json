@@ -98,6 +98,10 @@
         },
         "standard": {
           "type": "string"
+        },
+        "summaryText": {
+          "type": "string",
+          "description": "Summarized educational lesson content and synopsis"
         }
       },
       "required": ["chapterId", "subjectId", "chapterName", "standard"]

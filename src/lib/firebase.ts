@@ -41,7 +41,7 @@ if (getApps().length === 0) {
 // Initialize App Check (Fix 2)
 if (typeof window !== "undefined" && !isFirebasePlaceholder) {
   try {
-    const isAndroidApp = navigator.userAgent.toLowerCase().includes("android");
+    const isAndroidApp = typeof window !== "undefined" && !!(window as any).AndroidAppCheckBridge;
     const isAISDev = window.location.hostname.includes("run.app") || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
     const isInIframe = window.self !== window.top;
     

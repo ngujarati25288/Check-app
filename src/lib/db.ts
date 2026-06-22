@@ -83,7 +83,8 @@ export function setLocalStorageKey<T>(key: string, value: T) {
 
 // Ensure mock initial values exist in LocalStorage for fallback
 const initLocalDB = () => {
-  if (!localStorage.getItem('dle:initialized')) {
+  try {
+    if (!localStorage.getItem('dle:initialized')) {
     setLocalStorageKey('user', {
       uid: "demo-user-123",
       studentId: "9876543210",
@@ -218,7 +219,12 @@ const initLocalDB = () => {
     }));
     setLocalStorageKey('leaderboard', mockLeaderboard);
 
-    localStorage.setItem('dle:initialized', 'true');
+    try {
+      localStorage.setItem('dle:initialized', 'true');
+    } catch (_) {}
+    }
+  } catch (e) {
+    console.warn("Storage initialization bypassed:", e);
   }
 };
 
@@ -828,6 +834,50 @@ export const ChapterRepository = {
     } catch (e) {
       const list = getLocalStorageKey<Chapter[]>('chapters', []);
       return list.filter(c => c.subjectId === subjectId && c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3");
+    }
+  },
+
+  async markAbhyasCompleted(studentId: string, chapterId: string): Promise<void> {
+    const recordId = `${studentId}_${chapterId}`;
+    const timestamp = new Date().toISOString();
+    const payload = { studentId, chapterId, completedAt: timestamp };
+
+    if (isFirebasePlaceholder) {
+      const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
+      records[recordId] = payload;
+      setLocalStorageKey('abhyas_completion', records);
+      return;
+    }
+    
+    try {
+      await setDoc(doc(db, 'abhyas_completion', recordId), payload, { merge: true });
+    } catch (e) {
+      console.error("Firebase save abhyas completion error:", e);
+      // fallback
+      const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
+      records[recordId] = payload;
+      setLocalStorageKey('abhyas_completion', records);
+    }
+  },
+
+  async checkAbhyasCompleted(studentId: string, chapterId: string): Promise<boolean> {
+    const recordId = `${studentId}_${chapterId}`;
+    if (isFirebasePlaceholder) {
+      const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
+      return !!records[recordId];
+    }
+    try {
+      const docSnap = await getDoc(doc(db, 'abhyas_completion', recordId));
+      if (docSnap.exists()) {
+        return true;
+      }
+      // If server check fails or not exists, check fallback localstorage
+      const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
+      return !!records[recordId];
+    } catch (e) {
+      console.error("Firebase get abhyas completion error:", e);
+      const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
+      return !!records[recordId];
     }
   }
 };
@@ -1980,6 +2030,88 @@ export const PointsRepository = {
     } catch (e) {
       console.error("Failed to load student points:", e);
       return null;
+    }
+  },
+
+  async addPoints(studentId: string, amount: number, type: "exam" | "revision" | "mastery" | "achievement" | "abhyas_success"): Promise<void> {
+    if (isFirebasePlaceholder) {
+      const stored = localStorage.getItem(`dle:student_points:${studentId}`);
+      let current: StudentPoints;
+      if (stored) {
+        current = JSON.parse(stored) as StudentPoints;
+      } else {
+        current = {
+          studentId,
+          totalPoints: 0,
+          examPoints: 0,
+          revisionPoints: 0,
+          masteryPoints: 0,
+          achievementPoints: 0,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      current.totalPoints += amount;
+      if (type === "exam") current.examPoints += amount;
+      else if (type === "revision") current.revisionPoints += amount;
+      else if (type === "mastery") current.masteryPoints += amount;
+      else if (type === "achievement") current.achievementPoints += amount;
+      else if (type === "abhyas_success") current.masteryPoints += amount;
+      current.updatedAt = new Date().toISOString();
+      localStorage.setItem(`dle:student_points:${studentId}`, JSON.stringify(current));
+      return;
+    }
+    try {
+      const docRef = doc(db, 'student_points', studentId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const current = snap.data() as StudentPoints;
+        const nextTotal = (current.totalPoints || 0) + amount;
+        let pFields: any = {
+          totalPoints: nextTotal,
+          updatedAt: serverTimestamp()
+        };
+        if (type === "exam") pFields.examPoints = (current.examPoints || 0) + amount;
+        else if (type === "revision") pFields.revisionPoints = (current.revisionPoints || 0) + amount;
+        else if (type === "mastery" || type === "abhyas_success") pFields.masteryPoints = (current.masteryPoints || 0) + amount;
+        else if (type === "achievement") pFields.achievementPoints = (current.achievementPoints || 0) + amount;
+        await updateDoc(docRef, pFields);
+      } else {
+        const pFields: StudentPoints = {
+          studentId,
+          totalPoints: amount,
+          examPoints: type === "exam" ? amount : 0,
+          revisionPoints: type === "revision" ? amount : 0,
+          masteryPoints: (type === "mastery" || type === "abhyas_success") ? amount : 0,
+          achievementPoints: type === "achievement" ? amount : 0,
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(docRef, pFields);
+      }
+    } catch (e) {
+      console.warn("Could not save student points to Firestore, updating local cache instead:", e);
+      const stored = localStorage.getItem(`dle:student_points:${studentId}`);
+      let current: StudentPoints;
+      if (stored) {
+        current = JSON.parse(stored) as StudentPoints;
+      } else {
+        current = {
+          studentId,
+          totalPoints: 0,
+          examPoints: 0,
+          revisionPoints: 0,
+          masteryPoints: 0,
+          achievementPoints: 0,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      current.totalPoints += amount;
+      if (type === "exam") current.examPoints += amount;
+      else if (type === "revision") current.revisionPoints += amount;
+      else if (type === "mastery") current.masteryPoints += amount;
+      else if (type === "achievement") current.achievementPoints += amount;
+      else if (type === "abhyas_success") current.masteryPoints += amount;
+      current.updatedAt = new Date().toISOString();
+      localStorage.setItem(`dle:student_points:${studentId}`, JSON.stringify(current));
     }
   },
 

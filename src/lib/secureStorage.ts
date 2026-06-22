@@ -54,17 +54,25 @@ export const secureStorage = {
   },
 
   removeItem(key: string): void {
-    localStorage.removeItem(`${SECRET_PREFIX}${key}`);
+    try {
+      localStorage.removeItem(`${SECRET_PREFIX}${key}`);
+    } catch (_) {}
   },
 
   clear(): void {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(SECRET_PREFIX)) {
-        keysToRemove.push(key);
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(SECRET_PREFIX)) {
+          keysToRemove.push(key);
+        }
       }
-    }
-    keysToRemove.forEach((key) => localStorage.removeItem(key));
+      keysToRemove.forEach((key) => {
+        try {
+          localStorage.removeItem(key);
+        } catch (_) {}
+      });
+    } catch (_) {}
   }
 };

@@ -669,15 +669,36 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
       isCorrect = selectedLetter === q.correctAnswer;
       score = isCorrect ? qMarks : 0;
     } else if (type === "TrueFalse") {
-      const selectedIdx = studentAns;
-      const selectedText = selectedIdx === 0 ? "True" : selectedIdx === 1 ? "False" : null;
-      studentAnsStr = selectedText || "Skipped";
-      isCorrect = selectedText === q.correctAnswer;
+      const selectedIdx = studentAns; // 0 for True, 1 for False
+      const selectedLetter = selectedIdx === 0 ? "A" : selectedIdx === 1 ? "B" : null;
+      studentAnsStr = selectedIdx === 0 ? "સાચું" : selectedIdx === 1 ? "ખોટું" : "Skipped";
+
+      const canonicalCorrect = (q.correctAnswer || "").trim().toUpperCase();
+      const isA_Correct = canonicalCorrect === "A" || canonicalCorrect === "TRUE" || canonicalCorrect.startsWith("સાચ") || canonicalCorrect === "YES" || canonicalCorrect === "ખર";
+      const isB_Correct = canonicalCorrect === "B" || canonicalCorrect === "FALSE" || canonicalCorrect.startsWith("ખોટ") || canonicalCorrect === "NO";
+
+      if (selectedLetter === "A" && isA_Correct) {
+        isCorrect = true;
+      } else if (selectedLetter === "B" && isB_Correct) {
+        isCorrect = true;
+      } else {
+        isCorrect = false;
+      }
       score = isCorrect ? qMarks : 0;
     } else if (type === "FillBlank") {
       const selectedText = typeof studentAns === "string" ? studentAns.trim() : "";
       studentAnsStr = selectedText || "Skipped";
-      isCorrect = selectedText.toLowerCase() === (q.correctAnswer || "").trim().toLowerCase();
+
+      const cleanInput = selectedText.toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+      const cleanCorrect = (q.correctAnswer || "").toLowerCase().replace(/[\s\.,\/#!$%\^&\*;:{}=\-_`~()""'?।]/g, "").trim();
+
+      if (cleanInput && cleanCorrect) {
+        isCorrect = (cleanInput === cleanCorrect) || 
+                    (cleanInput.includes(cleanCorrect) && cleanCorrect.length > 1) || 
+                    (cleanCorrect.includes(cleanInput) && cleanInput.length > 1);
+      } else {
+        isCorrect = false;
+      }
       score = isCorrect ? qMarks : 0;
     } else if (type === "ShortAnswer" || type === "LongAnswer") {
       const textAns = typeof studentAns === "string" ? studentAns.trim() : "";
