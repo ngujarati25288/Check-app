@@ -18,7 +18,8 @@ import {
   Book,
   GraduationCap,
   Sparkles,
-  Info
+  Info,
+  Settings
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/FirebaseProvider";
@@ -27,7 +28,7 @@ import { Subject, Chapter, Question } from "@/types";
 import { sfx } from "@/lib/settings";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/abhyas" as any)({
+export const Route = createFileRoute("/abhyas")({
   head: () => ({ meta: [{ title: "Abhyas - Interactive Learning Hub" }] }),
   component: AbhyasComponent,
 });
@@ -93,11 +94,13 @@ function AbhyasComponent() {
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Fallback Audio Player refs and state for Android/Webview compatibility
-  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
-  const fallbackChunksRef = useRef<string[]>([]);
-  const fallbackIndexRef = useRef<number>(0);
-  const [useFallbackTts, setUseFallbackTts] = useState(false);
+  // Advanced stateful TTS variables for device/language customization & troubleshooting
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceName, setSelectedVoiceName] = useState<string>(() => {
+    return localStorage.getItem("preferred_tts_voice") || "";
+  });
+  const [ttsLanguage, setTtsLanguage] = useState<string>("");
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
 
   // Practice Exam State
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -148,26 +151,45 @@ function AbhyasComponent() {
     }
   }, [selectedSubject]);
 
-  // Handle Speech Synthesis Lifecycle
+  // Handle Speech Synthesis Lifecycle & dynamic voice loading
   useEffect(() => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      synthRef.current = window.speechSynthesis;
-    } else {
-      setUseFallbackTts(true);
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    synthRef.current = window.speechSynthesis;
+
+    const loadVoices = () => {
+      if (synthRef.current) {
+        const voices = synthRef.current.getVoices();
+        setAvailableVoices(voices);
+      }
+    };
+
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
     }
+
     return () => {
-      // Clean up text-to-speech when leaving page
       if (synthRef.current) {
         try { synthRef.current.cancel(); } catch (_) {}
       }
-      if (fallbackAudioRef.current) {
-        try {
-          fallbackAudioRef.current.pause();
-          fallbackAudioRef.current = null;
-        } catch (_) {}
-      }
     };
   }, []);
+
+  // Initialize and sync preferred language based on user's profile medium
+  useEffect(() => {
+    if (!ttsLanguage && user?.medium) {
+      const medium = user.medium.trim().toLowerCase();
+      if (medium === "hindi" || medium === "hi") {
+        setTtsLanguage("hi-IN");
+      } else if (medium === "english" || medium === "en") {
+        setTtsLanguage("en-IN");
+      } else {
+        setTtsLanguage("gu-IN");
+      }
+    } else if (!ttsLanguage) {
+      setTtsLanguage("gu-IN");
+    }
+  }, [user, ttsLanguage]);
 
   const handleStartStudy = () => {
     if (!selectedChapter) {
@@ -187,149 +209,71 @@ function AbhyasComponent() {
     sfx.tap();
   };
 
-  // Text-To-Speech Controls with dual layer Native / Google TTS Hybrid engine
-  const splitIntoTtsChunks = (text: string): string[] => {
-    const cleanText = text.replace(/[\n\r]+/g, " ");
-    const sentences = cleanText.split(/([।\.!\?，,]+)/g);
-    const chunks: string[] = [];
-    let currentPart = "";
-
-    for (let i = 0; i < sentences.length; i++) {
-      const s = sentences[i];
-      if (!s) continue;
-      if (currentPart.length + s.length < 150) {
-        currentPart += s;
-      } else {
-        if (currentPart.trim()) {
-          chunks.push(currentPart.trim());
-        }
-        currentPart = s;
-      }
-    }
-    if (currentPart.trim()) {
-      chunks.push(currentPart.trim());
-    }
-    return chunks.filter(c => c.length > 1 && /[A-Za-z0-9\u0A80-\u0AFF\u0900-\u097F]/.test(c));
-  };
-
-  const playFallbackChunk = (index: number) => {
-    if (index >= fallbackChunksRef.current.length) {
-      setIsSpeaking(false);
-      setIsPaused(false);
-      return;
-    }
-
-    fallbackIndexRef.current = index;
-    const chunk = fallbackChunksRef.current[index];
-
-    let tl = "gu";
-    const targetMedium = (user?.medium || "Gujarati").trim().toLowerCase();
-    if (targetMedium === "hindi" || targetMedium === "hi") {
-      tl = "hi";
-    } else if (targetMedium === "english" || targetMedium === "en") {
-      tl = "en";
-    }
-
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${encodeURIComponent(chunk)}`;
-
-    if (fallbackAudioRef.current) {
-      try { fallbackAudioRef.current.pause(); } catch (_) {}
-    }
-
-    const audio = new Audio(url);
-    audio.playbackRate = ttsSpeed;
-    fallbackAudioRef.current = audio;
-
-    audio.onended = () => {
-      playFallbackChunk(index + 1);
-    };
-
-    audio.onerror = (err) => {
-      console.warn("Fallback TTS chunk error, attempting next:", err);
-      playFallbackChunk(index + 1);
-    };
-
-    audio.play().then(() => {
-      setIsSpeaking(true);
-      setIsPaused(false);
-    }).catch((playErr) => {
-      console.error("Audio playback failed or was blocked:", playErr);
-      playFallbackChunk(index + 1);
-    });
-  };
-
+  // Text-To-Speech Controls using native Web Speech Synthesis API with fallback language support
   const speakSummary = () => {
-    // Lazily detect voice synthesis availability on request
-    if (!useFallbackTts && typeof window !== "undefined" && window.speechSynthesis) {
+    if (typeof window === "undefined") return;
+
+    if (!synthRef.current && window.speechSynthesis) {
       synthRef.current = window.speechSynthesis;
-    } else {
-      setUseFallbackTts(true);
     }
 
-    if (useFallbackTts || !synthRef.current) {
-      // Fallback Audio playback action
-      if (isSpeaking && isPaused) {
-        if (fallbackAudioRef.current) {
-          fallbackAudioRef.current.play().then(() => {
-            setIsPaused(false);
-          }).catch(err => console.warn("Fallback resume failed:", err));
-        }
-        sfx.tap();
-        return;
-      }
-
-      // Stop any existing fallback
-      if (fallbackAudioRef.current) {
-        try { fallbackAudioRef.current.pause(); } catch (_) {}
-        fallbackAudioRef.current = null;
-      }
-
-      const chunks = splitIntoTtsChunks(summaryText);
-      if (chunks.length === 0) {
-        toast.error("વાંચવા માટે કોઈ સાહિત્ય મળ્યું નથી.");
-        return;
-      }
-
-      fallbackChunksRef.current = chunks;
-      playFallbackChunk(0);
-      sfx.tap();
+    if (!synthRef.current) {
+      toast.error("તમારા ઉપકરણમાં વૉઇસ ક્ષમતા ઉપલબ્ધ નથી.");
       return;
     }
 
-    // Standard Native Voice synthesis execution
+    // Handle Resume from Pause
     if (isSpeaking && isPaused) {
       try {
         synthRef.current.resume();
         setIsPaused(false);
-      } catch (_) {}
+      } catch (err) {
+        console.warn("Resume failed:", err);
+      }
       sfx.tap();
       return;
     }
 
+    // Cancel current speaking before starting new
     try {
       synthRef.current.cancel();
     } catch (_) {}
 
-    const textToSpeak = summaryText.replace(/[\n\r]/g, " ");
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-
-    const voices = synthRef.current.getVoices();
-    const guVoice = voices.find(v => v.lang.startsWith("gu") || v.lang === "gu-IN");
-    const hiVoice = voices.find(v => v.lang.startsWith("hi") || v.lang === "hi-IN");
-    const enInVoice = voices.find(v => v.lang.includes("IN") && v.lang.startsWith("en"));
-
-    if (guVoice) {
-      utterance.voice = guVoice;
-    } else if (hiVoice) {
-      utterance.voice = hiVoice;
-      utterance.rate = ttsSpeed * 0.9;
-    } else if (enInVoice) {
-      utterance.voice = enInVoice;
+    if (!summaryText) {
+      toast.error("વાંચવા માટે કોઈ સાહિત્ય મળ્યું નથી.");
+      return;
     }
 
-    utterance.lang = guVoice ? "gu-IN" : "hi-IN";
+    // Clean text: strip markdown characters and double newlines
+    const cleanText = summaryText
+      .replace(/[\n\r]+/g, " ")
+      .replace(/[\*\_]+/g, "")
+      .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utteranceRef.current = utterance;
+
+    // Set targeted language
+    utterance.lang = ttsLanguage || "gu-IN";
+
+    // Select custom matched voice if available
+    try {
+      const voices = synthRef.current.getVoices();
+      let matchingVoice = voices.find(v => v.name === selectedVoiceName);
+      if (!matchingVoice) {
+        // Fallback to finding any voice starting with current language code prefix
+        const prefix = (ttsLanguage || "gu-IN").substring(0, 2).toLowerCase();
+        matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(prefix));
+      }
+      if (matchingVoice) {
+        utterance.voice = matchingVoice;
+      }
+    } catch (e) {
+      console.warn("Voice list matching error:", e);
+    }
+
     utterance.rate = ttsSpeed;
-    utterance.pitch = 1.05;
+    utterance.pitch = 1.0;
 
     utterance.onstart = () => {
       setIsSpeaking(true);
@@ -343,86 +287,107 @@ function AbhyasComponent() {
 
     utterance.onerror = (e) => {
       if (e.error !== "interrupted" && e.error !== "canceled") {
-        console.warn("Native TTS error, auto-routing to fallback engine:", e);
-        // seamless fallback transition
-        setUseFallbackTts(true);
-        setTimeout(() => {
-          const chunks = splitIntoTtsChunks(summaryText);
-          if (chunks.length > 0) {
-            fallbackChunksRef.current = chunks;
-            playFallbackChunk(0);
-          }
-        }, 100);
-      } else {
-        setIsSpeaking(false);
-        setIsPaused(false);
+        console.warn("SpeechSynthesis error:", e);
+        toast.error("અવાજ શરૂ કરવામાં મુશ્કેલી પડી. અવાજ સેટિંગ્સમાં જઈને 'Hindi' અથવા 'English' પસંદ કરો.");
       }
+      setIsSpeaking(false);
+      setIsPaused(false);
     };
 
-    utteranceRef.current = utterance;
     try {
       synthRef.current.speak(utterance);
-    } catch (speakErr) {
-      console.warn("synth.speak error, falling back:", speakErr);
-      setUseFallbackTts(true);
-      const chunks = splitIntoTtsChunks(summaryText);
-      if (chunks.length > 0) {
-        fallbackChunksRef.current = chunks;
-        playFallbackChunk(0);
+    } catch (err) {
+      console.warn("Native speak failed:", err);
+      toast.error("અવાજ શરૂ કરવામાં મુશ્કેલી પડી.");
+      setIsSpeaking(false);
+      setIsPaused(false);
+    }
+
+    sfx.tap();
+  };
+
+  const testSpeak = (langCode: string, voiceName: string) => {
+    if (typeof window === "undefined" || !synthRef.current) return;
+    try {
+      synthRef.current.cancel();
+    } catch (_) {}
+
+    let text = "નમસ્તે, તમારા ફોન પર ગુજરાતી અવાજ યોગ્ય રીતે કામ કરી રહ્યો છે.";
+    if (langCode === "hi-IN") {
+      text = "नमस्ते, आपके फोन पर हिंदी आवाज़ सही तरीके से काम कर रही है.";
+    } else if (langCode === "en-IN") {
+      text = "Hello, English voice is working correctly on your phone.";
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = langCode;
+
+    try {
+      const voice = synthRef.current.getVoices().find(v => v.name === voiceName);
+      if (voice) {
+        utterance.voice = voice;
+      }
+    } catch (_) {}
+
+    utterance.rate = ttsSpeed;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setIsPaused(false);
+    };
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+    };
+
+    try {
+      synthRef.current.speak(utterance);
+      toast.success("ટેસ્ટ અવાજ શરૂ થયો!");
+    } catch (err) {
+      console.warn("Test speak failed:", err);
+      toast.error("ટેસ્ટ કરવા માટે અવાજ શરૂ ન થઈ શક્યો.");
+    }
+  };
+
+  const pauseSummary = () => {
+    if (synthRef.current && isSpeaking && !isPaused) {
+      try {
+        synthRef.current.pause();
+        setIsPaused(true);
+      } catch (err) {
+        console.warn("Pause failed:", err);
       }
     }
     sfx.tap();
   };
 
-  const pauseSummary = () => {
-    if (useFallbackTts) {
-      if (fallbackAudioRef.current && isSpeaking && !isPaused) {
-        try { fallbackAudioRef.current.pause(); } catch (_) {}
-        setIsPaused(true);
-        sfx.tap();
-      }
-      return;
-    }
-
-    if (synthRef.current && isSpeaking && !isPaused) {
-      try { synthRef.current.pause(); } catch (_) {}
-      setIsPaused(true);
-      sfx.tap();
-    }
-  };
-
   const stopSpeaking = () => {
-    if (useFallbackTts || fallbackAudioRef.current) {
-      if (fallbackAudioRef.current) {
-        try { fallbackAudioRef.current.pause(); } catch (_) {}
-        fallbackAudioRef.current = null;
-      }
-      setIsSpeaking(false);
-      setIsPaused(false);
-      sfx.tap();
-      return;
-    }
-
+    setIsSpeaking(false);
+    setIsPaused(false);
     if (synthRef.current) {
-      try { synthRef.current.cancel(); } catch (_) {}
-      setIsSpeaking(false);
-      setIsPaused(false);
-      sfx.tap();
+      try {
+        synthRef.current.cancel();
+      } catch (err) {
+        console.warn("Cancel failed:", err);
+      }
     }
+    sfx.tap();
   };
 
   const updateTtsSpeed = (newSpeed: number) => {
     setTtsSpeed(newSpeed);
-    if (useFallbackTts) {
-      if (fallbackAudioRef.current) {
-        fallbackAudioRef.current.playbackRate = newSpeed;
-      }
-      return;
-    }
-    if (synthRef.current && isSpeaking) {
+    if (synthRef.current && isSpeaking && !isPaused) {
+      try {
+        synthRef.current.cancel();
+      } catch (_) {}
       setTimeout(() => {
         speakSummary();
-      }, 100);
+      }, 50);
     }
   };
 
@@ -751,21 +716,142 @@ function AbhyasComponent() {
                     </span>
                   </div>
 
-                  {/* Play speeds selector */}
-                  <div className="flex items-center gap-1.5 bg-muted/70 px-2 py-1 rounded-xl border border-border">
-                    <span className="text-[9px] font-bold text-muted-foreground">SPEED:</span>
-                    <select
-                      value={ttsSpeed}
-                      onChange={(e) => updateTtsSpeed(parseFloat(e.target.value))}
-                      className="text-[10px] font-bold bg-transparent border-none outline-none cursor-pointer"
+                  {/* Play speeds and Settings toggle */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-muted/70 px-2 py-1 rounded-xl border border-border">
+                      <span className="text-[9px] font-bold text-muted-foreground">SPEED:</span>
+                      <select
+                        value={ttsSpeed}
+                        onChange={(e) => updateTtsSpeed(parseFloat(e.target.value))}
+                        className="text-[10px] font-bold bg-transparent border-none outline-none cursor-pointer text-foreground"
+                      >
+                        <option value="0.75">0.75x</option>
+                        <option value="1">1.0x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowVoiceSettings(!showVoiceSettings);
+                        sfx.tap();
+                      }}
+                      className={`p-1.5 rounded-xl border flex items-center justify-center transition ${showVoiceSettings ? "bg-primary border-primary text-white" : "bg-muted/70 border-border text-muted-foreground hover:text-foreground"}`}
+                      title="અવાજ સેટિંગ્સ (Voice Settings)"
                     >
-                      <option value="0.75">0.75x</option>
-                      <option value="1">1.0x</option>
-                      <option value="1.25">1.25x</option>
-                      <option value="1.5">1.5x</option>
-                    </select>
+                      <Settings className="size-4 shrink-0" />
+                    </button>
                   </div>
                 </div>
+
+                {/* Collapsible Voice Settings & Troubleshooting Diagnostics */}
+                {showVoiceSettings && (
+                  <div className="bg-card border border-border p-3 rounded-2xl space-y-2.5 animate-[fade-in_0.2s_ease-out]">
+                    <div className="flex items-center justify-between border-b border-border/60 pb-1.5">
+                      <span className="text-[11px] font-bold text-foreground font-gu flex items-center gap-1">
+                        ⚙️ અવાજ સેટિંગ્સ (Voice Settings)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowVoiceSettings(false)}
+                        className="text-[10px] text-muted-foreground hover:text-foreground font-bold"
+                      >
+                        બંધ કરો ×
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 xs:grid-cols-2 gap-2 text-xs">
+                      {/* Language Selection */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase font-gu block">અવાજની ભાષા (Language):</label>
+                        <select
+                          value={ttsLanguage}
+                          onChange={(e) => {
+                            const newLang = e.target.value;
+                            setTtsLanguage(newLang);
+                            localStorage.setItem("preferred_tts_language", newLang);
+                            // Auto reset voice name so matching logic finds a voice for the new language
+                            setSelectedVoiceName("");
+                            sfx.tap();
+                          }}
+                          className="w-full h-8 px-2 bg-muted/40 border border-border rounded-lg outline-none text-[11px] font-bold font-gu text-foreground"
+                        >
+                          <option value="gu-IN">ગુજરાતી (Gujarati)</option>
+                          <option value="hi-IN">હિન્દી (Hindi) - વધુ વિશ્વસનીય</option>
+                          <option value="en-IN">English (India) - કાયમ ચાલુ</option>
+                        </select>
+                      </div>
+
+                      {/* Voice Selection */}
+                      <div className="space-y-1 col-span-1 xs:col-span-1">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase font-gu block">ઉપલબ્ધ અવાજ (Voice Engine):</label>
+                        <select
+                          value={selectedVoiceName}
+                          onChange={(e) => {
+                            setSelectedVoiceName(e.target.value);
+                            localStorage.setItem("preferred_tts_voice", e.target.value);
+                            sfx.tap();
+                          }}
+                          className="w-full h-8 px-2 bg-muted/40 border border-border rounded-lg outline-none text-[11px] font-semibold text-foreground truncate"
+                        >
+                          {availableVoices.length === 0 ? (
+                            <option value="">શોધાઈ રહ્યું છે...</option>
+                          ) : (
+                            availableVoices
+                              .filter(v => {
+                                const prefix = (ttsLanguage || "gu-IN").substring(0, 2).toLowerCase();
+                                return v.lang.toLowerCase().startsWith(prefix);
+                              })
+                              .map(v => (
+                                <option key={v.name} value={v.name}>
+                                  {v.name.replace(/Google/gi, "☁️ Google").replace(/Android/gi, "📱 Android")}
+                                </option>
+                              ))
+                          )}
+                          {/* If no voices match language, show all voices */}
+                          {availableVoices.length > 0 && availableVoices.filter(v => {
+                            const prefix = (ttsLanguage || "gu-IN").substring(0, 2).toLowerCase();
+                            return v.lang.toLowerCase().startsWith(prefix);
+                          }).length === 0 && (
+                            availableVoices.map(v => (
+                              <option key={v.name} value={v.name}>
+                                {v.name}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Test Voice and Warning */}
+                    <div className="space-y-2 pt-1 border-t border-border/40">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-semibold text-muted-foreground font-gu">
+                          {availableVoices.filter(v => v.lang.toLowerCase().startsWith((ttsLanguage || "gu-IN").substring(0, 2))).length === 0 ? (
+                            <span className="text-amber-500 font-bold">⚠️ આ ભાષાનો અવાજ ફોનમાં ઇન્સ્ટોલ કરેલ નથી.</span>
+                          ) : (
+                            <span className="text-emerald-600 font-bold">✓ અવાજ ઉપલબ્ધ છે</span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => testSpeak(ttsLanguage, selectedVoiceName)}
+                          className="h-7 px-3 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-[10px] font-bold rounded-lg flex items-center gap-1 transition"
+                        >
+                          🔊 ટેસ્ટ અવાજ (Test Audio)
+                        </button>
+                      </div>
+
+                      <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[10px] text-amber-600 font-gu leading-relaxed">
+                        <p className="font-bold">💡 અવાજ ન આવવાના કારણો અને ઉપાય:</p>
+                        <p className="mt-0.5">1. જો ગુજરાતીમાં અવાજ ન આવે તો અવાજની ભાષા <strong>'હિન્દી (Hindi)'</strong> અથવા <strong>'English'</strong> કરો.</p>
+                        <p className="mt-0.5">2. તમારા મોબાઈલ ના સેટિંગ્સમાં જઈને <strong>Text-to-speech output</strong> માં <strong>Preferred engine</strong> ને <strong>Speech Services by Google</strong> કરો અને ગુજરાતી લેંગ્વેજ પેક ડાઉનલોડ કરો.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Interaction controls buttons */}
                 <div className="flex gap-2.5">
