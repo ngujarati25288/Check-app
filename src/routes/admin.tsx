@@ -129,6 +129,7 @@ function AdminPanel() {
   const [subDesc, setSubDesc] = useState("");
   const [subActive, setSubActive] = useState<boolean>(true);
   const [subStd, setSubStd] = useState("10");
+  const [subMedium, setSubMedium] = useState("Gujarati");
   const [editingSub, setEditingSub] = useState<Subject | null>(null);
 
   const [chapName, setChapName] = useState("");
@@ -660,6 +661,7 @@ function AdminPanel() {
         subjectId: subId,
         subjectName: subName,
         standard: subStd,
+        medium: subMedium,
         description: subDesc,
         active: isAct,
         status: isAct ? "active" : "disabled",
@@ -688,9 +690,11 @@ function AdminPanel() {
       setSubDesc("");
       setSubActive(true);
       setSubStd("10");
+      setSubMedium("Gujarati");
       loadAllData();
-    } catch (_) {
-      toast.error("Subject save failed.");
+    } catch (err: any) {
+      console.error("Subject save failed:", err);
+      toast.error("Subject save failed: " + (err?.message || String(err)));
     }
   };
 
@@ -1685,6 +1689,19 @@ function AdminPanel() {
                         </div>
 
                         <div>
+                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Medium (માધ્યમ)</label>
+                          <select
+                            value={subMedium}
+                            onChange={(e) => setSubMedium(e.target.value)}
+                            className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                          >
+                            <option value="Gujarati">ગુજરાતી માધ્યમ (Gujarati Medium)</option>
+                            <option value="English">અંગ્રેજી માધ્યમ (English Medium)</option>
+                            <option value="Hindi">હિન્દી માધ્યમ (Hindi Medium)</option>
+                          </select>
+                        </div>
+
+                        <div>
                           <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Description (વિષય વિગત)</label>
                           <textarea
                             value={subDesc}
@@ -1725,6 +1742,7 @@ function AdminPanel() {
                                 setSubDesc("");
                                 setSubActive(true);
                                 setSubStd("10");
+                                setSubMedium("Gujarati");
                               }}
                               className="px-4 h-11 border border-border rounded-xl text-xs font-semibold hover:bg-muted"
                             >
@@ -1782,6 +1800,7 @@ function AdminPanel() {
                             <tr className="bg-muted/40 border-b border-border text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
                               <th className="p-4">Subject Name</th>
                               <th className="p-4">Standard</th>
+                              <th className="p-4">Medium</th>
                               <th className="p-4">Description</th>
                               <th className="p-4">Status</th>
                               <th className="p-4 text-right">Actions</th>
@@ -1790,7 +1809,7 @@ function AdminPanel() {
                           <tbody className="divide-y divide-border text-xs font-medium">
                             {filteredSubjectsForView.length === 0 ? (
                               <tr>
-                                <td colSpan={5} className="p-8 text-center text-muted-foreground font-semibold">
+                                <td colSpan={6} className="p-8 text-center text-muted-foreground font-semibold">
                                   કોઈ વિષય મળ્યા નથી (No subjects matched search filters)
                                 </td>
                               </tr>
@@ -1804,6 +1823,11 @@ function AdminPanel() {
                                   <td className="p-4">
                                     <span className="px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full text-[10px] font-bold">
                                       Std {s.standard}
+                                    </span>
+                                  </td>
+                                  <td className="p-4">
+                                    <span className="px-2.5 py-0.5 bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 rounded-full text-[10px] font-bold">
+                                      {s.medium || "Gujarati"}
                                     </span>
                                   </td>
                                   <td className="p-4 max-w-xs">
@@ -1830,6 +1854,7 @@ function AdminPanel() {
                                           setSubDesc(s.description || "");
                                           setSubActive(s.active ?? (s.status !== "disabled"));
                                           setSubStd(s.standard);
+                                          setSubMedium(s.medium || "Gujarati");
                                         }}
                                         title="ویرایش"
                                         className="p-1.5 border border-border rounded-xl text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/20 transition-all"

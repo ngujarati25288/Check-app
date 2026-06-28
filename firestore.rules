@@ -155,9 +155,9 @@ service cloud.firestore {
         isCurrentUser(userId) && 
         isValidUser(incoming()) && 
         incoming().role == 'student' &&
-        (!('permissions' in incoming().keys())) &&
-        (!('admin' in incoming().keys())) &&
-        (!('isAdmin' in incoming().keys()))
+        !('permissions' in incoming()) &&
+        !('admin' in incoming()) &&
+        !('isAdmin' in incoming())
       ) || (
         // On-the-fly registration for pre-approved admins (configured by Super Admin)
         isCurrentUser(userId) &&
@@ -175,9 +175,9 @@ service cloud.firestore {
                       isValidUser(incoming()) &&
                       incoming().role == existing().role &&
                       incoming().status == existing().status &&
-                      (!('permissions' in incoming().keys()) || (incoming().permissions == existing().permissions)) &&
-                      (!('admin' in incoming().keys()) || (incoming().admin == existing().admin)) &&
-                      (!('isAdmin' in incoming().keys()) || (incoming().isAdmin == existing().isAdmin)) &&
+                      (!('permissions' in incoming()) || (incoming().permissions == existing().permissions)) &&
+                      (!('admin' in incoming()) || (incoming().admin == existing().admin)) &&
+                      (!('isAdmin' in incoming()) || (incoming().isAdmin == existing().isAdmin)) &&
                       incoming().diff(existing()).affectedKeys().hasOnly([
                         'fullName', 'mobile', 'school', 'standard', 'division', 'village', 'fcmToken', 'lastTokenUpdate', 'passwordHash', 'updatedAt', 'streak', 'lastActiveDate'
                       ])

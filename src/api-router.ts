@@ -640,4 +640,42 @@ router.post("/evaluate-subjective", async (req, res) => {
   }
 });
 
+// Same-origin secure TTS proxy to bypass WebView CORS, Referrer, and custom UA restriction blocks
+router.get("/tts", async (req, res) => {
+  try {
+    const text = String(req.query.text || "").trim();
+    const lang = String(req.query.lang || "gu-IN").trim();
+
+    if (!text) {
+      return res.status(400).json({ error: "No text provided" });
+    }
+
+    const tl = lang.substring(0, 2).toLowerCase();
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${encodeURIComponent(text)}`;
+
+    const response = await fetch(ttsUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36",
+        "Referer": "https://translate.google.com/"
+      }
+    });
+
+    if (!response.ok) {
+      console.warn("Google TTS responded with status:", response.status);
+      throw new Error(`Google Translate TTS responded with status ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "public, max-age=86400"); // Cache audio segments for 24 hours
+    return res.send(buffer);
+  } catch (err: any) {
+    console.error("TTS proxy generation failed:", err);
+    return res.status(500).json({ error: "TTS generation failed: " + err.message });
+  }
+});
+
 export default router;

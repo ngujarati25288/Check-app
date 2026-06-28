@@ -53,6 +53,7 @@ export interface Subject {
   active?: boolean;
   updatedAt?: any;
   isDerived?: boolean;
+  medium?: string;
 }
 
 export interface Chapter {

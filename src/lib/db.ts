@@ -3006,7 +3006,7 @@ export const AdminRepository = {
       return;
     }
     try {
-      await updateDoc(doc(db, 'subjects', subjectId), partial);
+      await setDoc(doc(db, 'subjects', subjectId), partial, { merge: true });
       await this.addAuditLog(adminId, adminName, "Subject Edited", subjectId);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `subjects/${subjectId}`);
@@ -3082,7 +3082,7 @@ export const AdminRepository = {
       return;
     }
     try {
-      await updateDoc(doc(db, 'chapters', chapterId), partial);
+      await setDoc(doc(db, 'chapters', chapterId), partial, { merge: true });
       await this.addAuditLog(adminId, adminName, "Chapter Edited", chapterId);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `chapters/${chapterId}`);
