@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { 
   LogOut, User, Phone, MapPin, School, BookOpen, Flame, 
   Settings, Volume2, VolumeX, Moon, Sun, Check, Sparkles, Award, AlertCircle,
-  Share2, Lock, Trophy, Copy, Download, Eye, Star, X
+  Share2, Lock, Trophy, Copy, Download, Eye, Star, X, Globe
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/FirebaseProvider";
@@ -22,7 +22,7 @@ export const Route = createFileRoute("/profile")({
 
 function Profile() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, changeMedium } = useAuth();
   const settings = useSettings();
   const [showConfirmLogout, setShowConfirmLogout] = useState(false);
 
@@ -686,6 +686,40 @@ function Profile() {
             </button>
 
           </div>
+
+          {/* App Language Selector Row */}
+          <div className="pt-2.5 border-t border-dashed border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <Globe className="size-4 text-teal-600 shrink-0" />
+              <span className="text-xs font-extrabold text-foreground uppercase">એપ્લિકેશન ભાષા (App Language)</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { code: "Gujarati", label: "ગુજરાતી" },
+                { code: "English", label: "English" },
+                { code: "Hindi", label: "हिन्दी" }
+              ].map((lang) => {
+                const isSelected = (user?.medium || "Gujarati") === lang.code;
+                return (
+                  <button
+                    key={lang.code}
+                    onClick={() => {
+                      sfx.tap();
+                      changeMedium(lang.code);
+                    }}
+                    className={`h-10 text-xs font-black rounded-xl border flex items-center justify-center transition active:scale-95 ${
+                      isSelected
+                        ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                        : "bg-muted/20 border-border hover:bg-muted/40 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {lang.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
         </div>
 
         {/* ACTION LOGOUT */}

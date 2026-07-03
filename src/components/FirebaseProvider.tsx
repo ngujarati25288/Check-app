@@ -27,6 +27,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<boolean>;
   registerStudent: (fields: {
     fullName: string;
+    studentId: string;
     passwordPlain: string;
     mobile: string;
     school: string;
@@ -40,6 +41,7 @@ interface AuthContextType {
   isTeacher: () => boolean;
   isAdmin: () => boolean;
   isSuperAdmin: () => boolean;
+  changeMedium: (medium: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -479,6 +481,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           profileById = await UserRepository.getProfileByStudentId(uIdInput.toUpperCase());
         }
 
+        if (!profileById) {
+          profileById = await UserRepository.getProfileByStudentId(uIdInput.toLowerCase());
+        }
+
         if (!profileById && /^[0-9]{10}$/.test(uIdInput)) {
           profileById = await UserRepository.getProfileByMobile(uIdInput);
         }
@@ -711,6 +717,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const registerStudent = async (fields: {
     fullName: string;
+    studentId: string;
     passwordPlain: string;
     mobile: string;
     school: string;
@@ -721,7 +728,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }): Promise<boolean> => {
     setLoading(true);
     registerInProgress.current = true;
-    console.log("STEP 1 - Registration started");
+    console.log("STEP 1 - Registration started with custom unique ID");
     console.log("1. registerStudent start", { ...fields, passwordPlain: "[REDACTED]" });
     try {
       // 1. Uniqueness of the Mobile Number constraint lifted to support multiple siblings
@@ -729,9 +736,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Allow sibling registrations on the same family mobile number
       console.log(`Using mobile number: ${mobileClean} for registration (sibling support active)`);
 
-      // 2. Auto-generate Sequential Student ID
-      let studentIdClean = await UserRepository.generateStudentId(fields.standard);
-      console.log(`Generated sequential student ID: ${studentIdClean}`);
+      // 2. Use user-selected unique student ID, normalized to lowercase for absolute uniqueness
+      let studentIdClean = fields.studentId.trim().toLowerCase();
+      console.log(`Using custom unique student ID: ${studentIdClean}`);
 
       let generatedUid = "user_" + studentIdClean;
       if (!isFirebasePlaceholder) {
@@ -748,14 +755,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           } catch (authError: any) {
             console.warn("4. createUserWithEmailAndPassword catch", authError);
             if (authError.code === "auth/email-already-in-use" && attempts < 14) {
-              // Parse current counter and increment it to find a free auth account
-              const prefix = `STD${fields.standard}-`;
-              const currentNumStr = studentIdClean.substring(prefix.length);
-              const currentNum = parseInt(currentNumStr, 10);
-              const nextNum = isNaN(currentNum) ? 1 : currentNum + 1;
-              const zeroPadded = String(nextNum).padStart(5, '0');
-              studentIdClean = `${prefix}${zeroPadded}`;
-              console.log(`Email occupied in auth. Automatically trying next ID candidate: ${studentIdClean}`);
+              // If somehow email is taken, try appending a unique number
+              studentIdClean = `${studentIdClean}${attempts + 1}`;
+              console.log(`Email occupied in auth. Trying: ${studentIdClean}`);
               attempts++;
             } else {
               toast.error("રજીસ્ટ્રેશન નિષ્ફળતા: " + (authError.message || authError));
@@ -942,6 +944,17 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const isAdmin = () => user?.role === 'admin';
   const isSuperAdmin = () => user?.role === 'super_admin';
 
+  const changeMedium = async (medium: string): Promise<void> => {
+    if (!user) return;
+    try {
+      await UserRepository.updateProfile(user.uid, { medium });
+      setUser({ ...user, medium });
+    } catch (err) {
+      console.error("Failed to update medium:", err);
+      toast.error("Failed to update language preference.");
+    }
+  };
+
   // Phase 11 Instruction: Automatically Register & Refresh FCM registration tokens inside users collection
   useEffect(() => {
     if (user?.uid) {
@@ -969,7 +982,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isStudent,
       isTeacher,
       isAdmin,
-      isSuperAdmin
+      isSuperAdmin,
+      changeMedium
     }}>
       {children}
     </AuthContext.Provider>

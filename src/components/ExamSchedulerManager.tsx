@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { 
   Calendar, Clock, Award, ShieldAlert, BookOpen, Trash2, Edit3, PlusCircle, 
-  Layers, CheckCircle2, XCircle, Info, Sparkles, Cpu, ChevronRight, BarChart2, Zap
+  Layers, CheckCircle2, XCircle, Info, Sparkles, Cpu, ChevronRight, BarChart2, Zap,
+  X, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { DailyExam, Subject, Chapter, Question, ExamTemplate, ExamResult, DBUser } from "@/types";
@@ -46,6 +47,19 @@ export function ExamSchedulerManager({
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [examinerNameStr, setExaminerNameStr] = useState("");
 
+  // States for custom random exam scheduling
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [mixedStd, setMixedStd] = useState("");
+  const [mixedSubjectId, setMixedSubjectId] = useState("");
+  const [mixedChapterIds, setMixedChapterIds] = useState<string[]>([]);
+  const [mixedDate, setMixedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [mixedStartTime, setMixedStartTime] = useState("10:00");
+  const [mixedDuration, setMixedDuration] = useState(30);
+  const [mixedQuestionsCount, setMixedQuestionsCount] = useState(15);
+  const [mixedExaminerName, setMixedExaminerName] = useState(() => currentUser?.fullName || "Admin Instructor");
+  const [mixedRequireAbhyas, setMixedRequireAbhyas] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Real-time ticker for countdown displays in dispatch log
   const [nowTime, setNowTime] = useState(new Date());
 
@@ -67,6 +81,137 @@ export function ExamSchedulerManager({
       questions.some(q => q.subjectId === sub.subjectId)
     );
   }, [subjects, questions]);
+
+  // Unique standards from subjects list
+  const uniqueStandards = React.useMemo(() => {
+    const stds = subjects.map(s => s.standard || "");
+    return Array.from(new Set(stds)).filter(Boolean).sort((a, b) => Number(a) - Number(b));
+  }, [subjects]);
+
+  // Set default Standard and Subject for our random builder modal
+  useEffect(() => {
+    if (uniqueStandards.length > 0 && !mixedStd) {
+      setMixedStd(uniqueStandards[0]);
+    }
+  }, [uniqueStandards]);
+
+  useEffect(() => {
+    if (mixedStd) {
+      const filtered = subjects.filter(s => s.standard === mixedStd);
+      if (filtered.length > 0) {
+        setMixedSubjectId(filtered[0].subjectId);
+      } else {
+        setMixedSubjectId("");
+      }
+    }
+  }, [mixedStd, subjects]);
+
+  useEffect(() => {
+    setMixedChapterIds([]);
+  }, [mixedSubjectId]);
+
+  const handleMixedChapterToggle = (chapterId: string) => {
+    setMixedChapterIds(prev => 
+      prev.includes(chapterId)
+        ? prev.filter(id => id !== chapterId)
+        : [...prev, chapterId]
+    );
+  };
+
+  const handleSelectAllMixedChapters = (chapsOfSubject: Chapter[]) => {
+    const allIds = chapsOfSubject.map(c => c.chapterId);
+    if (mixedChapterIds.length === allIds.length) {
+      setMixedChapterIds([]);
+    } else {
+      setMixedChapterIds(allIds);
+    }
+  };
+
+  const handleScheduleRandomExam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mixedSubjectId) {
+      toast.error("કૃપા કરીને પહેલા વિષય પસંદ કરો.");
+      return;
+    }
+    if (mixedChapterIds.length === 0) {
+      toast.error("કૃપા કરીને ઓછામાં ઓછું એક પ્રકરણ પસંદ કરો.");
+      return;
+    }
+    if (!mixedDate) {
+      toast.error("કૃપા કરીને પરીક્ષા માટે તારીખ પસંદ કરો.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Find all questions belonging to this subject and selected chapters
+      const pool = questions.filter(q => 
+        q.subjectId === mixedSubjectId && 
+        mixedChapterIds.includes(q.chapterId) &&
+        q.approvalStatus !== "rejected" &&
+        q.status !== "archived"
+      );
+
+      if (pool.length === 0) {
+        toast.error("પસંદ કરેલ ચેપ્ટર્સમાં કોઈ પ્રશ્નો ઉપલબ્ધ નથી! પહેલા પ્રશ્નો ઉમેરો.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Randomly select specified number of questions
+      const finalCount = Math.min(mixedQuestionsCount, pool.length);
+      const shuffled = [...pool].sort(() => Math.random() - 0.5);
+      const selectedQuestionIds = shuffled.slice(0, finalCount).map(q => q.questionId);
+
+      // Create startAt and endAt ISO strings
+      const startAtISO = new Date(`${mixedDate}T${mixedStartTime}:00`).toISOString();
+      const endAtDateObj = new Date(`${mixedDate}T${mixedStartTime}:00`);
+      endAtDateObj.setMinutes(endAtDateObj.getMinutes() + mixedDuration);
+      const endAtISO = endAtDateObj.toISOString();
+
+      const newExam: DailyExam = {
+        examId: "exam_" + Date.now(),
+        subjectId: mixedSubjectId,
+        chapterId: mixedChapterIds[0] || "", // legacy compatibility
+        chapterIds: mixedChapterIds, // stores multi-selection!
+        examinerId: currentUser?.uid || "admin",
+        examinerName: mixedExaminerName.trim() || "Admin Instructor",
+        examDate: mixedDate,
+        duration: mixedDuration,
+        totalQuestions: selectedQuestionIds.length,
+        status: "scheduled",
+        startAt: startAtISO,
+        endAt: endAtISO,
+        publishAt: startAtISO,
+        examType: "Scheduled",
+        questionIds: selectedQuestionIds,
+        createdAt: new Date().toISOString(),
+        standard: mixedStd,
+        medium: subjects.find(s => s.subjectId === mixedSubjectId)?.medium || "Gujarati",
+        requireAbhyasCompleted: mixedRequireAbhyas
+      };
+
+      const success = await AdminRepository.createExam(
+        currentUser?.uid || "admin",
+        currentUser?.fullName || "Admin",
+        newExam
+      );
+
+      if (success) {
+        toast.success(`કુલ ${selectedQuestionIds.length} પ્રશ્નો સાથે મિક્સ ચેપ્ટર રેન્ડમ પરીક્ષા સફળતાપૂર્વક યોજવામાં આવી છે! 🚀`);
+        setShowCreateModal(false);
+        onRefresh();
+      } else {
+        toast.error("પરીક્ષા શેડ્યૂલ કરવામાં કોઈ મુશ્કેલી નડી અથવા તારીખ ડુપ્લિકેટ છે.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("પરીક્ષા શેડ્યૂલ દરમિયાન ખામી ઉદ્ભવી.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const list = activeQuestionSubjects.length > 0 ? activeQuestionSubjects : subjects;
@@ -284,11 +429,20 @@ export function ExamSchedulerManager({
           
           {/* Deliveries List Visualisation Dashboard */}
           <div className="space-y-4">
-            <div className="flex justify-between items-center bg-muted/30 p-3 rounded-2xl border">
-              <span className="text-xs font-extrabold text-foreground uppercase">કસોટી પત્રિકો (Active & Scheduled Exams)</span>
-              <span className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-sans font-black">
-                {exams.filter(ex => ex.status === "active" || ex.status === "scheduled").length} Active / Scheduled
-              </span>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-muted/30 p-4 rounded-3xl border gap-3">
+              <div className="space-y-0.5">
+                <span className="text-xs font-extrabold text-foreground uppercase block">કસોટી પત્રિકો (Active & Scheduled Exams)</span>
+                <span className="text-[10px] text-muted-foreground block font-gu">અભ્યાસના પ્રશ્નોમાંથી રેન્ડમ પદ્ધતિ દ્વારા મલ્ટિપલ ચેપ્ટર મિક્સ કરી કસોટી પત્રિકો આયોજિત કરો.</span>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(true)}
+                  className="w-full sm:w-auto h-10 px-4 bg-teal-600 hover:bg-teal-700 active:scale-[0.98] text-white rounded-xl shadow-xs text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <PlusCircle className="size-4" /> નવી રેન્ડમ પરીક્ષા (Create Mixed Exam)
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -774,6 +928,226 @@ export function ExamSchedulerManager({
 
         </div>
       )}
+
+      {/* RENDER MODAL FOR CREATING DYNAMIC RANDOM EXAM */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-card border border-border rounded-3xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto space-y-5 shadow-2xl relative font-gu"
+            >
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="absolute right-4 top-4 text-muted-foreground hover:text-foreground size-8 rounded-full hover:bg-muted flex items-center justify-center transition"
+              >
+                <X className="size-5" />
+              </button>
+
+              <div className="border-b border-border pb-3 flex items-center gap-2">
+                <Sparkles className="size-6 text-teal-600 animate-pulse" />
+                <div>
+                  <h3 className="text-base font-black text-foreground">રેન્ડમ મિક્સ પ્રકરણ કસોટી આયોજક (Random Mixed Exam Planner)</h3>
+                  <p className="text-xs text-muted-foreground">તૈયાર પ્રશ્નોમાંથી ગણતરીની સેકન્ડમાં નવી સ્માર્ટ ઓટો-પરીક્ષા ઊભી કરો.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleScheduleRandomExam} className="space-y-4">
+                
+                {/* Standard and Subject selectors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">ધોરણ પસંદ કરો (Standard)</label>
+                    <select
+                      value={mixedStd}
+                      onChange={(e) => setMixedStd(e.target.value)}
+                      className="w-full h-10 border border-border rounded-xl px-3 bg-background text-xs outline-none focus:border-teal-500 text-foreground"
+                    >
+                      {uniqueStandards.map(std => (
+                        <option key={std} value={std}>ધોરણ {std}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">વિષય પસંદ કરો (Subject)</label>
+                    <select
+                      value={mixedSubjectId}
+                      onChange={(e) => setMixedSubjectId(e.target.value)}
+                      className="w-full h-10 border border-border rounded-xl px-3 bg-background text-xs outline-none focus:border-teal-500 text-foreground"
+                    >
+                      <option value="">-- સિલેક્ટ કરો --</option>
+                      {subjects
+                        .filter(s => s.standard === mixedStd)
+                        .map(sub => (
+                          <option key={sub.subjectId} value={sub.subjectId}>{sub.subjectName} ({sub.medium})</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Multiple Chapters Selector Checkbox Block */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-foreground">પ્રકરણો પસંદ કરો (Chapters Multi-Select)</label>
+                    {mixedSubjectId && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectAllMixedChapters(chapters.filter(c => c.subjectId === mixedSubjectId))}
+                        className="text-[10px] bg-teal-500/10 hover:bg-teal-600 hover:text-white transition text-teal-700 px-2 py-0.5 rounded font-extrabold"
+                      >
+                        {mixedChapterIds.length === chapters.filter(c => c.subjectId === mixedSubjectId).length ? "Deselect All" : "Select All"}
+                      </button>
+                    )}
+                  </div>
+
+                  {!mixedSubjectId ? (
+                    <div className="border border-dashed p-4 rounded-xl text-center text-muted-foreground text-[11px]">
+                      કૃપા કરીને પેલા વિષય પસંદ કરો જેથી પ્રકરણો લોડ કરી શકાય.
+                    </div>
+                  ) : chapters.filter(c => c.subjectId === mixedSubjectId).length === 0 ? (
+                    <div className="border border-dashed p-4 rounded-xl text-center text-muted-foreground text-[11px]">
+                      આ વિષય માટે કોઈ ચેપ્ટર ઉપલબ્ધ નથી!
+                    </div>
+                  ) : (
+                    <div className="border border-border rounded-xl p-3 max-h-[140px] overflow-y-auto space-y-2 bg-muted/20">
+                      {chapters
+                        .filter(c => c.subjectId === mixedSubjectId)
+                        .map(ch => {
+                          const isChecked = mixedChapterIds.includes(ch.chapterId);
+                          const countInBank = questions.filter(q => q.chapterId === ch.chapterId).length;
+                          return (
+                            <label 
+                              key={ch.chapterId} 
+                              className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer select-none transition ${isChecked ? "bg-teal-500/10 border-teal-500/30 text-teal-800" : "bg-card border-border hover:bg-muted"}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleMixedChapterToggle(ch.chapterId)}
+                                  className="accent-teal-600 size-3.5 shrink-0"
+                                />
+                                <span className="font-semibold truncate max-w-[340px]">{ch.chapterName}</span>
+                              </div>
+                              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-muted-foreground font-sans">
+                                {countInBank} Qs in Bank
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Date, Time, Duration, Questions Count Form Fields Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">તારીખ (Date)</label>
+                    <input
+                      type="date"
+                      value={mixedDate}
+                      onChange={(e) => setMixedDate(e.target.value)}
+                      className="w-full h-10 border border-border rounded-xl px-2.5 bg-background text-xs outline-none focus:border-teal-500 text-foreground"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">સમય (Start Time)</label>
+                    <input
+                      type="time"
+                      value={mixedStartTime}
+                      onChange={(e) => setMixedStartTime(e.target.value)}
+                      className="w-full h-10 border border-border rounded-xl px-2.5 bg-background text-xs outline-none focus:border-teal-500 text-foreground"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">કુલ મિનિટ (Duration)</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={180}
+                      value={mixedDuration}
+                      onChange={(e) => setMixedDuration(Number(e.target.value))}
+                      className="w-full h-10 border border-border rounded-xl px-2.5 bg-background text-xs font-sans outline-none focus:border-teal-500 text-foreground"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">કુલ પ્રશ્નો (Qs Count)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={mixedQuestionsCount}
+                      onChange={(e) => setMixedQuestionsCount(Number(e.target.value))}
+                      className="w-full h-10 border border-border rounded-xl px-2.5 bg-background text-xs font-sans outline-none focus:border-teal-500 text-foreground"
+                    />
+                  </div>
+                </div>
+
+                {/* Examiner's Name input and requireAbhyasCompleted Checkbox */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center pt-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">પરીક્ષકનું નામ (Examiner Name)</label>
+                    <input
+                      type="text"
+                      placeholder="Admin Instructor"
+                      value={mixedExaminerName}
+                      onChange={(e) => setMixedExaminerName(e.target.value)}
+                      className="w-full h-10 border border-border rounded-xl px-3 bg-background text-xs outline-none focus:border-teal-500 text-foreground"
+                    />
+                  </div>
+
+                  <div className="pt-5">
+                    <label className="flex items-center gap-2 border border-border p-2.5 rounded-xl cursor-pointer bg-muted/10 hover:bg-muted/20 select-none">
+                      <input
+                        type="checkbox"
+                        checked={mixedRequireAbhyas}
+                        onChange={(e) => setMixedRequireAbhyas(e.target.checked)}
+                        className="accent-teal-600 size-4 shrink-0"
+                      />
+                      <div className="text-xs">
+                        <span className="font-extrabold text-foreground block leading-tight">પહેલા અભ્યાસ ફરજિયાત (Require Abhyas)</span>
+                        <span className="text-[10px] text-muted-foreground block leading-tight">વિદ્યાર્થીએ પહેલા આ પ્રકરણો વાંચ્યા હોવા જરૂરી છે.</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Generate action buttons footer */}
+                <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="h-11 px-5 border border-border hover:bg-muted text-xs font-bold rounded-xl transition"
+                  >
+                    રદ કરો (Cancel)
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="h-11 px-6 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <span>યોજી રહ્યા છીએ (Generating)...</span>
+                    ) : (
+                      <>
+                        <Check className="size-4" /> રેન્ડમ કસોટી શેડ્યૂલ કરો (Schedule Exam)
+                      </>
+                    )}
+                  </button>
+                </div>
+
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

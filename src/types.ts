@@ -524,6 +524,17 @@ export interface VillageRequest {
   createdAt: string;
 }
 
+export interface SubjectRequest {
+  requestId: string;
+  subjectName: string;
+  standard: string;
+  medium: string;
+  requestedBy: string;
+  requestedByName?: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
+
 export interface AppUpdateSettings {
   latestVersion: string;
   mandatory: boolean;

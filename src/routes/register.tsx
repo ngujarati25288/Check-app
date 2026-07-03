@@ -1,11 +1,34 @@
 import { createFileRoute, Link, useNavigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { ArrowLeft, User, Phone, Backpack, MapPin, Lock, Eye, EyeOff, Hash, X, AlertTriangle, Check } from "lucide-react";
+import { ArrowLeft, User, Phone, Backpack, MapPin, Lock, Eye, EyeOff, Hash, X, AlertTriangle, Check, RefreshCw, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/FirebaseProvider";
 import { toast } from "sonner";
-import { MasterDataRepository } from "@/lib/db";
+import { MasterDataRepository, UserRepository } from "@/lib/db";
 import { School, Village } from "@/types";
 import { t } from "@/lib/translations";
+
+function transliterateGujaratiToEnglish(text: string): string {
+  const mapping: { [key: string]: string } = {
+    'ક': 'k', 'ખ': 'kh', 'ગ': 'g', 'ઘ': 'gh', 'ચ': 'ch', 'છ': 'chh', 'જ': 'j', 'ઝ': 'z',
+    'ટ': 't', 'ઠ': 'th', 'ડ': 'd', 'ઢ': 'dh', 'ણ': 'n', 'ત': 't', 'થ': 'th', 'દ': 'd', 'ધ': 'dh',
+    'ન': 'n', 'પ': 'p', 'ફ': 'f', 'બ': 'b', 'ભ': 'bh', 'મ': 'm', 'ય': 'y', 'ર': 'r', 'લ': 'l', 'વ': 'v',
+    'શ': 'sh', 'ષ': 'sh', 'સ': 's', 'હ': 'h', 'ળ': 'l', 'ક્ષ': 'ksh', 'જ્ઞ': 'gn',
+    'ા': 'a', 'િ': 'i', 'ી': 'ee', 'ુ': 'u', 'ૂ': 'oo', 'ે': 'e', 'ૈ': 'ai', 'ો': 'o', 'ૌ': 'au', 'ં': 'n', 'ઃ': 'h',
+    'અ': 'a', 'આ': 'aa', 'ઇ': 'i', 'ઈ': 'ee', 'ઉ': 'u', 'ઊ': 'oo', 'એ': 'e', 'ઐ': 'ai', 'ઓ': 'o', 'ઔ': 'au',
+    'ઋ': 'ru'
+  };
+
+  let result = "";
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (/[a-zA-Z\s0-9]/.test(char)) {
+      result += char;
+    } else if (mapping[char]) {
+      result += mapping[char];
+    }
+  }
+  return result;
+}
 
 export const Route = createFileRoute("/register")({
   head: () => ({ meta: [{ title: "Student Registration — Daily Learning Exam" }] }),
@@ -58,6 +81,13 @@ function Register() {
   const [village, setVillage] = useState("");
   const [medium, setMedium] = useState("Gujarati"); // Default to Gujarati
 
+  // Unique Student ID states
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [isIdAvailable, setIsIdAvailable] = useState<boolean | null>(null);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+
   // Master lists
   const [schoolsList, setSchoolsList] = useState<School[]>([]);
   const [villagesList, setVillagesList] = useState<Village[]>([]);
@@ -96,6 +126,126 @@ function Register() {
     };
     fetchMasterData();
   }, []);
+
+  // Dynamic username suggestion generation on fullName change
+  useEffect(() => {
+    const cleanName = fullName.trim();
+    if (cleanName.length < 3) {
+      setSuggestions([]);
+      setSelectedStudentId("");
+      setIsIdAvailable(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsGeneratingSuggestions(true);
+      try {
+        // Transliterate fullName to English chars and clean it
+        const englishName = transliterateGujaratiToEnglish(cleanName)
+          .replace(/[^a-zA-Z\s]/g, "")
+          .trim()
+          .replace(/\s+/g, " ");
+
+        const nameParts = englishName.split(" ").filter(Boolean);
+        if (nameParts.length === 0) {
+          setSuggestions([]);
+          setIsGeneratingSuggestions(false);
+          return;
+        }
+
+        const first = nameParts[0].toLowerCase();
+        const last = nameParts.length >= 2 ? nameParts[nameParts.length - 1].toLowerCase() : "";
+
+        // 1. First Name + Last Name's first letter capitalized (e.g. DivyanshuG)
+        const capFirst = first.charAt(0).toUpperCase() + first.slice(1);
+        const capLastLetter = last ? last.charAt(0).toUpperCase() : "";
+        const base1 = `${capFirst}${capLastLetter}`;
+
+        // 2. Last Name's first letter + First Name lowercase (e.g. gdivyanshu)
+        const firstLastLetter = last ? last.charAt(0).toLowerCase() : "";
+        const base2 = `${firstLastLetter}${first}`;
+
+        // 3. First Name + "01" (e.g. divyanshu01)
+        const base3 = `${first}01`;
+
+        const checkIsTaken = async (id: string): Promise<boolean> => {
+          try {
+            const profile = await UserRepository.getProfileByStudentId(id);
+            return profile !== null;
+          } catch (e) {
+            return false;
+          }
+        };
+
+        const findUniqueVariant = async (baseId: string, isNumericSuffix = false): Promise<string> => {
+          let candidate = baseId;
+          let isTaken = await checkIsTaken(candidate);
+          if (!isTaken) return candidate;
+
+          let counter = isNumericSuffix ? 2 : 1;
+          while (isTaken && counter < 100) {
+            if (isNumericSuffix) {
+              const padded = String(counter).padStart(2, '0');
+              candidate = `${baseId.slice(0, -2)}${padded}`;
+            } else {
+              candidate = `${baseId}${counter}`;
+            }
+            isTaken = await checkIsTaken(candidate);
+            counter++;
+          }
+          return candidate;
+        };
+
+        const [s1, s2, s3] = await Promise.all([
+          findUniqueVariant(base1, false),
+          findUniqueVariant(base2, false),
+          findUniqueVariant(base3, true)
+        ]);
+
+        const generatedList = [s1, s2, s3].filter(Boolean);
+        setSuggestions(generatedList);
+        
+        // Auto-select the first suggestion if none is selected
+        if (generatedList.length > 0) {
+          setSelectedStudentId(generatedList[0]);
+          setIsIdAvailable(true);
+        }
+      } catch (err) {
+        console.error("Error generating suggestions:", err);
+      } finally {
+        setIsGeneratingSuggestions(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [fullName]);
+
+  // Check manual student ID inputs for uniqueness
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setIsIdAvailable(null);
+      return;
+    }
+    // If it matches one of our dynamically fetched suggestions, we know it is available
+    if (suggestions.map(s => s.toLowerCase()).includes(selectedStudentId.toLowerCase())) {
+      setIsIdAvailable(true);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setCheckingAvailability(true);
+      try {
+        const profile = await UserRepository.getProfileByStudentId(selectedStudentId.trim().toLowerCase());
+        setIsIdAvailable(profile === null);
+      } catch (err) {
+        setIsIdAvailable(false);
+      } finally {
+        setCheckingAvailability(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [selectedStudentId, suggestions]);
 
   const isSuccessPage = location.pathname === "/register/success";
 
@@ -165,10 +315,30 @@ function Register() {
       return;
     }
 
+    // Unique Student ID validation
+    const studentIdClean = selectedStudentId.trim();
+    if (!studentIdClean) {
+      toast.error(medium === "English" ? "Please select or enter a Login ID." : "કૃપા કરીને લોગીન આઈડી પસંદ કરો અથવા લખો.");
+      return;
+    }
+    if (studentIdClean.length < 3 || studentIdClean.length > 30) {
+      toast.error(medium === "English" ? "Login ID must be between 3 and 30 characters." : "લોગીન આઈડી ૩ થી ૩૦ અક્ષરની વચ્ચે હોવું જોઈએ.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9]+$/.test(studentIdClean)) {
+      toast.error(medium === "English" ? "Login ID can only contain letters and numbers." : "લોગીન આઈડીમાં ફક્ત અંગ્રેજી અક્ષરો અને આંકડા હોઈ શકે.");
+      return;
+    }
+    if (isIdAvailable === false) {
+      toast.error(medium === "English" ? "This Login ID is already taken." : "આ લોગીન આઈડી અગાઉથી વપરાયેલું છે. કૃપા કરીને બીજું પસંદ કરો.");
+      return;
+    }
+
     console.log("All client-side validations passed. Calling registerStudent with medium:", medium);
     try {
       const isSuccess = await registerStudent({
         fullName: nameTrim,
+        studentId: studentIdClean,
         passwordPlain: password,
         mobile: normalizedMobile,
         school: school.trim(),
@@ -274,6 +444,91 @@ function Register() {
                 ફક્ત અક્ષરો અને સ્પેસ જ માન્ય છે. ઉદા. આરવ કિરણભાઈ પટેલ
               </p>
             </label>
+
+            {/* Unique Student ID Selection */}
+            <div className="block space-y-1.5">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+                Choose Unique Login ID * (યુનિક લોગીન આઈડી)
+              </span>
+              <div className="relative mt-1 flex items-center gap-2 h-11 px-4 rounded-2xl bg-muted/60 border border-border focus-within:border-primary focus-within:bg-card transition">
+                <Hash className="size-4 text-muted-foreground shrink-0" />
+                <input
+                  type="text"
+                  required
+                  placeholder="દા.ત. divyanshu01 (Alphanumeric only)"
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
+                  className="w-full bg-transparent outline-none text-sm placeholder:text-muted-foreground text-foreground font-semibold font-mono"
+                />
+                
+                {/* Checking indicators */}
+                <div className="shrink-0 flex items-center gap-1.5 text-xs font-semibold">
+                  {checkingAvailability ? (
+                    <Loader2 className="size-4 animate-spin text-primary" />
+                  ) : isIdAvailable === true ? (
+                    <span className="text-green-500 flex items-center gap-1">
+                      <Check className="size-3.5" />
+                      <span className="text-[10px] hidden sm:inline">ઉપલબ્ધ (Available)</span>
+                    </span>
+                  ) : isIdAvailable === false ? (
+                    <span className="text-red-500 flex items-center gap-1">
+                      <AlertTriangle className="size-3.5" />
+                      <span className="text-[10px] hidden sm:inline">લેવાયેલ છે (Taken)</span>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Suggestions Panel */}
+              {fullName.trim().length >= 3 && (
+                <div className="bg-muted/30 border border-border/55 rounded-2xl p-3 space-y-2 mt-1">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground">
+                    <span>સજેસ્ટ કરેલા ઉપલબ્ધ આઈડી (SUGGESTED AVAILABLE IDS):</span>
+                    {isGeneratingSuggestions && (
+                      <span className="flex items-center gap-1 text-primary">
+                        <Loader2 className="size-3 animate-spin" />
+                        <span>સર્ચ ચાલુ છે...</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {suggestions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {suggestions.map((suggestion) => {
+                        const isSelected = selectedStudentId.toLowerCase() === suggestion.toLowerCase();
+                        return (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => {
+                              setSelectedStudentId(suggestion);
+                              setIsIdAvailable(true);
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground border border-primary shadow-sm"
+                                : "bg-card text-foreground hover:bg-muted border border-border"
+                            }`}
+                          >
+                            {isSelected && <Check className="size-3.5 shrink-0" />}
+                            <span>{suggestion}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    !isGeneratingSuggestions && (
+                      <p className="text-[10px] text-muted-foreground font-semibold">
+                        કોઈ સજેશન મળ્યા નથી. કૃપા કરીને ઉપર આઈડી ટાઈપ કરો.
+                      </p>
+                    )
+                  )}
+                  <p className="text-[9px] text-muted-foreground leading-relaxed">
+                    👉 તમે આમાંથી કોઈ પણ એક આઈડી સિલેક્ટ કરી શકો છો અથવા મનપસંદ આઈડી ટાઈપ કરી શકો છો. આ આઈડીથી જ તમે દર વર્ષે લોગીન કરી શકશો!
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Password */}
             <div className="block">

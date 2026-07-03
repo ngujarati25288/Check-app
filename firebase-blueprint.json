@@ -926,12 +926,28 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "When the settings were updated" }
       },
       "required": ["latestVersion", "mandatory", "apkUrl", "releaseNotes", "updatedAt"]
+    },
+    "AbhyasCompletion": {
+      "title": "Abhyas Completion",
+      "description": "Indicates a chapter read/study completed by a student",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "count": { "type": "integer" }
+      },
+      "required": ["studentId", "chapterId", "completedAt", "count"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles collection"
+    },
+    "/abhyas_completion/{recordId}": {
+      "schema": "AbhyasCompletion",
+      "description": "Student completed chapter study progress and times read log"
     },
     "/subjects/{subjectId}": {
       "schema": "Subject",

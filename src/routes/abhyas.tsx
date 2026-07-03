@@ -19,7 +19,9 @@ import {
   GraduationCap,
   Sparkles,
   Info,
-  Settings
+  Settings,
+  Trophy,
+  Lock
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/FirebaseProvider";
@@ -48,6 +50,135 @@ const GUJARATI_ENCOURAGEMENT = [
   "ખૂબ નજીક હતા! આગળના પ્રશ્નમાં ચોક્કસ સફળતા મળશે! ✨",
   "મુંઝાશો નહીં! આ સમજૂતી વાંચી લો, બધું સમજાઈ જશે! 📖",
   "તમારા પ્રયાસ ખૂબ સુંદર હતો. શીખતા રહો! 🌈"
+];
+
+const MEDALS = [
+  {
+    id: "aryabhata",
+    name: "આર્યભટ્ટ મેડલ (Aryabhata Medal)",
+    type: "ખગોળશાસ્ત્રી અને ગણિતશાસ્ત્રી",
+    icon: "🪐",
+    desc: "૧ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 1,
+    color: "from-amber-400 to-amber-600 text-amber-950",
+  },
+  {
+    id: "brahmagupta",
+    name: "બ્રહ્મગુપ્ત મેડલ (Brahmagupta Medal)",
+    type: "શૂન્યના શોધક (Pioneer of Zero)",
+    icon: "🔘",
+    desc: "૩ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 3,
+    color: "from-blue-400 to-cyan-500 text-blue-950",
+  },
+  {
+    id: "bhaskara",
+    name: "ભાસ્કરાચાર્ય મેડલ (Bhaskara II Medal)",
+    type: "ગણિતશાસ્ત્રી અને ભૌતિકશાસ્ત્રી",
+    icon: "📐",
+    desc: "૫ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 5,
+    color: "from-emerald-400 to-teal-600 text-emerald-950",
+  },
+  {
+    id: "varahamihira",
+    name: "વરાહમિહિર મેડલ (Varahamihira Medal)",
+    type: "પ્રાચીન ખગોળશાસ્ત્રી",
+    icon: "🌠",
+    desc: "૮ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 8,
+    color: "from-purple-400 to-indigo-600 text-purple-950",
+  },
+  {
+    id: "madhava",
+    name: "સંગમગ્રામના માધવ મેડલ (Madhava Medal)",
+    type: "અનંત શ્રેણીના પ્રણેતા (Infinite Series)",
+    icon: "♾️",
+    desc: "૧૨ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 12,
+    color: "from-pink-400 to-rose-600 text-pink-950",
+  },
+  {
+    id: "ramanujan",
+    name: "શ્રીનિવાસ રામાનુજન મેડલ (Ramanujan Medal)",
+    type: "મહાન ગણિતશાસ્ત્રી",
+    icon: "🔢",
+    desc: "૧૬ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 16,
+    color: "from-amber-500 to-red-600 text-white",
+  },
+  {
+    id: "cvraman",
+    name: "સી. વી. રમણ મેડલ (C. V. Raman Medal)",
+    type: "નોબેલ પુરસ્કાર વિજેતા ભૌતિકશાસ્ત્રી",
+    icon: "💎",
+    desc: "૨૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 20,
+    color: "from-indigo-500 to-purple-700 text-white",
+  },
+  {
+    id: "homibhabha",
+    name: "હોમી જહાંગીર ભાભા મેડલ (Bhabha Medal)",
+    type: "ભારતીય પરમાણુ વિજ્ઞાનના પિતા",
+    icon: "⚛️",
+    desc: "૨૫ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 25,
+    color: "from-sky-500 to-blue-700 text-white",
+  },
+  {
+    id: "sarabhai",
+    name: "વિક્રમ સારાભાઈ મેડલ (Sarabhai Medal)",
+    type: "ભારતીય અંતરિક્ષ વિજ્ઞાનના પિતા",
+    icon: "🚀",
+    desc: "૩૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 30,
+    color: "from-teal-500 to-emerald-700 text-white",
+  },
+  {
+    id: "abdulkalam",
+    name: "એ. પી. જે. અબ્દુલ કલામ મેડલ (Kalam Medal)",
+    type: "મિશાઇલ મેન ઓફ ઇન્ડિયા",
+    icon: "🦅",
+    desc: "૪૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 40,
+    color: "from-orange-400 to-amber-600 text-white animate-pulse",
+  },
+  {
+    id: "snbose",
+    name: "એસ. એન. બોઝ મેડલ (S. N. Bose Medal)",
+    type: "કવોન્ટમ ભૌતિકશાસ્ત્રી (Bose-Einstein)",
+    icon: "✴️",
+    desc: "૫૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 50,
+    color: "from-violet-500 to-fuchsia-700 text-white",
+  },
+  {
+    id: "jcbose",
+    name: "જગદીશ ચંદ્ર બોઝ મેડલ (J. C. Bose Medal)",
+    type: "રેડિયો અને વનસ્પતિ વિજ્ઞાનના પ્રણેતા",
+    icon: "🌿",
+    desc: "૬૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 60,
+    color: "from-green-400 to-emerald-600 text-white",
+  },
+  {
+    id: "shakuntala",
+    name: "શકુંતલા દેવી મેડલ (Shakuntala Devi Medal)",
+    type: "ધ હ્યુમન કોમ્પ્યુટર",
+    icon: "⚡",
+    desc: "૮૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 80,
+    color: "from-yellow-400 to-orange-500 text-amber-950",
+  },
+  {
+    id: "chandrasekhar",
+    name: "સુબ્રહ્મણ્યમ ચંદ્રશેખર મેડલ (Chandrasekhar Medal)",
+    type: "અંતરિક્ષ અને બ્લેક હોલના સંશોધક",
+    icon: "🌟",
+    desc: "૧૦૦ પ્રકરણનો અભ્યાસ પૂર્ણ કરવા બદલ.",
+    threshold: 100,
+    color: "from-slate-700 to-slate-900 text-yellow-300 border border-yellow-400/50",
+  }
 ];
 
 const detectLanguage = (text: string): string => {
@@ -87,6 +218,35 @@ function AbhyasComponent() {
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
+
+  // Completed study records and global lists
+  const [completions, setCompletions] = useState<any[]>([]);
+  const [allChapters, setAllChapters] = useState<Chapter[]>([]);
+  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
+
+  const refreshStudyProgress = () => {
+    if (user?.uid) {
+      ChapterRepository.getStudentAbhyasCompletions(user.uid)
+        .then((res) => {
+          setCompletions(res || []);
+        })
+        .catch(err => console.error("Error fetching study completions:", err));
+    }
+  };
+
+  useEffect(() => {
+    refreshStudyProgress();
+    ChapterRepository.getAllChaptersInSystem()
+      .then((res) => {
+        setAllChapters(res || []);
+      })
+      .catch(err => console.error("Error fetching all chapters:", err));
+    ChapterRepository.getAllSubjectsInSystem()
+      .then((res) => {
+        setAllSubjects(res || []);
+      })
+      .catch(err => console.error("Error fetching all subjects:", err));
+  }, [user]);
 
   // Sync state with user profile once fetched
   useEffect(() => {
@@ -426,7 +586,8 @@ function AbhyasComponent() {
       const randomEnc = GUJARATI_ENCOURAGEMENT[Math.floor(Math.random() * GUJARATI_ENCOURAGEMENT.length)];
       setFeedbackMsg(randomEnc);
 
-      speakText(`ખોટો જવાબ. ${randomEnc}`);
+      const explanationSpeech = currentQuestion.explanation ? `. સમજૂતી: ${currentQuestion.explanation}` : "";
+      speakText(`ખોટો જવાબ. ${randomEnc}${explanationSpeech}`);
     }
   };
 
@@ -445,6 +606,7 @@ function AbhyasComponent() {
         ChapterRepository.markAbhyasCompleted(user.uid, selectedChapter.chapterId)
           .then(() => {
             console.log("Abhyas completion status persisted successfully.");
+            refreshStudyProgress();
           })
           .catch(err => {
             console.error("Failed to persist abhyas completion:", err);
@@ -614,6 +776,130 @@ function AbhyasComponent() {
                   <li>સાચા જવાબ પર ઉત્સાહવર્ધક શબ્દો અને ખોટા જવાબ પર વિગતવાર ડાયરેક્ટ સમજણ મળશે!</li>
                 </ul>
               </div>
+            </div>
+
+            {/* 🎖️ INDIAN LEGENDS MEDALS & ACHIEVEMENTS PANEL */}
+            <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-5">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="space-y-0.5">
+                  <h3 className="text-xs font-black text-foreground font-gu flex items-center gap-1.5">
+                    <Trophy className="size-4 text-amber-500 fill-amber-500/20" /> અભ્યાસ પદકો (Study Medals)
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground font-gu">
+                    મહાન ભારતીય વૈજ્ઞાનિકો અને ગણિતશાસ્ત્રીઓના નામના મેડલ્સ મેળવો!
+                  </p>
+                </div>
+                <span className="text-xs font-sans font-black bg-teal-500/10 text-teal-700 px-2.5 py-1 rounded-full shrink-0">
+                  {completions.length} / {MEDALS.length} Completed
+                </span>
+              </div>
+
+              {/* Medals grid visualizer */}
+              <div className="grid grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1">
+                {MEDALS.map((medal) => {
+                  const isUnlocked = completions.length >= medal.threshold;
+                  return (
+                    <div 
+                      key={medal.id}
+                      className={`relative border rounded-2xl p-3 flex flex-col gap-2 transition overflow-hidden ${
+                        isUnlocked 
+                          ? "bg-gradient-to-br from-card to-muted/20 border-teal-500/30 shadow-xs scale-[1.01]" 
+                          : "bg-muted/10 border-border/60 opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {/* Medal Icon Badge */}
+                        <div className={`size-8 rounded-xl flex items-center justify-center text-lg font-bold shrink-0 shadow-xs ${
+                          isUnlocked 
+                            ? `bg-gradient-to-br ${medal.color}`
+                            : "bg-muted text-muted-foreground"
+                        }`}>
+                          {isUnlocked ? medal.icon : <Lock className="size-3.5" />}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-[11px] font-black font-gu text-foreground truncate">{medal.name}</h4>
+                          <p className="text-[9px] text-muted-foreground truncate font-gu">{medal.type}</p>
+                        </div>
+                      </div>
+                      <p className="text-[10px] leading-relaxed text-foreground/80 font-gu">
+                        {medal.desc}
+                      </p>
+                      {/* Locking / progress overlay indicator */}
+                      {!isUnlocked && (
+                        <div className="text-[9px] font-sans font-black text-amber-600 bg-amber-500/10 self-start px-1.5 py-0.5 rounded">
+                          Requires {medal.threshold} Chapters
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 📊 DETAILED ABHYAS PROGRESS TABLE */}
+            <div className="bg-card border border-border rounded-3xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="space-y-0.5">
+                  <h3 className="text-xs font-black text-foreground font-gu flex items-center gap-1.5">
+                    <BookOpen className="size-4 text-emerald-500" /> અભ્યાસ વિગતો (Your Study Progress)
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground font-gu">
+                    તમે અત્યાર સુધી કયા વિષયના કયા ચેપ્ટરનો અભ્યાસ કેટલી વાર કર્યો છે તેની સુંદર વિગતવાર માહિતી.
+                  </p>
+                </div>
+              </div>
+
+              {completions.length === 0 ? (
+                <div className="border border-dashed p-6 rounded-2xl text-center text-muted-foreground">
+                  <BookOpen className="size-6 mx-auto mb-1.5 text-muted-foreground/40" />
+                  <p className="text-[11px] font-semibold font-gu">હજી સુધી કોઈ અભ્યાસ પૂર્ણ થયો નથી. પહેલો અભ્યાસ શરૂ કરો!</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[220px] border border-border rounded-2xl">
+                  <table className="w-full text-left border-collapse text-xs font-sans">
+                    <thead>
+                      <tr className="bg-muted border-b border-border text-[10px] uppercase font-bold text-muted-foreground font-gu">
+                        <th className="py-2.5 px-3">વિષય (Subject)</th>
+                        <th className="py-2.5 px-3">પ્રકરણ (Chapter)</th>
+                        <th className="py-2.5 px-3 text-center">વાર (Times)</th>
+                        <th className="py-2.5 px-3 text-right">છેલ્લે (Last)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-foreground font-gu">
+                      {completions.map((item: any, idx: number) => {
+                        const chap = allChapters.find(c => c.chapterId === item.chapterId);
+                        const sub = allSubjects.find(s => s.subjectId === chap?.subjectId);
+                        
+                        const chapterName = chap ? chap.chapterName : item.chapterId;
+                        const subjectName = sub ? sub.subjectName : "અન્ય વિષય";
+                        const formattedDate = new Date(item.completedAt).toLocaleDateString("gu-IN", {
+                          day: "numeric",
+                          month: "short"
+                        });
+
+                        return (
+                          <tr key={idx} className="hover:bg-muted/30">
+                            <td className="py-2.5 px-3 font-semibold text-foreground/80 truncate max-w-[100px]" title={subjectName}>
+                              📚 {subjectName}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-foreground truncate max-w-[120px]" title={chapterName}>
+                              {chapterName}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className="bg-teal-500/10 text-teal-700 font-sans font-extrabold px-2 py-0.5 rounded-full text-[10px]">
+                                {item.count || 1} વાર
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-muted-foreground text-[10px] whitespace-nowrap">
+                              {formattedDate}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
           </div>

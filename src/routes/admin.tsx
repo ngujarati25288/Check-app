@@ -43,7 +43,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/FirebaseProvider";
 import { isFirebasePlaceholder } from "@/lib/firebase";
-import { AdminRepository, AnalyticsRepository } from "@/lib/db";
+import { AdminRepository, AnalyticsRepository, MasterDataRepository } from "@/lib/db";
 import { 
   DBUser, 
   Subject, 
@@ -61,7 +61,8 @@ import {
   VillageAnalytics,
   StandardAnalytics,
   LearningTrends,
-  AnalyticsReport
+  AnalyticsReport,
+  SubjectRequest
 } from "@/types";
 import { toast } from "sonner";
 import { AdvancedAnalyticsDashboard } from "@/components/AdvancedAnalyticsDashboard";
@@ -103,6 +104,10 @@ function AdminPanel() {
   // Core Data States
   const [students, setStudents] = useState<DBUser[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjectRequests, setSubjectRequests] = useState<SubjectRequest[]>([]);
+  const [reqSubName, setReqSubName] = useState("");
+  const [reqSubStd, setReqSubStd] = useState("10");
+  const [reqSubMedium, setReqSubMedium] = useState("Gujarati");
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [exams, setExams] = useState<DailyExam[]>([]);
@@ -139,6 +144,7 @@ function AdminPanel() {
   const [chapSummaryText, setChapSummaryText] = useState("");
   const [chapActive, setChapActive] = useState<boolean>(true);
   const [chapStd, setChapStd] = useState("10");
+  const [chapMedium, setChapMedium] = useState("Gujarati");
   const [editingChap, setEditingChap] = useState<Chapter | null>(null);
 
   const [pastedMcq, setPastedMcq] = useState("");
@@ -240,7 +246,8 @@ function AdminPanel() {
         vilAnList,
         stdAnList,
         trendAn,
-        rptsAn
+        rptsAn,
+        subjReqList
       ] = await Promise.all([
         AdminRepository.getAllStudents(),
         AdminRepository.getAllSubjects(),
@@ -259,7 +266,8 @@ function AdminPanel() {
         AnalyticsRepository.getVillageAnalytics(),
         AnalyticsRepository.getAllStandardAnalytics(),
         AnalyticsRepository.getLearningTrends(),
-        AnalyticsRepository.getAnalyticsReports()
+        AnalyticsRepository.getAnalyticsReports(),
+        MasterDataRepository.getSubjectRequests()
       ]);
 
       // Start with the actual subjects and chapters from the database (fully complete documents)
@@ -391,6 +399,7 @@ function AdminPanel() {
 
       setStudents(stdList);
       setSubjects(finalSubjects);
+      setSubjectRequests(subjReqList || []);
       setChapters(finalChapters);
       setQuestions(questList);
       setExams(examList);
@@ -465,6 +474,14 @@ function AdminPanel() {
     };
   }, [user?.uid, user?.role, authLoading, isAuthorized, dataLoaded]);
 
+  const filteredSubjectsForChapterForm = useMemo(() => {
+    return subjects.filter(sub => {
+      const matchesStd = sub.standard === chapStd;
+      const matchesMed = (sub.medium || "Gujarati") === chapMedium;
+      return matchesStd && matchesMed;
+    });
+  }, [subjects, chapStd, chapMedium]);
+
   // Dynamic filter lists
   const filteredChaptersForSelectedSubject = useMemo(() => {
     return chapters.filter(c => c.subjectId === questSubId);
@@ -473,6 +490,19 @@ function AdminPanel() {
   const filteredChaptersForExamSubject = useMemo(() => {
     return chapters.filter(c => c.subjectId === examSubId);
   }, [chapters, examSubId]);
+
+  // Reset chapter form subject if it is not compatible with selected medium and standard
+  useEffect(() => {
+    if (chapSubId) {
+      const currentSub = subjects.find(s => s.subjectId === chapSubId);
+      if (currentSub) {
+        const subMed = currentSub.medium || "Gujarati";
+        if (subMed !== chapMedium || currentSub.standard !== chapStd) {
+          setChapSubId("");
+        }
+      }
+    }
+  }, [chapMedium, chapStd, subjects, chapSubId]);
 
   // Synchronize chapter updates when form subject changes
   useEffect(() => {
@@ -698,6 +728,48 @@ function AdminPanel() {
     }
   };
 
+  const handleSubjectRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reqSubName.trim()) {
+      toast.error("Please enter a subject name.");
+      return;
+    }
+    try {
+      await MasterDataRepository.submitSubjectRequest(
+        reqSubName.trim(),
+        reqSubStd,
+        reqSubMedium,
+        user?.uid || "admin",
+        user?.fullName || "School Admin"
+      );
+      toast.success("Special subject request sent to Super Admin successfully! 🚀");
+      setReqSubName("");
+      loadAllData();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to submit subject request.");
+    }
+  };
+
+  const handleApproveSubjectRequest = async (requestId: string) => {
+    try {
+      await MasterDataRepository.approveSubjectRequest(requestId);
+      toast.success("Special subject approved and created successfully! 🎨");
+      loadAllData();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to approve request.");
+    }
+  };
+
+  const handleRejectSubjectRequest = async (requestId: string) => {
+    try {
+      await MasterDataRepository.rejectSubjectRequest(requestId);
+      toast.success("Special subject request rejected.");
+      loadAllData();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reject request.");
+    }
+  };
+
   // 2. Chapter Submit
   const handleChapterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -885,8 +957,8 @@ function AdminPanel() {
       setPastedLong("");
 
       loadAllData();
-    } catch (_) {
-      toast.error("Chapter details save failed.");
+    } catch (err: any) {
+      toast.error(err.message || "Chapter details save failed.");
     }
   };
 
@@ -1646,111 +1718,243 @@ function AdminPanel() {
                   </div>
 
                   <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                    {/* Subject Form (4 cols on wide, 1 col otherwise) */}
-                    <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4 xl:col-span-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-sm tracking-wide text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                          <span className="size-2 rounded-full bg-teal-500" />
-                          {editingSub ? "Edit Subject" : "Create New Subject"}
-                        </h4>
-                      </div>
+                    {/* Subject Form / Request Panel (4 cols on wide, 1 col otherwise) */}
+                    <div className="space-y-6 xl:col-span-4">
+                      {user?.role === "super_admin" ? (
+                        <>
+                          <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-sm tracking-wide text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                <span className="size-2 rounded-full bg-teal-500" />
+                                {editingSub ? "Edit Subject" : "Create New Subject"}
+                              </h4>
+                            </div>
 
-                      <form onSubmit={handleSubjectSubmit} className="space-y-4 text-xs font-semibold">
-                        <div>
-                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Subject Name</label>
-                          <input
-                            type="text"
-                            required
-                            value={subName}
-                            onChange={(e) => setSubName(e.target.value)}
-                            placeholder="e.g. Science (વિજ્ઞાન) or Math"
-                            className="w-full h-11 px-4 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
-                          />
-                        </div>
+                            <form onSubmit={handleSubjectSubmit} className="space-y-4 text-xs font-semibold">
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Subject Name</label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={subName}
+                                  onChange={(e) => setSubName(e.target.value)}
+                                  placeholder="e.g. Science (વિજ્ઞાન) or Math"
+                                  className="w-full h-11 px-4 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                                />
+                              </div>
 
-                        <div>
-                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">School Standard</label>
-                          <select
-                            value={subStd}
-                            onChange={(e) => setSubStd(e.target.value)}
-                            className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
-                          >
-                            <option value="1">ધોરણ 1 (Std 1)</option>
-                            <option value="2">ધોરણ 2 (Std 2)</option>
-                            <option value="3">ધોરણ 3 (Std 3)</option>
-                            <option value="4">ધોરણ 4 (Std 4)</option>
-                            <option value="5">ધોરણ 5 (Std 5)</option>
-                            <option value="6">ધોરણ 6 (Std 6)</option>
-                            <option value="7">ધોરણ 7 (Std 7)</option>
-                            <option value="8">ધોરણ 8 (Std 8)</option>
-                            <option value="9">ધોરણ 9 (Std 9)</option>
-                            <option value="10">ધોરણ 10 (Std 10)</option>
-                          </select>
-                        </div>
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">School Standard</label>
+                                <select
+                                  value={subStd}
+                                  onChange={(e) => setSubStd(e.target.value)}
+                                  className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                                >
+                                  <option value="1">ધોરણ 1 (Std 1)</option>
+                                  <option value="2">ધોરણ 2 (Std 2)</option>
+                                  <option value="3">ધોરણ 3 (Std 3)</option>
+                                  <option value="4">ધોરણ 4 (Std 4)</option>
+                                  <option value="5">ધોરણ 5 (Std 5)</option>
+                                  <option value="6">ધોરણ 6 (Std 6)</option>
+                                  <option value="7">ધોરણ 7 (Std 7)</option>
+                                  <option value="8">ધોરણ 8 (Std 8)</option>
+                                  <option value="9">ધોરણ 9 (Std 9)</option>
+                                  <option value="10">ધોરણ 10 (Std 10)</option>
+                                </select>
+                              </div>
 
-                        <div>
-                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Medium (માધ્યમ)</label>
-                          <select
-                            value={subMedium}
-                            onChange={(e) => setSubMedium(e.target.value)}
-                            className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
-                          >
-                            <option value="Gujarati">ગુજરાતી માધ્યમ (Gujarati Medium)</option>
-                            <option value="English">અંગ્રેજી માધ્યમ (English Medium)</option>
-                            <option value="Hindi">હિન્દી માધ્યમ (Hindi Medium)</option>
-                          </select>
-                        </div>
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Medium (માધ્યમ)</label>
+                                <select
+                                  value={subMedium}
+                                  onChange={(e) => setSubMedium(e.target.value)}
+                                  className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                                >
+                                  <option value="Gujarati">ગુજરાતી માધ્યમ (Gujarati Medium)</option>
+                                  <option value="English">અંગ્રેજી માધ્યમ (English Medium)</option>
+                                  <option value="Hindi">હિન્દી માધ્યમ (Hindi Medium)</option>
+                                </select>
+                              </div>
 
-                        <div>
-                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Description (વિષય વિગત)</label>
-                          <textarea
-                            value={subDesc}
-                            onChange={(e) => setSubDesc(e.target.value)}
-                            placeholder="Provide a description of the subject..."
-                            className="w-full h-24 p-3 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-medium transition resize-none"
-                          />
-                        </div>
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Description (વિષય વિગત)</label>
+                                <textarea
+                                  value={subDesc}
+                                  onChange={(e) => setSubDesc(e.target.value)}
+                                  placeholder="Provide a description of the subject..."
+                                  className="w-full h-24 p-3 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-medium transition resize-none"
+                                />
+                              </div>
 
-                        <div className="flex items-center gap-3 bg-muted/30 p-3 rounded-2xl border border-border">
-                          <input
-                            type="checkbox"
-                            pattern="[0-9]*"
-                            id="subActiveCheck"
-                            checked={subActive}
-                            onChange={(e) => setSubActive(e.target.checked)}
-                            className="size-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
-                          />
-                          <label htmlFor="subActiveCheck" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
-                            Active Stream (ચાલુ/સક્રિય કરો)
-                          </label>
-                        </div>
+                              <div className="flex items-center gap-3 bg-muted/30 p-3 rounded-2xl border border-border">
+                                <input
+                                  type="checkbox"
+                                  pattern="[0-9]*"
+                                  id="subActiveCheck"
+                                  checked={subActive}
+                                  onChange={(e) => setSubActive(e.target.checked)}
+                                  className="size-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+                                />
+                                <label htmlFor="subActiveCheck" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                  Active Stream (ચાલુ/સક્રિય કરો)
+                                </label>
+                              </div>
 
-                        <div className="flex items-center gap-2 pt-2">
-                          <button
-                            type="submit"
-                            className="flex-1 h-11 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
-                          >
-                            <Plus className="size-4" />
-                            <span>{editingSub ? "Update Details" : "Create Subject"}</span>
-                          </button>
-                          {editingSub && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingSub(null);
-                                setSubName("");
-                                setSubDesc("");
-                                setSubActive(true);
-                                setSubStd("10");
-                                setSubMedium("Gujarati");
-                              }}
-                              className="px-4 h-11 border border-border rounded-xl text-xs font-semibold hover:bg-muted"
-                            >
-                              Cancel
-                            </button>
-                          )}
+                              <div className="flex items-center gap-2 pt-2">
+                                <button
+                                  type="submit"
+                                  className="flex-1 h-11 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                                >
+                                  <Plus className="size-4" />
+                                  <span>{editingSub ? "Update Details" : "Create Subject"}</span>
+                                </button>
+                                {editingSub && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingSub(null);
+                                      setSubName("");
+                                      setSubDesc("");
+                                      setSubActive(true);
+                                      setSubStd("10");
+                                      setSubMedium("Gujarati");
+                                    }}
+                                    className="px-4 h-11 border border-border rounded-xl text-xs font-semibold hover:bg-muted"
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                              </div>
+                            </form>
+                          </div>
+
+                          {/* Pending Subject Requests panel for Super Admin */}
+                          <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                            <h4 className="font-extrabold text-xs tracking-wider text-teal-600 dark:text-teal-400 uppercase flex items-center gap-1.5">
+                              <Layers className="size-4 shrink-0" /> Special Subject Requests ({subjectRequests.filter(r => r.status === "pending").length})
+                            </h4>
+                            <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-normal font-gu">
+                              Admins requesting special GSEB subjects can be approved or rejected here:
+                            </p>
+
+                            <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                              {subjectRequests.length === 0 ? (
+                                <div className="text-[10px] text-muted-foreground text-center py-4">No requests found.</div>
+                              ) : (
+                                subjectRequests.map((req) => (
+                                  <div key={req.requestId} className="p-3 bg-muted/40 rounded-2xl border border-border space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-slate-800 dark:text-slate-200 text-[11px]">{req.subjectName}</span>
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                                        req.status === "pending" ? "bg-amber-100 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400" :
+                                        req.status === "approved" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400" :
+                                        "bg-rose-100 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400"
+                                      }`}>
+                                        {req.status}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 text-[9px] text-muted-foreground font-mono">
+                                      <span>Std: {req.standard}</span>
+                                      <span>•</span>
+                                      <span>Medium: {req.medium}</span>
+                                      <span>•</span>
+                                      <span>By: {req.requestedByName || "Admin"}</span>
+                                    </div>
+                                    {req.status === "pending" && (
+                                      <div className="flex gap-2 pt-1">
+                                        <button
+                                          onClick={() => handleApproveSubjectRequest(req.requestId)}
+                                          className="flex-1 h-7 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[9px] font-bold transition"
+                                        >
+                                          Approve (મંજૂર કરો)
+                                        </button>
+                                        <button
+                                          onClick={() => handleRejectSubjectRequest(req.requestId)}
+                                          className="flex-1 h-7 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[9px] font-bold transition"
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        /* Normal Admin view - Suggestion & Request Form */
+                        <div className="space-y-6">
+                          <div className="bg-teal-600/5 border border-teal-600/20 rounded-3xl p-6 space-y-3 shadow-sm">
+                            <span className="text-lg">💡</span>
+                            <h4 className="font-extrabold text-xs text-teal-800 dark:text-teal-400 uppercase tracking-wider">GSEB Subjects Automated</h4>
+                            <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-gu">
+                              તમામ મુખ્ય વિષયો ધોરણ અને માધ્યમ મુજબ આપોઆપ આવી ગયા છે. આ સિવાયના કોઈ વિશિષ્ટ/સ્પેશિયલ વિષય ઉમેરવા માટે નીચે સુપર એડમિનને વિનંતી મોકલી શકો છો.
+                            </p>
+                          </div>
+
+                          <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
+                            <h4 className="font-extrabold text-xs tracking-wider text-slate-800 dark:text-slate-100 uppercase flex items-center gap-1.5">
+                              <Layers className="size-4 shrink-0 text-teal-500" /> Request Special Subject
+                            </h4>
+
+                            <form onSubmit={handleSubjectRequestSubmit} className="space-y-4 text-xs font-semibold">
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Special Subject Name</label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={reqSubName}
+                                  onChange={(e) => setReqSubName(e.target.value)}
+                                  placeholder="e.g. Computer Science (કમ્પ્યુટર)"
+                                  className="w-full h-11 px-4 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">School Standard</label>
+                                <select
+                                  value={reqSubStd}
+                                  onChange={(e) => setReqSubStd(e.target.value)}
+                                  className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                                >
+                                  <option value="1">ધોરણ 1 (Std 1)</option>
+                                  <option value="2">ધોરણ 2 (Std 2)</option>
+                                  <option value="3">ધોરણ 3 (Std 3)</option>
+                                  <option value="4">ધોરણ 4 (Std 4)</option>
+                                  <option value="5">ધોરણ 5 (Std 5)</option>
+                                  <option value="6">ધોરણ 6 (Std 6)</option>
+                                  <option value="7">ધોરણ 7 (Std 7)</option>
+                                  <option value="8">ધોરણ 8 (Std 8)</option>
+                                  <option value="9">ધોરણ 9 (Std 9)</option>
+                                  <option value="10">ધોરણ 10 (Std 10)</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Medium (માધ્યમ)</label>
+                                <select
+                                  value={reqSubMedium}
+                                  onChange={(e) => setReqSubMedium(e.target.value)}
+                                  className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                                >
+                                  <option value="Gujarati">ગુજરાતી માધ્યમ (Gujarati Medium)</option>
+                                  <option value="English">અંગ્રેજી માધ્યમ (English Medium)</option>
+                                  <option value="Hindi">હિન્દી માધ્યમ (Hindi Medium)</option>
+                                </select>
+                              </div>
+
+                              <button
+                                type="submit"
+                                className="w-full h-11 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                              >
+                                <Plus className="size-4" />
+                                <span>Send Request to Super Admin</span>
+                              </button>
+                            </form>
+                          </div>
                         </div>
-                      </form>
+                      )}
                     </div>
 
                     {/* Subject Table List (8 cols on wide, 1 col otherwise) */}
@@ -1934,47 +2138,27 @@ function AdminPanel() {
                       </div>
 
                       <form onSubmit={handleChapterSubmit} className="space-y-4 text-xs font-semibold">
-                        <div>
-                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Subject Relation</label>
-                          <select
-                            value={chapSubId}
-                            onChange={(e) => {
-                              setChapSubId(e.target.value);
-                              const selectedSubject = subjects.find(s => s.subjectId === e.target.value);
-                              if (selectedSubject) {
-                                setChapStd(selectedSubject.standard);
-                              }
-                            }}
-                            className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
-                          >
-                            <option value="">-- પસંદ કરો (Select Subject) --</option>
-                            {subjects.map(subItem => (
-                              <option key={subItem.subjectId} value={subItem.subjectId}>
-                                {subItem.subjectName} (Std {subItem.standard})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
+                        {/* 1. Medium and Standard Selections First */}
                         <div className="grid grid-cols-12 gap-3">
-                          <div className="col-span-4">
-                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Chapter No</label>
-                            <input
-                              type="number"
-                              min="1"
-                              required
-                              value={chapNo}
-                              onChange={(e) => setChapNo(parseInt(e.target.value) || 1)}
-                              className="w-full h-11 px-4 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition text-center"
-                            />
+                          <div className="col-span-6">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Select Medium (માધ્યમ પસંદ કરો)</label>
+                            <select
+                              value={chapMedium}
+                              onChange={(e) => setChapMedium(e.target.value)}
+                              className="w-full h-11 px-3 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                            >
+                              <option value="Gujarati">ગુજરાતી માધ્યમ (Gujarati)</option>
+                              <option value="English">અંગ્રેજી માધ્યમ (English)</option>
+                              <option value="Hindi">હિન્દી માધ્યમ (Hindi)</option>
+                            </select>
                           </div>
 
-                          <div className="col-span-8">
-                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Target Standard</label>
+                          <div className="col-span-6">
+                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Select Standard (ધોરણ પસંદ કરો)</label>
                             <select
                               value={chapStd}
                               onChange={(e) => setChapStd(e.target.value)}
-                              className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                              className="w-full h-11 px-3 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
                             >
                               <option value="1">ધોરણ 1</option>
                               <option value="2">ધોરણ 2</option>
@@ -1990,6 +2174,46 @@ function AdminPanel() {
                           </div>
                         </div>
 
+                        {/* 2. Subject Selection Filtered by Medium and Standard */}
+                        <div>
+                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Subject Relation (વિષય સંબંધ)</label>
+                          <select
+                            required
+                            value={chapSubId}
+                            onChange={(e) => setChapSubId(e.target.value)}
+                            className="w-full h-11 px-4 mt-1 bg-muted/45 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                          >
+                            <option value="">
+                              {filteredSubjectsForChapterForm.length > 0 
+                                ? "-- પસંદ કરો (Select Subject) --" 
+                                : "-- કોઈ વિષય ઉપલબ્ધ નથી (No Subjects Available) --"}
+                            </option>
+                            {filteredSubjectsForChapterForm.map(subItem => (
+                              <option key={subItem.subjectId} value={subItem.subjectId}>
+                                {subItem.subjectName}
+                              </option>
+                            ))}
+                          </select>
+                          {filteredSubjectsForChapterForm.length === 0 && (
+                            <p className="text-[10px] text-amber-600 mt-1 font-semibold leading-relaxed">
+                              ⚠️ પસંદ કરેલા માધ્યમ અને ધોરણ માટે કોઈ વિષય મળ્યો નથી. પહેલા 'Subject Registry' માં જઈને વિષય ઉમેરો.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 3. Chapter No */}
+                        <div>
+                          <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Chapter No (પ્રકરણ ક્રમાંક)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            required
+                            value={chapNo}
+                            onChange={(e) => setChapNo(parseInt(e.target.value) || 1)}
+                            className="w-full h-11 px-4 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
+                          />
+                        </div>
+
                         <div>
                           <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Chapter Title</label>
                           <input
@@ -1999,29 +2223,6 @@ function AdminPanel() {
                             onChange={(e) => setChapName(e.target.value)}
                             placeholder="e.g. ઘર્ષણ અથવા પ્રકાશનું પરાવર્તન"
                             className="w-full h-11 px-4 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-bold transition"
-                          />
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground block">Topic Summary / Description</label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const prompt = `હું તમને મારા ધોરણ ${chapStd} ના પ્રકરણ '${chapName || "નવું ચેપ્ટર"}' ના પાઠ્યપુસ્તકના પાનાના ફોટા મોકલી રહ્યો છું. આ પ્રકરણના મુખ્ય મુદ્દાઓ, હેડલાઇન્સ અને અભ્યાસક્રમની વિશેષતાઓ (Topic Summary) ને સુંદર, ટૂંકા ગુજરાતી બુલેટ પોઈન્ટ્સમાં ખાસ કરીને લખી આપો.`;
-                                navigator.clipboard.writeText(prompt);
-                                toast.success("AI Topic Summary Prompt કોપી થઈ ગયો! 📋");
-                              }}
-                              className="text-[9px] text-teal-600 hover:underline flex items-center gap-1 font-bold bg-teal-500/10 px-2 py-0.5 rounded-md"
-                            >
-                              ✨ Copy AI Topic Prompt
-                            </button>
-                          </div>
-                          <textarea
-                            value={chapDesc}
-                            onChange={(e) => setChapDesc(e.target.value)}
-                            placeholder="Detailed chapter topics, syllabus highlights..."
-                            className="w-full h-24 p-3 mt-1 bg-muted/40 rounded-xl border border-border outline-none focus:border-teal-500 text-xs font-medium transition resize-none"
                           />
                         </div>
 
@@ -2070,7 +2271,7 @@ function AdminPanel() {
                                 onClick={() => {
                                   const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૫ સરસ દ્વિભાષી/ગુજરાતી MCQs તૈયાર કરો. સાચો જવાબ કેપિટલ 'A', 'B', 'C' કે 'D' માંથી જ હોય તેની ખાતરી કરો.
 
-નીચે દર્શாவેલ ચોક્કસ JSON ફોર્મેટમાં જ આખા જવાબો લખો:
+નીચે દર્શાવેલ ચોક્કસ JSON ફોર્મેટમાં જ આખા જવાબો લખો:
 [
   {
     "question": "ચુંબકનો કયો ધ્રુવ ભૌગોલિક ઉત્તર દિશા દર્શાવે છે?",
@@ -2138,123 +2339,6 @@ function AdminPanel() {
                               value={pastedTf}
                               onChange={(e) => setPastedTf(e.target.value)}
                               placeholder='ખરા-ખોટાનો મેળવેલ JSON અહીં પેસ્ટ કરો...'
-                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
-                            />
-                          </div>
-
-                          {/* 3. Fill Blank Box */}
-                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
-                                📝 ખાલી જગ્યા પૂરો (Fill Blanks)
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૦ ખાલી જગ્યા પૂરોના પ્રશ્નો તૈયાર કરો સવાલમાં બ્લેન્ક સ્પેસ '______' મુકો. optionA માં સાચો જવાબ અને optionB, C, D માં અન્ય ખોટા વિકલ્પો લખી correctAnswer="A" સેટ કરજો.
-
-આપેલી JSON ફોર્મેટ જ વાપરો:
-[
-  {
-    "question": "હોકાયંત્રની સોય હંમેશા ______ દિશા દર્શાવે છે.",
-    "optionA": "ઉત્તર-દક્ષિણ",
-    "optionB": "પૂર્વ-પશ્ચિમ",
-    "optionC": "દક્ષિણ-પૂર્વ",
-    "optionD": "ઉત્તર-પશ્ચિમ",
-    "correctAnswer": "A",
-    "explanation": "હોકાયંત્રની ચુંબકીય સોય હંમેશા ભૌગોલિક ઉત્તર-દક્ષિણ દિશા તરફ રહે છે."
-  }
-]`;
-                                  navigator.clipboard.writeText(pr);
-                                  toast.success("FillBlank Prompt Copy completed! 📋");
-                                }}
-                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
-                              >
-                                Copy FillBlank AI Prompt ✨
-                              </button>
-                            </div>
-                            <textarea
-                              value={pastedFb}
-                              onChange={(e) => setPastedFb(e.target.value)}
-                              placeholder='ખાલી જગ્યા પૂરો નો JSON અહીં પેસ્ટ કરો...'
-                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
-                            />
-                          </div>
-
-                          {/* 4. Short Question Box */}
-                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
-                                💬 એક-બે વાક્યના ઉત્તરો (Short Qs)
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૧૦ એક-બે વાક્ય ના ઉત્તરો વાળા પ્રશ્નો તૈયાર કરો. optionA માં સાચો સવિસ્તાર ઉત્તર લખી optionB, C, D ખાલી રાખજો અને correctAnswer="A" સેટ કરજો.
-
-આપેલી JSON ફોર્મેટ વાપરો:
-[
-  {
-    "question": "ચુંબકત્વ એટલે શું?",
-    "optionA": "ચુંબક દ્વારા લોખંડ જેવી વસ્તુઓને આકર્ષવાના ગુણધર્મને ચુંબકત્વ કહે છે.",
-    "optionB": "",
-    "optionC": "",
-    "optionD": "",
-    "correctAnswer": "A",
-    "explanation": ""
-  }
-]`;
-                                  navigator.clipboard.writeText(pr);
-                                  toast.success("Short Qs Prompt Copy completed! 📋");
-                                }}
-                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
-                              >
-                                Copy Short Qs Prompt ✨
-                              </button>
-                            </div>
-                            <textarea
-                              value={pastedShort}
-                              onChange={(e) => setPastedShort(e.target.value)}
-                              placeholder='એક-બે વાક્યના ટૂંકા પ્રશ્નોત્તરી JSON અહીં પેસ્ટ કરો...'
-                              className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
-                            />
-                          </div>
-
-                          {/* 5. Long Question Box */}
-                          <div className="bg-teal-500/5 p-3 rounded-2xl border border-teal-500/10 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-[10px] text-teal-700 uppercase flex items-center gap-1">
-                                📑 લાંબા સવિસ્તાર ઉત્તરો (Long Qs)
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const pr = `હું તમને પાઠ્યપુસ્તકના ફોટા મોકલી રહ્યો છું. તેમાંથી ધોરણ ${chapStd} ના પાઠ '${chapName || "નવો પાઠ"}' માટે ૫ વિસ્તૃત લાંબા પ્રશ્નો તૈયાર કરો. optionA માં તેનો সম্পূর্ণ સવિસ્તાર મોટો ઉત્તર લખજો, optionB, C, D ખાલી રાખજો અને correctAnswer="A" સેટ કરજો.
-
-આપેલી JSON ફોર્મેટ વાપરો:
-[
-  {
-    "question": "ચુંબકના ગુણધર્મો સવિસ્તાર સમજાવો.",
-    "optionA": "ચુંબકના મુખ્ય ગુણધર્મો: ૧. તે મુક્ત રીતે લટકાવતા હંમેશા ઉત્તર-દક્ષિણ દિશામાં સ્થિર થાય છે, ૨. સમાન ધ્રુવો વચ્ચે અપાકર્ષણ અને અસમાન ધ્રુવો વચ્ચે આકર્ષણ થાય છે, ૩. ચુંબકના બંને ધ્રુવો કાયમ જોડીમાં જ હોય છે.",
-    "optionB": "",
-    "optionC": "",
-    "optionD": "",
-    "correctAnswer": "A",
-    "explanation": ""
-  }
-]`;
-                                  navigator.clipboard.writeText(pr);
-                                  toast.success("Long Qs Prompt Copy completed! 📋");
-                                }}
-                                className="text-[9px] bg-teal-600 hover:bg-teal-700 text-white font-bold px-2 py-0.5 rounded-md transition"
-                              >
-                                Copy Long Qs Prompt ✨
-                              </button>
-                            </div>
-                            <textarea
-                              value={pastedLong}
-                              onChange={(e) => setPastedLong(e.target.value)}
-                              placeholder='લાંબા અને સવિસ્તાર પ્રશ્નોત્તરી JSON અહીં પેસ્ટ કરો...'
                               className="w-full h-24 p-2 bg-background rounded-xl border border-border text-[9px] font-mono outline-none focus:border-teal-500 leading-normal"
                             />
                           </div>
@@ -2395,8 +2479,8 @@ function AdminPanel() {
                                       </span>
                                     </td>
                                     <td className="p-4 max-w-[150px]">
-                                      <p className="truncate text-muted-foreground" title={c.description || "No summary of topics."}>
-                                        {c.description || "—"}
+                                      <p className="truncate text-muted-foreground" title={c.summaryText || "No audio summary."}>
+                                        {c.summaryText || "—"}
                                       </p>
                                     </td>
                                     <td className="p-4">
@@ -2421,6 +2505,8 @@ function AdminPanel() {
                                             setChapSummaryText(c.summaryText || "");
                                             setChapActive(c.active ?? (c.status !== "archived"));
                                             setChapStd(c.standard || "10");
+                                             const matchedSub = subjects.find(s => s.subjectId === c.subjectId);
+                                             setChapMedium(matchedSub?.medium || "Gujarati");
                                           }}
                                           className="p-1.5 border border-border rounded-xl text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/20 transition-all font-semibold"
                                           title="Edit"
@@ -2540,20 +2626,14 @@ function AdminPanel() {
                               setQuestType(t);
                               if (t === "TrueFalse") {
                                 setQuestCorrect("True");
-                              } else if (t === "MCQ" || t === "MatchFollowing") {
-                                setQuestCorrect("A");
                               } else {
-                                setQuestCorrect("");
+                                setQuestCorrect("A");
                               }
                             }}
                             className="w-full h-10 px-3 mt-1 bg-muted/40 rounded-xl border outline-none text-xs font-semibold"
                           >
                             <option value="MCQ">Multiple Choice (MCQ)</option>
                             <option value="TrueFalse">True or False</option>
-                            <option value="FillBlank">Fill in the Blanks</option>
-                            <option value="MatchFollowing">Match the Following</option>
-                            <option value="ShortAnswer">ટૂંકા પ્રશ્નો (Short Answer)</option>
-                            <option value="LongAnswer">લાંબા પ્રશ્નો (Long Answer)</option>
                           </select>
                         </div>
 

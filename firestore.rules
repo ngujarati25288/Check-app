@@ -127,7 +127,7 @@ service cloud.firestore {
              data.mandatory is bool &&
              data.apkUrl is string && data.apkUrl.size() <= 1000 &&
              data.releaseNotes is string && data.releaseNotes.size() <= 5000 &&
-             data.updatedAt == request.time;
+             data.updatedAt is timestamp;
     }
 
     // ----------------------------------------------------
@@ -163,8 +163,8 @@ service cloud.firestore {
         isCurrentUser(userId) &&
         isValidUser(incoming()) &&
         incoming().role == 'admin' &&
-        exists(/databases/$(database)/documents/users/$( "adm_" + incoming().mobile )) &&
-        get(/databases/$(database)/documents/users/$( "adm_" + incoming().mobile )).data.status in ['approved', 'Approved']
+        exists(path('/databases/' + database + '/documents/users/adm_' + incoming().mobile)) &&
+        get(path('/databases/' + database + '/documents/users/adm_' + incoming().mobile)).data.status in ['approved', 'Approved']
       );
         
       // Students can modify their non-identity fields. Admins and Super Admins can update any field.
@@ -281,6 +281,27 @@ service cloud.firestore {
 
       allow create, update: if isApproved() && 
                             isOwner(incoming().studentId);
+
+      allow delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /abhyas_completion/{recordId} {
+      allow read: if isApproved() && (
+        resource == null ||
+        isOwner(resource.data.studentId) || 
+        isAdmin() || 
+        isSuperAdmin()
+      );
+
+      allow create: if isApproved() && 
+                    isOwner(incoming().studentId) && 
+                    isValidId(incoming().chapterId);
+
+      allow update: if isApproved() && 
+                    isOwner(incoming().studentId) && 
+                    isOwner(existing().studentId) &&
+                    incoming().chapterId == existing().chapterId &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['completedAt', 'count']);
 
       allow delete: if isAdmin() || isSuperAdmin();
     }
@@ -535,6 +556,12 @@ service cloud.firestore {
     match /village_requests/{requestId} {
       allow read: if isAdmin() || isSuperAdmin();
       allow create: if isValidId(requestId) && isValidVillageRequest(incoming());
+      allow update, delete: if isAdmin() || isSuperAdmin();
+    }
+
+    match /subject_requests/{requestId} {
+      allow read: if isAdmin() || isSuperAdmin();
+      allow create: if isValidId(requestId) && isSignedIn();
       allow update, delete: if isAdmin() || isSuperAdmin();
     }
 

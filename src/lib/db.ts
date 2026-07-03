@@ -56,6 +56,7 @@ import {
   Village,
   SchoolRequest,
   VillageRequest,
+  SubjectRequest,
   ExamTemplate
 } from '../types';
 import * as initialMock from './mockData';
@@ -784,32 +785,155 @@ export const MasterDataRepository = {
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, path);
     }
+  },
+
+  async submitSubjectRequest(subjectName: string, standard: string, medium: string, requestedBy: string, requestedByName?: string): Promise<void> {
+    const requestId = "sub_req_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+    const request: SubjectRequest = {
+      requestId,
+      subjectName,
+      standard,
+      medium,
+      requestedBy,
+      requestedByName,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    const list = getLocalStorageKey<SubjectRequest[]>('subject_requests', []);
+    list.push(request);
+    setLocalStorageKey('subject_requests', list);
+
+    if (isFirebasePlaceholder) return;
+    const path = `subject_requests/${requestId}`;
+    try {
+      await setDoc(doc(db, 'subject_requests', requestId), {
+        ...request,
+        createdAt: serverTimestamp()
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, path);
+    }
+  },
+
+  async getSubjectRequests(): Promise<SubjectRequest[]> {
+    if (isFirebasePlaceholder) {
+      return getLocalStorageKey<SubjectRequest[]>('subject_requests', []);
+    }
+    try {
+      const snap = await getDocs(collection(db, 'subject_requests'));
+      const list: SubjectRequest[] = [];
+      snap.forEach(d => {
+        list.push(d.data() as SubjectRequest);
+      });
+      return list;
+    } catch (e) {
+      console.warn("Firestore getSubjectRequests failed:", e);
+      return getLocalStorageKey<SubjectRequest[]>('subject_requests', []);
+    }
+  },
+
+  async approveSubjectRequest(requestId: string): Promise<void> {
+    const localRequests = getLocalStorageKey<SubjectRequest[]>('subject_requests', []);
+    const reqIndex = localRequests.findIndex(r => r.requestId === requestId);
+    let subjectName = "";
+    let standard = "";
+    let medium = "";
+    if (reqIndex !== -1) {
+      localRequests[reqIndex].status = 'approved';
+      subjectName = localRequests[reqIndex].subjectName;
+      standard = localRequests[reqIndex].standard;
+      medium = localRequests[reqIndex].medium;
+      setLocalStorageKey('subject_requests', localRequests);
+    }
+
+    if (isFirebasePlaceholder) {
+      if (subjectName && standard && medium) {
+        const subId = `gseb_${medium.toLowerCase()}_std${standard}_${subjectName.replace(/\s+/g, '').toLowerCase()}`;
+        const newSub: Subject = {
+          subjectId: subId,
+          subjectName,
+          standard,
+          medium,
+          active: true,
+          status: "active",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          description: `Special Subject added by Super Admin request`
+        };
+        await AdminRepository.createSubject("super_admin", "Super Admin", newSub);
+      }
+      return;
+    }
+
+    try {
+      if (!subjectName) {
+        const docSnap = await getDocs(collection(db, 'subject_requests'));
+        docSnap.forEach(doc => {
+          const data = doc.data() as SubjectRequest;
+          if (data.requestId === requestId) {
+            subjectName = data.subjectName;
+            standard = data.standard;
+            medium = data.medium;
+          }
+        });
+      }
+
+      await updateDoc(doc(db, 'subject_requests', requestId), {
+        status: 'approved',
+        updatedAt: serverTimestamp()
+      });
+
+      if (subjectName && standard && medium) {
+        const subId = `gseb_${medium.toLowerCase()}_std${standard}_${subjectName.replace(/\s+/g, '').toLowerCase()}`;
+        const newSub: Subject = {
+          subjectId: subId,
+          subjectName,
+          standard,
+          medium,
+          active: true,
+          status: "active",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          description: `Special Subject added by Super Admin request`
+        };
+        await AdminRepository.createSubject("super_admin", "Super Admin", newSub);
+      }
+    } catch (e) {
+      console.error("Approve subject request error:", e);
+      handleFirestoreError(e, OperationType.UPDATE, `subject_requests/${requestId}`);
+    }
+  },
+
+  async rejectSubjectRequest(requestId: string): Promise<void> {
+    const localRequests = getLocalStorageKey<SubjectRequest[]>('subject_requests', []);
+    const reqIndex = localRequests.findIndex(r => r.requestId === requestId);
+    if (reqIndex !== -1) {
+      localRequests[reqIndex].status = 'rejected';
+      setLocalStorageKey('subject_requests', localRequests);
+    }
+
+    if (isFirebasePlaceholder) return;
+    const path = `subject_requests/${requestId}`;
+    try {
+      await updateDoc(doc(db, 'subject_requests', requestId), {
+        status: 'rejected',
+        updatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, path);
+    }
   }
 };
 
 export const SubjectRepository = {
-  async getSubjects(standard: string): Promise<Subject[]> {
-    if (isFirebasePlaceholder) {
-      const list = getLocalStorageKey<Subject[]>('subjects', []);
-      return list.filter(s => s.standard === standard && s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
+  async getSubjects(standard: string, medium?: string): Promise<Subject[]> {
+    const all = await AdminRepository.getAllSubjects();
+    let filtered = all.filter(s => s.standard === standard);
+    if (medium) {
+      filtered = filtered.filter(s => !s.medium || s.medium === medium);
     }
-    const path = 'subjects';
-    try {
-      const q = query(collection(db, 'subjects'), where('standard', '==', standard));
-      const snaps = await getDocs(q);
-      const res: Subject[] = [];
-      snaps.forEach(d => {
-        const s = d.data() as Subject;
-        if (s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3") {
-          res.push(s);
-        }
-      });
-      return res;
-    } catch (e) {
-      console.warn("Firestore subjects query failed, using localStorage cache.");
-      const list = getLocalStorageKey<Subject[]>('subjects', []);
-      return list.filter(s => s.standard === standard && s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
-    }
+    return filtered;
   }
 };
 
@@ -840,23 +964,35 @@ export const ChapterRepository = {
   async markAbhyasCompleted(studentId: string, chapterId: string): Promise<void> {
     const recordId = `${studentId}_${chapterId}`;
     const timestamp = new Date().toISOString();
-    const payload = { studentId, chapterId, completedAt: timestamp };
-
+    
+    let existingCount = 0;
     if (isFirebasePlaceholder) {
       const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
-      records[recordId] = payload;
+      if (records[recordId]) {
+        existingCount = records[recordId].count || 1;
+      }
+      records[recordId] = { studentId, chapterId, completedAt: timestamp, count: existingCount + 1 };
       setLocalStorageKey('abhyas_completion', records);
       return;
     }
     
+    const path = `abhyas_completion/${recordId}`;
     try {
+      const docSnap = await getDoc(doc(db, 'abhyas_completion', recordId));
+      if (docSnap.exists()) {
+        existingCount = docSnap.data().count || 1;
+      }
+    } catch (e) {
+      console.error("Firebase save abhyas completion read error:", e);
+      handleFirestoreError(e, OperationType.GET, path);
+    }
+
+    try {
+      const payload = { studentId, chapterId, completedAt: timestamp, count: existingCount + 1 };
       await setDoc(doc(db, 'abhyas_completion', recordId), payload, { merge: true });
     } catch (e) {
-      console.error("Firebase save abhyas completion error:", e);
-      // fallback
-      const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
-      records[recordId] = payload;
-      setLocalStorageKey('abhyas_completion', records);
+      console.error("Firebase save abhyas completion write error:", e);
+      handleFirestoreError(e, OperationType.CREATE, path);
     }
   },
 
@@ -866,6 +1002,7 @@ export const ChapterRepository = {
       const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
       return !!records[recordId];
     }
+    const path = `abhyas_completion/${recordId}`;
     try {
       const docSnap = await getDoc(doc(db, 'abhyas_completion', recordId));
       if (docSnap.exists()) {
@@ -876,8 +1013,61 @@ export const ChapterRepository = {
       return !!records[recordId];
     } catch (e) {
       console.error("Firebase get abhyas completion error:", e);
+      handleFirestoreError(e, OperationType.GET, path);
+      return false;
+    }
+  },
+
+  async getStudentAbhyasCompletions(studentId: string): Promise<any[]> {
+    if (isFirebasePlaceholder) {
       const records = getLocalStorageKey<Record<string, any>>('abhyas_completion', {});
-      return !!records[recordId];
+      return Object.values(records).filter((r: any) => r.studentId === studentId);
+    }
+    const path = 'abhyas_completion';
+    try {
+      const q = query(collection(db, 'abhyas_completion'), where('studentId', '==', studentId));
+      const snaps = await getDocs(q);
+      const res: any[] = [];
+      snaps.forEach(d => {
+        res.push(d.data());
+      });
+      return res;
+    } catch (e) {
+      console.error("Firebase get abhyas completions error:", e);
+      handleFirestoreError(e, OperationType.GET, path);
+      return [];
+    }
+  },
+
+  async getAllChaptersInSystem(): Promise<Chapter[]> {
+    if (isFirebasePlaceholder) {
+      return getLocalStorageKey<Chapter[]>('chapters', []);
+    }
+    try {
+      const snaps = await getDocs(collection(db, 'chapters'));
+      const res: Chapter[] = [];
+      snaps.forEach(d => {
+        res.push(d.data() as Chapter);
+      });
+      return res;
+    } catch (e) {
+      return getLocalStorageKey<Chapter[]>('chapters', []);
+    }
+  },
+
+  async getAllSubjectsInSystem(): Promise<Subject[]> {
+    if (isFirebasePlaceholder) {
+      return getLocalStorageKey<Subject[]>('subjects', []);
+    }
+    try {
+      const snaps = await getDocs(collection(db, 'subjects'));
+      const res: Subject[] = [];
+      snaps.forEach(d => {
+        res.push(d.data() as Subject);
+      });
+      return res;
+    } catch (e) {
+      return getLocalStorageKey<Subject[]>('subjects', []);
     }
   }
 };
@@ -2954,9 +3144,74 @@ export const AdminRepository = {
 
   // Subjects Management
   async getAllSubjects(): Promise<Subject[]> {
+    const seedStandardSubjects = async (): Promise<Subject[]> => {
+      const seeded: Subject[] = [];
+      const mediums = ["Gujarati", "English"];
+      
+      for (const med of mediums) {
+        for (let stdNum = 1; stdNum <= 10; stdNum++) {
+          const std = String(stdNum);
+          let subjectNames: string[] = [];
+          
+          if (med === "Gujarati") {
+            if (stdNum <= 5) {
+              subjectNames = ["ગુજરાતી", "ગણિત", "પર્યાવરણ", "અંગ્રેજી"];
+            } else {
+              subjectNames = ["ગણિત", "વિજ્ઞાન", "સામાજિક વિજ્ઞાન", "ગુજરાતી", "અંગ્રેજી", "હિન્દી", "સંસ્કૃત"];
+            }
+          } else {
+            if (stdNum <= 5) {
+              subjectNames = ["English", "Mathematics", "Environmental Studies", "Gujarati"];
+            } else {
+              subjectNames = ["Mathematics", "Science", "Social Science", "English", "Gujarati", "Hindi", "Sanskrit"];
+            }
+          }
+
+          for (const name of subjectNames) {
+            const subId = `gseb_${med.toLowerCase()}_std${std}_${name.replace(/\s+/g, '').toLowerCase()}`;
+            seeded.push({
+              subjectId: subId,
+              subjectName: name,
+              standard: std,
+              medium: med,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              active: true,
+              status: "active",
+              description: `GSEB Main Subject - Std ${std} (${med} Medium)`
+            });
+          }
+        }
+      }
+
+      if (isFirebasePlaceholder) {
+        setLocalStorageKey('subjects', seeded);
+      } else {
+        try {
+          const { writeBatch, doc } = await import('firebase/firestore');
+          const batch = writeBatch(db);
+          for (const sub of seeded) {
+            batch.set(doc(db, 'subjects', sub.subjectId), {
+              ...sub,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+          }
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to seed subjects into Firestore: ", e);
+        }
+      }
+      return seeded;
+    };
+
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Subject[]>('subjects', []);
-      return list.filter(s => s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
+      const filtered = list.filter(s => s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
+      if (filtered.length === 0) {
+        return await seedStandardSubjects();
+      }
+      return filtered;
     }
     try {
       const snaps = await getDocs(collection(db, 'subjects'));
@@ -2967,6 +3222,9 @@ export const AdminRepository = {
           res.push(s);
         }
       });
+      if (res.length === 0) {
+        return await seedStandardSubjects();
+      }
       return res;
     } catch (e) {
       console.error("Failed to fetch all subjects:", e);
@@ -3052,10 +3310,20 @@ export const AdminRepository = {
   },
 
   async createChapter(adminId: string, adminName: string, chapter: Chapter): Promise<void> {
+    const chapters = await this.getAllChapters();
+    const duplicate = chapters.find(c => 
+      c.subjectId === chapter.subjectId && 
+      (c.chapterName.trim().toLowerCase() === chapter.chapterName.trim().toLowerCase() || 
+       Number(c.chapterNo) === Number(chapter.chapterNo))
+    );
+    if (duplicate) {
+      throw new Error("અગાઉનો ડેટા દૂર કરવા માટે સુપર એડમિનનો સંપર્ક કરો (Contact Super Admin for old data remove)");
+    }
+
     if (isFirebasePlaceholder) {
-      const chapters = await this.getAllChapters();
-      chapters.push({ ...chapter, status: 'active' });
-      setLocalStorageKey('chapters', chapters);
+      const list = getLocalStorageKey<Chapter[]>('chapters', []);
+      list.push({ ...chapter, status: 'active' });
+      setLocalStorageKey('chapters', list);
       await this.addAuditLog(adminId, adminName, "Chapter Created", chapter.chapterId);
       return;
     }
@@ -3869,6 +4137,129 @@ export const SuperAdminRepository = {
     } catch (e) {
       console.error("Failed to save security breach: ", e);
     }
+  },
+
+  // System Wipe / Clean Slate Preparedness
+  async wipeSystemData(operatorUid: string, options: { wipeSyllabus: boolean; wipeUsers: boolean }): Promise<{
+    isPlaceholder: boolean;
+    results: { name: string; count: number; deleted: number; error?: string }[];
+  }> {
+    const results: { name: string; count: number; deleted: number; error?: string }[] = [];
+
+    const batchDeletes = async (collectionName: string) => {
+      if (isFirebasePlaceholder) {
+        if (collectionName === 'users') {
+          const list = getLocalStorageKey<DBUser[]>('users', []);
+          const kept = list.filter(u => u.uid === operatorUid);
+          setLocalStorageKey('users', kept);
+          results.push({ name: collectionName, count: list.length, deleted: list.length - kept.length });
+        } else {
+          const list = getLocalStorageKey<any[]>(collectionName, []);
+          setLocalStorageKey(collectionName, []);
+          results.push({ name: collectionName, count: list.length, deleted: list.length });
+        }
+        return;
+      }
+      try {
+        const snaps = await getDocs(collection(db, collectionName));
+        const count = snaps.size;
+        let deleted = 0;
+        
+        const docs = snaps.docs.filter(docSnap => !(collectionName === 'users' && docSnap.id === operatorUid));
+        
+        // Process in small batches of 25 to avoid saturating connections or hitting write rate limits
+        const batchSize = 25;
+        for (let i = 0; i < docs.length; i += batchSize) {
+          const chunk = docs.slice(i, i + batchSize);
+          await Promise.all(
+            chunk.map(async (docSnap) => {
+              try {
+                await deleteDoc(doc(db, collectionName, docSnap.id));
+                deleted++;
+              } catch (e: any) {
+                console.error(`Failed to delete doc ${docSnap.id} from ${collectionName}:`, e);
+              }
+            })
+          );
+        }
+        
+        results.push({ name: collectionName, count, deleted });
+      } catch (err: any) {
+        console.error(`Wiping ${collectionName} failed:`, err);
+        results.push({ name: collectionName, count: -1, deleted: 0, error: err?.message || String(err) });
+      }
+    };
+
+    // 1. Clear core transient/historical/ranking/analytical/achievement collections (always cleared)
+    const collectionsToWipe = [
+      'abhyas_completion',
+      'exam_results',
+      'student_mistakes',
+      'student_failures',
+      'student_points',
+      'achievements',
+      'user_achievements',
+      'leaderboard',
+      'leaderboard_daily',
+      'leaderboard_weekly',
+      'leaderboard_monthly',
+      'leaderboard_alltime',
+      'subject_leaderboards',
+      'topPerformers',
+      'student_analytics',
+      'revision_progress',
+      'revision_analytics',
+      'subject_analytics',
+      'chapter_analytics',
+      'question_analytics',
+      'school_analytics',
+      'village_analytics',
+      'standard_analytics',
+      'learning_trends',
+      'analytics_reports',
+      'notification_history',
+      'announcements',
+      'notifications',
+      'school_requests',
+      'village_requests',
+      'subject_requests',
+      'daily_exams',
+      'exam_templates',
+      'scheduled_exams',
+      'admin_audit_logs',
+      'leaderboard_audit_logs'
+    ];
+
+    for (const coll of collectionsToWipe) {
+      await batchDeletes(coll);
+    }
+
+    // 2. Conditionally clear syllabus content (subjects, chapters, questions)
+    if (options.wipeSyllabus) {
+      await batchDeletes('subjects');
+      await batchDeletes('chapters');
+      await batchDeletes('questions');
+    }
+
+    // 3. Conditionally clear user base (except current super admin)
+    if (options.wipeUsers) {
+      await batchDeletes('users');
+    }
+
+    // Log this action to security logs
+    await this.addSecurityLog({
+      eventType: "config_change",
+      userId: operatorUid,
+      userName: "Super Admin",
+      userRole: "super_admin",
+      ipAddress: "System Admin API",
+      details: `DATABASE_WIPE: All user state reset. Syllabus deleted: ${options.wipeSyllabus}, Users deleted: ${options.wipeUsers}. Results: ${JSON.stringify(results)}`
+    });
+
+    return {
+      isPlaceholder: isFirebasePlaceholder,
+      results
+    };
   }
 };
 

@@ -33,6 +33,11 @@ export const translations: TranslationDictionary = {
     English: "Leaderboard",
     Hindi: "रैंकिंग"
   },
+  "nav_abhyas": {
+    Gujarati: "અભ્યાસ",
+    English: "Abhyas",
+    Hindi: "अभ्यास"
+  },
   "nav_profile": {
     Gujarati: "પ્રોફાઇલ",
     English: "Profile",

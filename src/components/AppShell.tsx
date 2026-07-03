@@ -1,6 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Home, FileText, RotateCcw, Trophy, User, Bell, ArrowLeft, Construction, ShieldAlert, Phone } from "lucide-react";
+import { Home, FileText, RotateCcw, Trophy, User, Bell, ArrowLeft, Construction, ShieldAlert, Phone, BookOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import { initSettings } from "@/lib/settings";
 import { useAuth } from "./FirebaseProvider";
@@ -33,7 +33,7 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
     ] : [
       { to: "/exam-today", label: t("nav_exam", user?.medium), icon: FileText },
       { to: "/revision", label: t("nav_revision", user?.medium), icon: RotateCcw },
-      { to: "/leaderboard", label: t("nav_leaderboard", user?.medium), icon: Trophy },
+      { to: "/abhyas", label: t("nav_abhyas", user?.medium) || "અભ્યાસ", icon: BookOpen },
     ]),
     { to: "/profile", label: t("nav_profile", user?.medium), icon: User },
   ];
@@ -136,16 +136,28 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
                   </div>
                 )}
               </div>
-              {showBell && (
-                <Link
-                  to="/notifications"
-                  aria-label="Notifications"
-                  className="size-10 rounded-full flex items-center justify-center hover:bg-muted transition relative"
-                >
-                  <Bell className="size-5" />
-                  <span className="absolute top-2 right-2 size-2 rounded-full bg-destructive" />
-                </Link>
-              )}
+              <div className="flex items-center gap-1">
+                {user?.role !== "admin" && user?.role !== "super_admin" && (
+                  <Link
+                    to="/leaderboard"
+                    aria-label="Leaderboard"
+                    className="size-10 rounded-full flex items-center justify-center hover:bg-muted transition text-amber-500 hover:text-amber-600"
+                    title="રેન્કિંગ / Leaderboard"
+                  >
+                    <Trophy className="size-5 fill-amber-400/15" />
+                  </Link>
+                )}
+                {showBell && (
+                  <Link
+                    to="/notifications"
+                    aria-label="Notifications"
+                    className="size-10 rounded-full flex items-center justify-center hover:bg-muted transition relative"
+                  >
+                    <Bell className="size-5" />
+                    <span className="absolute top-2 right-2 size-2 rounded-full bg-destructive" />
+                  </Link>
+                )}
+              </div>
             </div>
           </header>
         )}

@@ -159,6 +159,18 @@ function SuperAdminLayout() {
   const [updReleaseNotes, setUpdReleaseNotes] = useState("");
   const [isSavingUpdateSettings, setIsSavingUpdateSettings] = useState(false);
 
+  // System Reset (Wipe) States
+  const [wipeSyllabus, setWipeSyllabus] = useState(false);
+  const [wipeUsers, setWipeUsers] = useState(false);
+  const [showWipeModal, setShowWipeModal] = useState(false);
+  const [wipeConfirmationText, setWipeConfirmationText] = useState("");
+  const [isWiping, setIsWiping] = useState(false);
+  const [wipeReport, setWipeReport] = useState<{
+    isPlaceholder: boolean;
+    results: { name: string; count: number; deleted: number; error?: string }[];
+  } | null>(null);
+  const [showWipeReportModal, setShowWipeReportModal] = useState(false);
+
   // Leaderboard Custom States
   const [leaderboardLogs, setLeaderboardLogs] = useState<any[]>([]);
   const [isLeaderboardSyncing, setIsLeaderboardSyncing] = useState(false);
@@ -535,6 +547,42 @@ function SuperAdminLayout() {
       toast.error(err.message || "Failed to save app update configuration.");
     } finally {
       setIsSavingUpdateSettings(false);
+    }
+  };
+
+  const handleWipeSystem = async () => {
+    if (!user) return;
+    if (wipeConfirmationText.trim().toUpperCase() !== "WIPE") {
+      toast.error("પુષ્ટિ કરવા માટે કૃપા કરીને સાચો કીવર્ડ 'WIPE' ટાઈપ કરો.");
+      return;
+    }
+
+    try {
+      setIsWiping(true);
+      const report = await SuperAdminRepository.wipeSystemData(user.uid, {
+        wipeSyllabus,
+        wipeUsers
+      });
+      
+      await SuperAdminRepository.addSecurityLog({
+        eventType: "config_change",
+        userId: user.uid,
+        userName: user.fullName || "Super Admin",
+        userRole: "super_admin",
+        details: `સંપૂર્ણ સિસ્ટમ રીસેટ પ્રક્રિયા સફળતાપૂર્વક પૂર્ણ થઈ. (Syllabus: ${wipeSyllabus}, Users: ${wipeUsers})`
+      });
+
+      setWipeReport(report);
+      setShowWipeModal(false);
+      setWipeConfirmationText("");
+      setShowWipeReportModal(true);
+      toast.success("સિસ્ટમ સાફ કરવાની પ્રક્રિયા પૂર્ણ થઈ છે!");
+      loadData();
+    } catch (err: any) {
+      console.error("System wipe error:", err);
+      toast.error(`સિસ્ટમ સાફ કરવામાં ભૂલ આવી: ${err.message || String(err)}`);
+    } finally {
+      setIsWiping(false);
     }
   };
 
@@ -1017,6 +1065,179 @@ function SuperAdminLayout() {
                           </div>
                         ))
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* SYSTEM RESET CONFIRMATION MODAL */}
+              {showWipeModal && (
+                <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+                  <div className="bg-card border-2 border-destructive/30 rounded-3xl p-6 max-w-sm w-full space-y-5 shadow-2xl animate-[scale-in_0.3s_ease-out] text-left">
+                    <div className="flex justify-between items-center pb-2 border-b border-border">
+                      <div className="flex items-center gap-2 text-destructive font-gu">
+                        <AlertTriangle className="size-5 animate-pulse" />
+                        <h4 className="font-extrabold text-sm uppercase">અતિ મહત્વપૂર્ણ ચેતવણી</h4>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowWipeModal(false);
+                          setWipeConfirmationText("");
+                        }}
+                        className="size-8 bg-muted rounded-full flex items-center justify-center text-muted-foreground"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-xs text-foreground/90 font-bold leading-relaxed font-gu">
+                        આ પ્રક્રિયા સમગ્ર એપ્લિકેશનમાંથી વિદ્યાર્થીઓનો તમામ રેકોર્ડ, પરિણામો, પુનરાવર્તન અને સ્ટ્રીક ડેટા કાયમી ધોરણે <b>ડીલીટ (DELETE)</b> કરી નાખશે.
+                      </p>
+                      
+                      {wipeSyllabus && (
+                        <p className="p-2.5 bg-destructive/10 text-destructive text-[11px] font-bold rounded-xl font-gu">
+                          ⚠️ આપે <b>'અભ્યાસક્રમ અને પ્રશ્ન સંગ્રહ'</b> વાઇપ કરવાનું પસંદ કર્યું છે, તેથી બધા જ વિષયો, ચેપ્ટરો અને પ્રશ્નો ભૂંસાઈ જશે!
+                        </p>
+                      )}
+
+                      {wipeUsers && (
+                        <p className="p-2.5 bg-destructive/10 text-destructive text-[11px] font-bold rounded-xl font-gu">
+                          ⚠️ આપે <b>'તમામ યુઝર્સ અને પ્રોફાઇલ્સ'</b> વાઇપ કરવાનું પસંદ કર્યું છે, તેથી આપના સિવાય તમામ વિદ્યાર્થીઓ અને શિક્ષકો લોગઆઉટ થઈ જશે!
+                        </p>
+                      )}
+
+                      <div className="bg-muted/50 p-3 rounded-2xl border border-border text-[11px] font-medium leading-relaxed text-muted-foreground font-gu">
+                        તમે લોગ ઈન કરેલ સુપર એડમિન હોવાથી તમારો પોતાનો એક્સેસ સુરક્ષિત રહેશે જેથી આપ સિસ્ટમ નવેસરથી લોન્ચ કરી શકો.
+                      </div>
+
+                      <div className="space-y-2 pt-1">
+                        <label className="text-[10px] font-black uppercase text-muted-foreground tracking-wider block">
+                          પુષ્ટિ કરવા માટે નીચે <b>WIPE</b> લખો (Type WIPE to confirm):
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="WIPE"
+                          value={wipeConfirmationText}
+                          onChange={(e) => setWipeConfirmationText(e.target.value)}
+                          className="w-full h-11 bg-muted border-2 border-destructive/20 focus:border-destructive rounded-2xl px-3 text-sm font-bold text-center tracking-widest uppercase focus:outline-none focus:ring-0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowWipeModal(false);
+                          setWipeConfirmationText("");
+                        }}
+                        className="h-11 rounded-2xl bg-muted hover:bg-muted/70 text-xs font-bold text-center font-gu transition active:scale-95"
+                      >
+                        રદ કરો (Cancel)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleWipeSystem}
+                        disabled={isWiping || wipeConfirmationText.trim().toUpperCase() !== "WIPE"}
+                        className="h-11 rounded-2xl bg-destructive hover:bg-destructive/90 text-white text-xs font-extrabold text-center font-gu flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-40 cursor-pointer"
+                      >
+                        {isWiping ? (
+                          <>
+                            <Loader2 className="size-3.5 animate-spin" />
+                            વાઇપિંગ...
+                          </>
+                        ) : (
+                          "વાઇપ ડેટા (Wipe)"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SYSTEM WIPE DETAILED REPORT MODAL */}
+              {showWipeReportModal && wipeReport && (
+                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+                  <div className="bg-card border border-border rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl animate-[scale-in_0.3s_ease-out]">
+                    <div className="flex justify-between items-center pb-2 border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="size-5 text-emerald-500" />
+                        <h4 className="font-extrabold text-sm uppercase font-gu text-emerald-500">વાઇપ ડેટા પરિણામ રિપોર્ટ (Wipe Report)</h4>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowWipeReportModal(false);
+                          setWipeReport(null);
+                        }}
+                        className="size-8 bg-muted rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted/80 transition"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center bg-muted/40 p-3 rounded-xl border border-border">
+                        <span className="text-xs font-bold text-muted-foreground font-gu">ડેટાબેઝ મોડ (Database Mode):</span>
+                        {wipeReport.isPlaceholder ? (
+                          <span className="px-2.5 py-1 text-[10px] font-black bg-amber-500/10 text-amber-500 rounded-full uppercase tracking-wider">
+                            MOCK / LOCAL STORAGE
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 text-[10px] font-black bg-emerald-500/10 text-emerald-500 rounded-full uppercase tracking-wider">
+                            LIVE CLOUD FIRESTORE
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-muted-foreground font-gu">
+                        નીચે તમામ કલેક્શનની સાફ-સફાઈ અને રદ કરાયેલ ડેટાની વિગતો દર્શાવેલ છે:
+                      </div>
+
+                      <div className="max-h-60 overflow-y-auto border border-border rounded-2xl bg-muted/20 divide-y divide-border">
+                        {wipeReport.results.map((res, idx) => {
+                          const isSuccess = !res.error;
+                          return (
+                            <div key={idx} className="p-3 flex justify-between items-center text-xs">
+                              <div className="space-y-0.5">
+                                <span className="font-mono font-semibold text-foreground/90">{res.name}</span>
+                                {res.error && (
+                                  <div className="text-[10px] text-destructive font-semibold font-mono leading-tight">
+                                    Error: {res.error}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted-foreground font-medium">
+                                  {res.count === -1 ? "Error" : `${res.count} items found`}
+                                </span>
+                                {isSuccess ? (
+                                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-500/10 text-emerald-500">
+                                    -{res.deleted} deleted
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-destructive/10 text-destructive">
+                                    Failed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowWipeReportModal(false);
+                          setWipeReport(null);
+                        }}
+                        className="w-full h-11 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold text-center font-gu transition active:scale-95"
+                      >
+                        રિપોર્ટ બંધ કરો (Close)
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1798,6 +2019,86 @@ function SuperAdminLayout() {
                   </button>
                 </div>
               </div>
+
+              {/* SYSTEM RESET / NEW APP LAUNCH CARD */}
+              <div className="bg-card border border-destructive/20 rounded-3xl p-5 shadow-sm space-y-5">
+                <div className="flex items-center gap-2 text-left">
+                  <span className="p-1.5 rounded-xl bg-destructive/10 text-destructive">
+                    <Trash className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm text-destructive uppercase">SYSTEM RESET & NEW LAUNCH</h3>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold">સિસ્ટમ ક્લીન અપ અને નવી સજ્જતા</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-left font-gu">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    નવી શૈક્ષણિક ટર્મ શરૂ કરવા માટે અથવા નવી એપ્લિકેશન લોન્ચ કરવા માટે જૂનો તમામ વિદ્યાર્થીઓનો ડેટા સાફ કરો. નીચે આપેલ ઓપ્શન્સ કાળજીપૂર્વક પસંદ કરો:
+                  </p>
+
+                  <div className="space-y-3 bg-muted/40 p-4 rounded-3xl border border-border text-xs">
+                    {/* Syllabus Wipe Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div className="pr-3">
+                        <p className="font-black text-foreground">વિષય અને પ્રશ્ન બેંક વાઇપ કરો (Wipe Syllabus)</p>
+                        <p className="text-[10px] text-muted-foreground">તમામ સબ્જેક્ટ, ચેપ્ટર અને ક્વેશ્ચન સંગ્રહ કાયમી ડીલીટ થશે.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWipeSyllabus((prev) => !prev);
+                          sfx.tap();
+                        }}
+                        className={`w-11 h-6 rounded-full p-0.5 flex items-center shrink-0 transition duration-300 focus:outline-none ${
+                          wipeSyllabus ? "bg-destructive justify-end" : "bg-muted-foreground/30 justify-start"
+                        }`}
+                      >
+                        <span className="size-5 rounded-full bg-card shadow-md" />
+                      </button>
+                    </div>
+
+                    <hr className="border-border/60" />
+
+                    {/* Users Wipe Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div className="pr-3">
+                        <p className="font-black text-foreground">તમામ વિદ્યાર્થી અને સ્ટાફ એકાઉન્ટ વાઇપ કરો (Wipe Accounts)</p>
+                        <p className="text-[10px] text-muted-foreground">આપના પોતાના સુપર એડમિન સિવાયના તમામ એકાઉન્ટ ડીલીટ કરો.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWipeUsers((prev) => !prev);
+                          sfx.tap();
+                        }}
+                        className={`w-11 h-6 rounded-full p-0.5 flex items-center shrink-0 transition duration-300 focus:outline-none ${
+                          wipeUsers ? "bg-destructive justify-end" : "bg-muted-foreground/30 justify-start"
+                        }`}
+                      >
+                        <span className="size-5 rounded-full bg-card shadow-md" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-warning-soft border border-warning/20 rounded-2xl text-[10px] text-warning-foreground leading-relaxed">
+                    💡 <b>નોંધ:</b> વિદ્યાર્થીઓની પ્રગતિ, એક્ઝામ રિઝલ્ટ્સ, ભૂલો અને નોટિફિકેશન ઇતિહાસ <b>હમેશા સંપૂર્ણ ક્લીન થશે</b>. માત્ર ક્વેશ્ચન બેંક અને પ્રોફાઇલ્સ રાખવી કે નહીં તે ઉપરથી નક્કી કરી શકાશે.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sfx.tap();
+                      setShowWipeModal(true);
+                    }}
+                    className="w-full h-11 rounded-2xl bg-destructive text-white font-extrabold flex items-center justify-center gap-2 shadow-sm text-xs uppercase hover:bg-destructive/95 transition active:scale-98 cursor-pointer"
+                  >
+                    <AlertTriangle className="size-4" />
+                    સિસ્ટમ સંપૂર્ણ ક્લીન કરો (Wipe System Data)
+                  </button>
+                </div>
+              </div>
+
             </div>
           )}
 
