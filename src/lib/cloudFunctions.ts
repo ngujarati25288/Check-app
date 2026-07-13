@@ -283,9 +283,22 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
       }
     });
 
-    const revisionAccuracy = totalRevisions > 0 
-      ? Math.round((totalCorrectRevisions / totalRevisions) * 100) 
-      : 0;
+    let revisionAccuracy = 0;
+    let masteryRate = 0;
+
+    if (studentExams.length > 0) {
+      if (studentMistakes.length === 0) {
+        // Perfect student with 0 mistakes gets full points for revision & mastery
+        revisionAccuracy = 100;
+        masteryRate = 100;
+      } else {
+        revisionAccuracy = totalRevisions > 0 
+          ? Math.round((totalCorrectRevisions / totalRevisions) * 100) 
+          : 0;
+        // Mastery is the ratio of mastered mistakes out of total mistakes made
+        masteryRate = Math.round((masteredCount / studentMistakes.length) * 100);
+      }
+    }
 
     // C. Achievements Count (10% weight)
     const studentAchievements = allAchievements.filter(
@@ -306,7 +319,7 @@ export async function calculateLeaderboardForSpan(span: "daily" | "weekly" | "mo
     // Calculate Formula:
     const examScore = avgExamPct * 0.5;
     const revisionScore = revisionAccuracy * 0.2;
-    const masteryScore = Math.min((masteredCount / 50) * 100, 100) * 0.2;
+    const masteryScore = (masteryRate / 100) * 20; // Max 20 points
     const achievementScore = Math.min((achievementsCount / 10) * 100, 100) * 0.1;
 
     const rankingScore = parseFloat((examScore + revisionScore + masteryScore + achievementScore).toFixed(2));

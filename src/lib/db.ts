@@ -57,7 +57,8 @@ import {
   SchoolRequest,
   VillageRequest,
   SubjectRequest,
-  ExamTemplate
+  ExamTemplate,
+  SupportMessage
 } from '../types';
 import * as initialMock from './mockData';
 
@@ -4260,6 +4261,41 @@ export const SuperAdminRepository = {
       isPlaceholder: isFirebasePlaceholder,
       results
     };
+  }
+};
+
+export const SupportRepository = {
+  async submitMessage(
+    userId: string,
+    userName: string,
+    userEmail: string | undefined,
+    subject: string,
+    message: string
+  ): Promise<void> {
+    const messageId = "msg_" + Math.random().toString(36).substring(2, 11);
+    const msg: SupportMessage = {
+      messageId,
+      userId,
+      userName,
+      userEmail,
+      subject,
+      message,
+      createdAt: new Date().toISOString()
+    };
+
+    if (isFirebasePlaceholder) {
+      const list = getLocalStorageKey<SupportMessage[]>('support_messages', []);
+      list.push(msg);
+      setLocalStorageKey('support_messages', list);
+      return;
+    }
+
+    const path = `support_messages/${messageId}`;
+    try {
+      await setDoc(doc(db, 'support_messages', messageId), msg);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, path);
+    }
   }
 };
 

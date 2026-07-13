@@ -1,8 +1,9 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Home, FileText, RotateCcw, Trophy, User, Bell, ArrowLeft, Construction, ShieldAlert, Phone, BookOpen } from "lucide-react";
+import { Home, FileText, RotateCcw, Trophy, User, Bell, ArrowLeft, Construction, ShieldAlert, Phone, BookOpen, HelpCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { initSettings } from "@/lib/settings";
+import { HelpAndTour } from "./HelpAndTour";
 import { useAuth } from "./FirebaseProvider";
 import { SuperAdminRepository } from "@/lib/db";
 import { t } from "@/lib/translations";
@@ -22,6 +23,7 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
   const { user } = useAuth();
   const [maintenanceActive, setMaintenanceActive] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState("");
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const dynamicNavItems = [
     { to: "/dashboard", label: t("nav_home", user?.medium), icon: Home },
@@ -140,6 +142,7 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
                 {user?.role !== "admin" && user?.role !== "super_admin" && (
                   <Link
                     to="/leaderboard"
+                    id="tour-leaderboard-btn"
                     aria-label="Leaderboard"
                     className="size-10 rounded-full flex items-center justify-center hover:bg-muted transition text-amber-500 hover:text-amber-600"
                     title="રેન્કિંગ / Leaderboard"
@@ -150,12 +153,24 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
                 {showBell && (
                   <Link
                     to="/notifications"
+                    id="tour-notifications"
                     aria-label="Notifications"
                     className="size-10 rounded-full flex items-center justify-center hover:bg-muted transition relative"
                   >
                     <Bell className="size-5" />
                     <span className="absolute top-2 right-2 size-2 rounded-full bg-destructive" />
                   </Link>
+                )}
+                {user && (
+                  <button
+                    id="tour-help"
+                    onClick={() => setIsHelpOpen(true)}
+                    aria-label="Help & Tour"
+                    className="size-10 rounded-full flex items-center justify-center hover:bg-muted transition text-indigo-500 hover:text-indigo-600"
+                    title="મદદ અને માર્ગદર્શિકા / Help & Tour"
+                  >
+                    <HelpCircle className="size-5" />
+                  </button>
                 )}
               </div>
             </div>
@@ -195,6 +210,7 @@ export function AppShell({ children, title, titleGu, back, hideNav, showBell, cl
             </div>
           </nav>
         )}
+        <HelpAndTour isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       </div>
     </div>
   );

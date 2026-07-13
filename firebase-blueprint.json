@@ -938,6 +938,21 @@
         "count": { "type": "integer" }
       },
       "required": ["studentId", "chapterId", "completedAt", "count"]
+    },
+    "SupportMessage": {
+      "title": "Support Message",
+      "description": "User support and contact messages submitted to admin",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messageId", "userId", "userName", "subject", "message", "createdAt"]
     }
   },
   "firestore": {
@@ -1088,6 +1103,10 @@
     "/app_config/{configId}": {
       "schema": "AppUpdateSettings",
       "description": "App update configuration settings document"
+    },
+    "/support_messages/{messageId}": {
+      "schema": "SupportMessage",
+      "description": "Submitted help, tour, and general support inquiries to administrator"
     }
   }
 }

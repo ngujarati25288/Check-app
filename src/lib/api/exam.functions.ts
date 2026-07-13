@@ -886,7 +886,7 @@ export async function submitExamSecure({ data }: { data: SubmitExamInput }) {
 
   // Trigger Points & Achievements Securing
   try {
-    await awardPointsAndCheckAchievementsSecure(studentId, "exam");
+    await awardPointsAndCheckAchievementsSecure(studentId, "exam", percentage, { correctCount: correct, totalQuestions: masterQuestions.length });
     if (percentage >= 90) {
       await awardPointsAndCheckAchievementsSecure(studentId, "performance", percentage);
     }
@@ -1307,7 +1307,8 @@ export const ACHIEVEMENT_DEFINITIONS = buildAchievements();
 export async function awardPointsAndCheckAchievementsSecure(
   studentId: string, 
   actionType: "exam" | "revision" | "mastery" | "streak" | "performance", 
-  actionValue?: number
+  actionValue?: number,
+  additionalInfo?: { correctCount?: number; totalQuestions?: number }
 ) {
   const isPlaceholder = isFirebasePlaceholder;
 
@@ -1317,11 +1318,28 @@ export async function awardPointsAndCheckAchievementsSecure(
   let addMasteryPoints = 0;
 
   if (actionType === "exam") {
-    addExamPoints = 10;
+    // Base exam completion points
+    addExamPoints = 20;
+
+    // Award +15 points for each correct answer on the exam
+    const correctCount = additionalInfo?.correctCount || 0;
+    addExamPoints += correctCount * 15;
+
+    // Award generous performance bonuses for high scores
+    const percentage = actionValue !== undefined ? actionValue : 0;
+    if (percentage === 100) {
+      addExamPoints += 100; // Perfect score bonus
+    } else if (percentage >= 90) {
+      addExamPoints += 60;  // Outstanding score bonus
+    } else if (percentage >= 80) {
+      addExamPoints += 30;  // Excellent score bonus
+    } else if (percentage >= 70) {
+      addExamPoints += 10;  // Good score bonus
+    }
   } else if (actionType === "revision") {
     addRevisionPoints = 5;
   } else if (actionType === "mastery") {
-    addMasteryPoints = 20;
+    addMasteryPoints = 10; // Reduced from 20 to 10 to ensure bright students always outrank repeated mistake correction
   }
 
   // 2. Load or initialize student points

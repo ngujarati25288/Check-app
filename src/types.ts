@@ -543,6 +543,16 @@ export interface AppUpdateSettings {
   updatedAt: any;
 }
 
+export interface SupportMessage {
+  messageId: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+}
+
 
 
 

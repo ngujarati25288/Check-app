@@ -130,6 +130,17 @@ service cloud.firestore {
              data.updatedAt is timestamp;
     }
 
+    function isValidSupportMessage(data) {
+      return data.keys().hasAll(['messageId', 'userId', 'userName', 'subject', 'message', 'createdAt']) &&
+             (data.keys().size() == 6 || data.keys().size() == 7) &&
+             data.messageId is string && data.messageId.size() <= 128 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.userName is string && data.userName.size() <= 100 &&
+             data.subject is string && data.subject.size() <= 200 &&
+             data.message is string && data.message.size() <= 5000 &&
+             data.createdAt is string;
+    }
+
     // ----------------------------------------------------
     // 1. Users Profile Collection (Fully Hardened - ISO-Isolated)
     // ----------------------------------------------------
@@ -628,6 +639,14 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isSuperAdmin() && isValidId(configId) && isValidAppConfig(incoming());
       allow delete: if isSuperAdmin();
+    }
+
+    // ----------------------------------------------------
+    // 11. Support Messages (Create: Authenticated, Read/Write: Admins)
+    // ----------------------------------------------------
+    match /support_messages/{messageId} {
+      allow read, update, delete: if isAdmin() || isSuperAdmin();
+      allow create: if isSignedIn() && isValidId(messageId) && isValidSupportMessage(incoming());
     }
   }
 }

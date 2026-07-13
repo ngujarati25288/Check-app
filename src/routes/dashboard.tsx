@@ -404,7 +404,7 @@ function Dashboard() {
         </div>
 
         {/* PROGRESS HERO */}
-        <div className="rounded-3xl gradient-hero text-primary-foreground p-6 shadow-float relative overflow-hidden animate-[scale-in_0.45s_ease-out]">
+        <div id="tour-progress" className="rounded-3xl gradient-hero text-primary-foreground p-6 shadow-float relative overflow-hidden animate-[scale-in_0.45s_ease-out]">
           <div className="absolute -top-16 -right-12 size-56 rounded-full bg-white/10 blur-3xl" />
           <div className="absolute -bottom-20 -left-10 size-48 rounded-full bg-white/10 blur-3xl" />
           <div className="relative">
@@ -449,6 +449,7 @@ function Dashboard() {
         {leaderboardPos && (
           <Link
             to="/leaderboard"
+            id="tour-leaderboard-card"
             className="block rounded-3xl bg-card border border-border p-5 shadow-card relative overflow-hidden active:scale-[0.99] transition animate-[scale-in_0.4s_ease-out]"
           >
             <div className="absolute -top-6 -right-6 size-24 rounded-full bg-primary/10 blur-xl" />
@@ -497,6 +498,7 @@ function Dashboard() {
         {activeExam ? (
           <Link
             to="/exam-today"
+            id="tour-exam"
             className="block rounded-3xl bg-card border border-border p-5 shadow-card relative overflow-hidden active:scale-[0.99] transition animate-[slide-up_0.4s_ease-out]"
           >
             <div className="absolute top-0 right-0 size-28 bg-primary/10 rounded-full blur-2xl" />
@@ -558,7 +560,7 @@ function Dashboard() {
             </div>
           </Link>
         ) : (
-          <div className="rounded-3xl bg-card border border-border p-6 shadow-card text-center relative overflow-hidden animate-[slide-up_0.4s_ease-out]">
+          <div id="tour-exam" className="rounded-3xl bg-card border border-border p-6 shadow-card text-center relative overflow-hidden animate-[slide-up_0.4s_ease-out]">
             <p className="text-sm text-muted-foreground font-gu">
               {t("dash_no_exam_today", user?.medium)}
             </p>
@@ -568,6 +570,7 @@ function Dashboard() {
         {/* ABHYAS - SMART SELF LEARNING ENGINE */}
         <Link
           to="/abhyas"
+          id="tour-abhyas"
           className="block rounded-3xl bg-gradient-to-br from-indigo-500 via-primary to-purple-600 p-5 text-white shadow-float relative overflow-hidden active:scale-[0.99] transition animate-[slide-up_0.4s_ease-out]"
         >
           <div className="absolute top-0 right-0 size-28 bg-white/10 rounded-full blur-2xl" />
@@ -635,6 +638,7 @@ function Dashboard() {
         {/* REVISION PRIORITY */}
         <Link
           to="/revision"
+          id="tour-revision"
           className="block rounded-3xl bg-card border-2 border-warning/40 p-4 shadow-card relative overflow-hidden active:scale-[0.99] transition"
         >
           <div className="flex items-center gap-3">
