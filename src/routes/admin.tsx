@@ -1720,7 +1720,7 @@ function AdminPanel() {
                   <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
                     {/* Subject Form / Request Panel (4 cols on wide, 1 col otherwise) */}
                     <div className="space-y-6 xl:col-span-4">
-                      {user?.role === "super_admin" ? (
+                      {user?.role === "super_admin" || user?.role === "admin" ? (
                         <>
                           <div className="bg-card border border-border rounded-3xl p-6 shadow-sm space-y-4">
                             <div className="flex items-center justify-between">
