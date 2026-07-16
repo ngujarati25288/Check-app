@@ -53,6 +53,7 @@ export interface Subject {
   active?: boolean;
   updatedAt?: any;
   isDerived?: boolean;
+  isCustom?: boolean;
   medium?: string;
 }
 
@@ -69,6 +70,10 @@ export interface Chapter {
   updatedAt?: any;
   summaryText?: string;
   isDerived?: boolean;
+  createdByUid?: string;
+  ownerAdminId?: string;
+  createdBy?: string;
+  ownerAdminName?: string;
 }
 
 export interface Question {

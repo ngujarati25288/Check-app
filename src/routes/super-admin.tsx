@@ -33,6 +33,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { AdvancedAnalyticsDashboard } from "@/components/AdvancedAnalyticsDashboard";
 import { useAuth } from "@/components/FirebaseProvider";
+import { isFirebasePlaceholder } from "@/lib/firebase";
 import { SuperAdminRepository, AdminRepository, AnalyticsRepository, PointsRepository, MasterDataRepository } from "@/lib/db";
 import { 
   SuperAdminSettings, 
@@ -64,7 +65,7 @@ export const Route = createFileRoute("/super-admin")({
 
 function SuperAdminLayout() {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, firebaseUser, loading: authLoading } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
 
   const [activeTab, setActiveTab] = useState<
@@ -291,7 +292,9 @@ function SuperAdminLayout() {
   useEffect(() => {
     let active = true;
     if (!authLoading) {
-      if (!user?.uid) {
+      const isUnauthenticated = !isFirebasePlaceholder && !firebaseUser;
+      if (!user?.uid || isUnauthenticated) {
+        console.warn("Stale super-admin session detected. Redirecting to login...");
         navigate({ to: "/login" });
       } else if (isSuperAdmin) {
         if (!dataLoaded) {
@@ -322,7 +325,7 @@ function SuperAdminLayout() {
     return () => {
       active = false;
     };
-  }, [user?.uid, user?.role, authLoading, isSuperAdmin, dataLoaded]);
+  }, [user?.uid, user?.role, firebaseUser, authLoading, isSuperAdmin, dataLoaded]);
 
   // Route security guard rendering
   if (authLoading) {

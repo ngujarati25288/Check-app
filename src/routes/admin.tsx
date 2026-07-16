@@ -95,7 +95,7 @@ type AdminTab =
   | "chapters";
 
 function AdminPanel() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, firebaseUser, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   // Navigation / Tabs State
@@ -251,7 +251,7 @@ function AdminPanel() {
       ] = await Promise.all([
         AdminRepository.getAllStudents(),
         AdminRepository.getAllSubjects(),
-        AdminRepository.getAllChapters(),
+        AdminRepository.getAllChapters(user?.role, user?.uid),
         AdminRepository.getAllQuestions(user?.role, user?.uid),
         AdminRepository.getAllExams(user?.role, user?.uid),
         AdminRepository.getAllResults(),
@@ -441,7 +441,9 @@ function AdminPanel() {
   useEffect(() => {
     let active = true;
     if (!authLoading) {
-      if (!user?.uid) {
+      const isUnauthenticated = !isFirebasePlaceholder && !firebaseUser;
+      if (!user?.uid || isUnauthenticated) {
+        console.warn("Stale admin session detected. Redirecting to login...");
         navigate({ to: "/login" });
       } else if (!isAuthorized) {
         toast.error("અવરોધિત એક્સેસ: તમારી પાસે એડમિન સત્તા નથી. Redirecting to dashboard...");
@@ -472,7 +474,7 @@ function AdminPanel() {
     return () => {
       active = false;
     };
-  }, [user?.uid, user?.role, authLoading, isAuthorized, dataLoaded]);
+  }, [user?.uid, user?.role, firebaseUser, authLoading, isAuthorized, dataLoaded]);
 
   const filteredSubjectsForChapterForm = useMemo(() => {
     return subjects.filter(sub => {
@@ -2089,19 +2091,6 @@ function AdminPanel() {
                                         title={s.active ? "Deactivate" : "Activate"}
                                       >
                                         {s.active ? <Ban className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
-                                      </button>
-                                      <button
-                                        onClick={async () => {
-                                          if (confirm(`આ વિષય "${s.subjectName}" કાઢી નાખવાથી તેની સાથે જોડાયેલા પ્રકરણો અને પરીક્ષાઓને અસર થશે. શું આપ ખરેખર આગળ વધવા માંગો છો?`)) {
-                                            await AdminRepository.deleteSubject(user?.uid || "admin", user?.fullName || "Admin", s.subjectId);
-                                            toast.success("Subject permanently deleted!");
-                                            loadAllData();
-                                          }
-                                        }}
-                                        className="p-1.5 border border-border rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                                        title="Delete"
-                                      >
-                                        <Trash2 className="size-3.5" />
                                       </button>
                                     </div>
                                   </td>

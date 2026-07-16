@@ -83,6 +83,115 @@ export function setLocalStorageKey<T>(key: string, value: T) {
   }
 }
 
+const generateStaticGSEBSubjects = (): Subject[] => {
+  const seeded: Subject[] = [];
+  const mediums = ["Gujarati", "English"];
+  
+  for (const med of mediums) {
+    for (let stdNum = 1; stdNum <= 10; stdNum++) {
+      const std = String(stdNum);
+      let subjectNames: string[] = [];
+      
+      if (med === "Gujarati") {
+        if (stdNum <= 5) {
+          subjectNames = ["ગુજરાતી", "ગણિત", "પર્યાવરણ", "અંગ્રેજી"];
+        } else {
+          subjectNames = ["ગણિત", "વિજ્ઞાન", "સામાજિક વિજ્ઞાન", "ગુજરાતી", "અંગ્રેજી", "હિન્દી", "સંસ્કૃત"];
+        }
+      } else {
+        if (stdNum <= 5) {
+          subjectNames = ["English", "Mathematics", "Environmental Studies", "Gujarati"];
+        } else {
+          subjectNames = ["Mathematics", "Science", "Social Science", "English", "Gujarati", "Hindi", "Sanskrit"];
+        }
+      }
+
+      for (const name of subjectNames) {
+        const subId = `gseb_${med.toLowerCase()}_std${std}_${name.replace(/\s+/g, '').toLowerCase()}`;
+        seeded.push({
+          subjectId: subId,
+          subjectName: name,
+          standard: std,
+          medium: med,
+          createdAt: "2026-07-13T20:14:54-07:00",
+          updatedAt: "2026-07-13T20:14:54-07:00",
+          active: true,
+          status: "active",
+          description: `GSEB Main Subject - Std ${std} (${med} Medium)`
+        });
+      }
+    }
+  }
+  return seeded;
+};
+
+export const STATIC_GSEB_SUBJECTS = generateStaticGSEBSubjects();
+
+export async function fetchAndMergeAllSubjects(): Promise<Subject[]> {
+  const mergedMap = new Map<string, Subject>();
+  STATIC_GSEB_SUBJECTS.forEach(s => {
+    mergedMap.set(s.subjectId, { ...s });
+  });
+
+  const list = getLocalStorageKey<Subject[]>('subjects', []);
+  list.forEach(s => {
+    if (s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3") {
+      mergedMap.set(s.subjectId, s);
+    }
+  });
+
+  if (!isFirebasePlaceholder && typeof window !== "undefined" && navigator.onLine) {
+    // Run background Firestore fetch asynchronously without blocking the UI
+    setTimeout(async () => {
+      try {
+        const q1 = query(collection(db, 'subjects'), where('isCustom', '==', true));
+        const q2 = query(
+          collection(db, 'subjects'), 
+          where('subjectId', '>=', 'sub_'), 
+          where('subjectId', '<=', 'sub_\uf8ff')
+        );
+
+        // Fetch with a 3-second hard limit so slow connection doesn't block background resources
+        const fetchPromise = Promise.all([getDocs(q1), getDocs(q2)]);
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error("Timeout")), 3000)
+        );
+
+        const [snap1, snap2] = await Promise.race([fetchPromise, timeoutPromise]) as [any, any];
+
+        const dbSubjects: Subject[] = [];
+        const processSnap = (snap: any) => {
+          snap.forEach((d: any) => {
+            const s = d.data() as Subject;
+            if (s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3") {
+              dbSubjects.push({ ...s, isCustom: true });
+            }
+          });
+        };
+
+        processSnap(snap1);
+        processSnap(snap2);
+
+        if (dbSubjects.length > 0) {
+          const currentLocal = getLocalStorageKey<Subject[]>('subjects', []);
+          const currentLocalMap = new Map<string, Subject>();
+          currentLocal.forEach(s => currentLocalMap.set(s.subjectId, s));
+          
+          dbSubjects.forEach(s => {
+            currentLocalMap.set(s.subjectId, s);
+          });
+          
+          setLocalStorageKey('subjects', Array.from(currentLocalMap.values()));
+        }
+      } catch (e) {
+        console.warn("Background subjects sync skipped or timed out:", e);
+      }
+    }, 100);
+  }
+
+  return Array.from(mergedMap.values());
+}
+
 // Ensure mock initial values exist in LocalStorage for fallback
 const initLocalDB = () => {
   try {
@@ -1045,31 +1154,26 @@ export const ChapterRepository = {
       return getLocalStorageKey<Chapter[]>('chapters', []);
     }
     try {
-      const snaps = await getDocs(collection(db, 'chapters'));
+      const fetchPromise = getDocs(collection(db, 'chapters'));
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Timeout")), 3000)
+      );
+
+      const snaps = await Promise.race([fetchPromise, timeoutPromise]) as any;
       const res: Chapter[] = [];
-      snaps.forEach(d => {
+      snaps.forEach((d: any) => {
         res.push(d.data() as Chapter);
       });
+      setLocalStorageKey('chapters_cache', res);
       return res;
     } catch (e) {
-      return getLocalStorageKey<Chapter[]>('chapters', []);
+      console.warn("getAllChaptersInSystem offline fallback used:", e);
+      return getLocalStorageKey<Chapter[]>('chapters_cache', getLocalStorageKey<Chapter[]>('chapters', []));
     }
   },
 
   async getAllSubjectsInSystem(): Promise<Subject[]> {
-    if (isFirebasePlaceholder) {
-      return getLocalStorageKey<Subject[]>('subjects', []);
-    }
-    try {
-      const snaps = await getDocs(collection(db, 'subjects'));
-      const res: Subject[] = [];
-      snaps.forEach(d => {
-        res.push(d.data() as Subject);
-      });
-      return res;
-    } catch (e) {
-      return getLocalStorageKey<Subject[]>('subjects', []);
-    }
+    return fetchAndMergeAllSubjects();
   }
 };
 
@@ -1625,7 +1729,9 @@ export const AnalyticsRepository = {
     let chaptersRaw: Chapter[] = [];
     let questionsRaw: Question[] = [];
 
-    if (isFirebasePlaceholder) {
+    const useLocalStorageSync = isFirebasePlaceholder || !auth.currentUser;
+
+    if (useLocalStorageSync) {
       studentsRaw = getLocalStorageKey<DBUser[]>('users', []).filter(u => u.role === 'student');
       resultsRaw = getLocalStorageKey<ExamResult[]>('exam_results', []);
       mistakesRaw = getLocalStorageKey<StudentMistake[]>('student_mistakes', []);
@@ -2098,7 +2204,7 @@ export const AnalyticsRepository = {
     };
 
     // 11. Write back to Firestore OR localStorage
-    if (isFirebasePlaceholder) {
+    if (useLocalStorageSync) {
       setLocalStorageKey('student_analytics', studentAnalytics);
       setLocalStorageKey('subject_analytics', subjectAnalytics);
       setLocalStorageKey('chapter_analytics', chapterAnalytics);
@@ -3145,99 +3251,16 @@ export const AdminRepository = {
 
   // Subjects Management
   async getAllSubjects(): Promise<Subject[]> {
-    const seedStandardSubjects = async (): Promise<Subject[]> => {
-      const seeded: Subject[] = [];
-      const mediums = ["Gujarati", "English"];
-      
-      for (const med of mediums) {
-        for (let stdNum = 1; stdNum <= 10; stdNum++) {
-          const std = String(stdNum);
-          let subjectNames: string[] = [];
-          
-          if (med === "Gujarati") {
-            if (stdNum <= 5) {
-              subjectNames = ["ગુજરાતી", "ગણિત", "પર્યાવરણ", "અંગ્રેજી"];
-            } else {
-              subjectNames = ["ગણિત", "વિજ્ઞાન", "સામાજિક વિજ્ઞાન", "ગુજરાતી", "અંગ્રેજી", "હિન્દી", "સંસ્કૃત"];
-            }
-          } else {
-            if (stdNum <= 5) {
-              subjectNames = ["English", "Mathematics", "Environmental Studies", "Gujarati"];
-            } else {
-              subjectNames = ["Mathematics", "Science", "Social Science", "English", "Gujarati", "Hindi", "Sanskrit"];
-            }
-          }
-
-          for (const name of subjectNames) {
-            const subId = `gseb_${med.toLowerCase()}_std${std}_${name.replace(/\s+/g, '').toLowerCase()}`;
-            seeded.push({
-              subjectId: subId,
-              subjectName: name,
-              standard: std,
-              medium: med,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              active: true,
-              status: "active",
-              description: `GSEB Main Subject - Std ${std} (${med} Medium)`
-            });
-          }
-        }
-      }
-
-      if (isFirebasePlaceholder) {
-        setLocalStorageKey('subjects', seeded);
-      } else {
-        try {
-          const { writeBatch, doc } = await import('firebase/firestore');
-          const batch = writeBatch(db);
-          for (const sub of seeded) {
-            batch.set(doc(db, 'subjects', sub.subjectId), {
-              ...sub,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            });
-          }
-          await batch.commit();
-        } catch (e) {
-          console.error("Failed to seed subjects into Firestore: ", e);
-        }
-      }
-      return seeded;
-    };
-
-    if (isFirebasePlaceholder) {
-      let list = getLocalStorageKey<Subject[]>('subjects', []);
-      const filtered = list.filter(s => s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3");
-      if (filtered.length === 0) {
-        return await seedStandardSubjects();
-      }
-      return filtered;
-    }
-    try {
-      const snaps = await getDocs(collection(db, 'subjects'));
-      const res: Subject[] = [];
-      snaps.forEach(d => {
-        const s = d.data() as Subject;
-        if (s.subjectId !== "sub1" && s.subjectId !== "sub2" && s.subjectId !== "sub3") {
-          res.push(s);
-        }
-      });
-      if (res.length === 0) {
-        return await seedStandardSubjects();
-      }
-      return res;
-    } catch (e) {
-      console.error("Failed to fetch all subjects:", e);
-      return [];
-    }
+    return fetchAndMergeAllSubjects();
   },
 
   async createSubject(adminId: string, adminName: string, subject: Subject): Promise<void> {
     if (isFirebasePlaceholder) {
       const subjects = await this.getAllSubjects();
-      subjects.push({ ...subject, status: 'active' });
-      setLocalStorageKey('subjects', subjects);
+      if (!subjects.some(s => s.subjectId === subject.subjectId)) {
+        subjects.push({ ...subject, status: 'active', isCustom: true });
+        setLocalStorageKey('subjects', subjects);
+      }
       await this.addAuditLog(adminId, adminName, "Subject Created", subject.subjectId);
       return;
     }
@@ -3245,6 +3268,7 @@ export const AdminRepository = {
       await setDoc(doc(db, 'subjects', subject.subjectId), {
         ...subject,
         status: 'active',
+        isCustom: true,
         createdAt: serverTimestamp()
       });
       await this.addAuditLog(adminId, adminName, "Subject Created", subject.subjectId);
@@ -3258,14 +3282,17 @@ export const AdminRepository = {
       const subjects = await this.getAllSubjects();
       const index = subjects.findIndex(s => s.subjectId === subjectId);
       if (index !== -1) {
-        subjects[index] = { ...subjects[index], ...partial };
+        subjects[index] = { ...subjects[index], ...partial, isCustom: true };
         setLocalStorageKey('subjects', subjects);
       }
       await this.addAuditLog(adminId, adminName, "Subject Edited", subjectId);
       return;
     }
     try {
-      await setDoc(doc(db, 'subjects', subjectId), partial, { merge: true });
+      await setDoc(doc(db, 'subjects', subjectId), {
+        ...partial,
+        isCustom: true
+      }, { merge: true });
       await this.addAuditLog(adminId, adminName, "Subject Edited", subjectId);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `subjects/${subjectId}`);
@@ -3289,24 +3316,60 @@ export const AdminRepository = {
   },
 
   // Chapters Management
-  async getAllChapters(): Promise<Chapter[]> {
+  async getAllChapters(role?: string, userId?: string): Promise<Chapter[]> {
+    const formattedRole = (role || "").toLowerCase().trim();
+    const formattedUserId = (userId || "").trim();
+
     if (isFirebasePlaceholder) {
       let list = getLocalStorageKey<Chapter[]>('chapters', []);
-      return list.filter(c => c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3");
+      list = list.filter(c => c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3");
+
+      if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+        return list.filter(c => 
+          c.createdByUid === formattedUserId || 
+          c.ownerAdminId === formattedUserId || 
+          c.createdBy === formattedUserId
+        );
+      }
+      return list;
     }
     try {
-      const snaps = await getDocs(collection(db, 'chapters'));
+      const fetchPromise = getDocs(collection(db, 'chapters'));
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Timeout")), 3000)
+      );
+
+      const snaps = await Promise.race([fetchPromise, timeoutPromise]) as any;
       const res: Chapter[] = [];
-      snaps.forEach(d => {
+      snaps.forEach((d: any) => {
         const c = d.data() as Chapter;
         if (c.chapterId !== "ch1" && c.chapterId !== "ch2" && c.chapterId !== "ch3") {
-          res.push(c);
+          if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+            const isOwner = 
+              c.createdByUid === formattedUserId || 
+              c.ownerAdminId === formattedUserId || 
+              c.createdBy === formattedUserId;
+            if (isOwner) {
+              res.push(c);
+            }
+          } else {
+            res.push(c);
+          }
         }
       });
+      setLocalStorageKey('chapters_cache', res);
       return res;
     } catch (e) {
-      console.error("Failed to fetch all chapters:", e);
-      return [];
+      console.warn("Failed to fetch all chapters from Firestore. Falling back to local cache:", e);
+      const cached = getLocalStorageKey<Chapter[]>('chapters_cache', []);
+      if (formattedRole && formattedRole !== "super_admin" && formattedUserId) {
+        return cached.filter(c => 
+          c.createdByUid === formattedUserId || 
+          c.ownerAdminId === formattedUserId || 
+          c.createdBy === formattedUserId
+        );
+      }
+      return cached;
     }
   },
 
@@ -3321,18 +3384,24 @@ export const AdminRepository = {
       throw new Error("અગાઉનો ડેટા દૂર કરવા માટે સુપર એડમિનનો સંપર્ક કરો (Contact Super Admin for old data remove)");
     }
 
+    const chapterWithCreator: Chapter = {
+      ...chapter,
+      status: 'active',
+      createdByUid: adminId,
+      ownerAdminId: adminId,
+      createdBy: adminId,
+      ownerAdminName: adminName
+    };
+
     if (isFirebasePlaceholder) {
       const list = getLocalStorageKey<Chapter[]>('chapters', []);
-      list.push({ ...chapter, status: 'active' });
+      list.push(chapterWithCreator);
       setLocalStorageKey('chapters', list);
       await this.addAuditLog(adminId, adminName, "Chapter Created", chapter.chapterId);
       return;
     }
     try {
-      await setDoc(doc(db, 'chapters', chapter.chapterId), {
-        ...chapter,
-        status: 'active'
-      });
+      await setDoc(doc(db, 'chapters', chapter.chapterId), chapterWithCreator);
       await this.addAuditLog(adminId, adminName, "Chapter Created", chapter.chapterId);
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, `chapters/${chapter.chapterId}`);

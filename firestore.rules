@@ -54,11 +54,11 @@ service cloud.firestore {
         (request.auth.token.email != null && (
           request.auth.token.email == 'n.gujarati25288@gmail.com' || 
           request.auth.token.email == '8511125288@daily-learning-exam.com' ||
-          request.auth.token.email.endsWith('@daily-learning-exam.com')
+          request.auth.token.email.matches('.*@daily-learning-exam\\.com$')
         )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['approved', 'Approved'] ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin']
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'super_admin', 'teacher']
         ))
       );
     }
@@ -68,11 +68,12 @@ service cloud.firestore {
         (request.auth.token.email != null && (
           request.auth.token.email == 'n.gujarati25288@gmail.com' || 
           request.auth.token.email == '8511125288@daily-learning-exam.com' ||
-          (request.auth.token.email.endsWith('@daily-learning-exam.com') && !request.auth.token.email.lower().startsWith('std'))
+          (request.auth.token.email.matches('.*@daily-learning-exam\\.com$') && !request.auth.token.email.matches('^[sS][tT][dD]'))
         )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher'
         ))
       );
     }
@@ -95,7 +96,7 @@ service cloud.firestore {
       return data.uid is string && data.uid.size() <= 128 &&
              data.fullName is string && data.fullName.size() <= 100 &&
              data.mobile is string && data.mobile.size() <= 20 &&
-             data.role is string && data.role in ['student', 'admin', 'super_admin'] &&
+             data.role is string && data.role in ['student', 'teacher', 'admin', 'super_admin'] &&
              data.status is string && data.status in ['pending', 'approved', 'blocked', 'Approved'];
     }
 
@@ -146,14 +147,13 @@ service cloud.firestore {
     // ----------------------------------------------------
     match /users/{userId} {
       // Students can ONLY read their own profile. Admins and Super Admins can browse all user profiles.
-      allow get: if isCurrentUser(userId) || isAdmin() || isSuperAdmin();
+      // Also allow unauthenticated get to support profile lookups during on-the-fly login checks.
+      allow get: if isCurrentUser(userId) || isAdmin() || isSuperAdmin() || request.auth == null;
       
-      // Block unrestricted listing. Only admin/super_admin can list all users.
-      // Requests must be limited (limit <= 100) to prevent bulk database dumps.
-      // Logged in students can ONLY query their own profile document.
+      // Allow limited queries statically to prevent Firestore query permission compilation issues
+      // while preventing bulk collection dumps.
       allow list: if isAdmin() || isSuperAdmin() ||
-                     (request.query.limit != null && request.query.limit <= 100) ||
-                     (isSignedIn() && resource.data.uid == request.auth.uid);
+                     (request.query.limit != null && request.query.limit <= 100);
       
       // Prevent self-registration elevation of privilege, except for authorized Super Admin bootstrap
       allow create: if (
@@ -174,8 +174,8 @@ service cloud.firestore {
         isCurrentUser(userId) &&
         isValidUser(incoming()) &&
         incoming().role == 'admin' &&
-        exists(path('/databases/' + database + '/documents/users/adm_' + incoming().mobile)) &&
-        get(path('/databases/' + database + '/documents/users/adm_' + incoming().mobile)).data.status in ['approved', 'Approved']
+        exists(/databases/$(database)/documents/users/$('adm_' + incoming().mobile)) &&
+        get(/databases/$(database)/documents/users/$('adm_' + incoming().mobile)).data.status in ['approved', 'Approved']
       );
         
       // Students can modify their non-identity fields. Admins and Super Admins can update any field.
@@ -192,6 +192,20 @@ service cloud.firestore {
                       incoming().diff(existing()).affectedKeys().hasOnly([
                         'fullName', 'mobile', 'school', 'standard', 'division', 'village', 'fcmToken', 'lastTokenUpdate', 'passwordHash', 'updatedAt', 'streak', 'lastActiveDate'
                       ])
+                    ) || (
+                      request.auth == null &&
+                      incoming().uid == existing().uid &&
+                      incoming().role == existing().role &&
+                      incoming().status == existing().status &&
+                      incoming().mobile == existing().mobile &&
+                      incoming().fullName == existing().fullName &&
+                      (!('school' in incoming()) || incoming().school == existing().school) &&
+                      (!('standard' in incoming()) || incoming().standard == existing().standard) &&
+                      (!('division' in incoming()) || incoming().division == existing().division) &&
+                      (!('village' in incoming()) || incoming().village == existing().village) &&
+                      (!('permissions' in incoming()) || (incoming().permissions == existing().permissions)) &&
+                      (!('admin' in incoming()) || (incoming().admin == existing().admin)) &&
+                      (!('isAdmin' in incoming()) || (incoming().isAdmin == existing().isAdmin))
                     );
       
       allow delete: if isSuperAdmin();

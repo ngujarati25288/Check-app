@@ -300,21 +300,32 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           try { await firebaseSignOut(auth); } catch {}
         }
       } else {
-        let savedSession = null;
-        try {
-          savedSession = localStorage.getItem('dle:user_session');
-        } catch (e) {
-          console.warn("localStorage read bypassed in restricted env:", e);
-        }
-        if (savedSession) {
-          try {
-            const parsed = JSON.parse(savedSession);
-            if (parsed && typeof parsed.uid === 'string') {
-              setUser(parsed);
-            }
-          } catch {}
-        } else {
+        if (!isFirebasePlaceholder) {
+          // If using actual Firebase and the Firebase Auth state is null, we MUST NOT restore the session.
+          // This keeps the local session synchronized with Firebase Auth, preventing unauthenticated queries
+          // which cause "Missing or insufficient permissions" errors.
+          console.warn("Firebase Auth is unauthenticated. Clearing any stale localStorage session to prevent permission issues.");
           setUser(null);
+          try {
+            localStorage.removeItem('dle:user_session');
+          } catch (_) {}
+        } else {
+          let savedSession = null;
+          try {
+            savedSession = localStorage.getItem('dle:user_session');
+          } catch (e) {
+            console.warn("localStorage read bypassed in restricted env:", e);
+          }
+          if (savedSession) {
+            try {
+              const parsed = JSON.parse(savedSession);
+              if (parsed && typeof parsed.uid === 'string') {
+                setUser(parsed);
+              }
+            } catch {}
+          } else {
+            setUser(null);
+          }
         }
       }
       setLoading(false);
